@@ -9,7 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent3.Api", "OpenAgent
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent3.Api.Tests", "..\..\tests\agent\OpenAgent3.Api.Tests\OpenAgent3.Api.Tests.csproj", "{DC5F7D3F-6828-4E3B-B4F4-465D7A7C270B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent3.Api.Tests", "OpenAgent3.Api.Tests\OpenAgent3.Api.Tests.csproj", "{DC5F7D3F-6828-4E3B-B4F4-465D7A7C270B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

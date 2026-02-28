@@ -1,3 +1,0 @@
-<Project>
-  <Import Project="src/agent/Directory.Packages.props" />
-</Project>
