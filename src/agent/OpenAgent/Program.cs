@@ -1,6 +1,6 @@
-using ConversationStore.InMemory;
 using OpenAgent.Contracts;
 using OpenAgent.Conversations;
+using OpenAgent.ConversationStore.InMemory;
 using OpenAgent.WebSockets;
 
 var builder = WebApplication.CreateBuilder(args);

@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
 
-namespace ConversationStore.InMemory;
+namespace OpenAgent.ConversationStore.InMemory;
 
 public sealed class InMemoryConversationStore : IConversationStore
 {
