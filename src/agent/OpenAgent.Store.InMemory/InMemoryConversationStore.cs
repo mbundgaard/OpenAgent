@@ -1,9 +1,10 @@
 using System.Collections.Concurrent;
+using OpenAgent.Contracts;
 using OpenAgent.Models;
 
-namespace OpenAgent.Conversations;
+namespace ConversationStore.InMemory;
 
-public sealed class ConversationStore
+public sealed class InMemoryConversationStore : IConversationStore
 {
     private readonly ConcurrentDictionary<string, Conversation> _conversations = new();
 

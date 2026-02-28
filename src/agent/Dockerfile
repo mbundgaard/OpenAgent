@@ -2,9 +2,12 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy solution and project files first for layer caching
-COPY OpenAgent3.sln Directory.Build.props Directory.Packages.props ./
-COPY OpenAgent3.Api/OpenAgent3.Api.csproj OpenAgent3.Api/
-COPY OpenAgent3.Api.Tests/OpenAgent3.Api.Tests.csproj OpenAgent3.Api.Tests/
+COPY OpenAgent.sln ./
+COPY OpenAgent.Models/OpenAgent.Models.csproj OpenAgent.Models/
+COPY OpenAgent.Contracts/OpenAgent.Contracts.csproj OpenAgent.Contracts/
+COPY OpenAgent.Store.InMemory/ConversationStore.InMemory.csproj OpenAgent.Store.InMemory/
+COPY OpenAgent/OpenAgent.csproj OpenAgent/
+COPY OpenAgent.Tests/OpenAgent.Tests.csproj OpenAgent.Tests/
 RUN dotnet restore
 
 # Copy everything and build
@@ -16,7 +19,7 @@ RUN dotnet test -c Release --no-build --no-restore
 
 # Publish
 FROM build AS publish
-RUN dotnet publish OpenAgent3.Api -c Release --no-build -o /app/publish
+RUN dotnet publish OpenAgent -c Release --no-build -o /app/publish
 
 # Runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
@@ -24,4 +27,4 @@ WORKDIR /app
 COPY --from=publish /app/publish .
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
-ENTRYPOINT ["dotnet", "OpenAgent3.Api.dll"]
+ENTRYPOINT ["dotnet", "OpenAgent.dll"]

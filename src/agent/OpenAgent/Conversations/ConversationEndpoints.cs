@@ -1,3 +1,5 @@
+using OpenAgent.Contracts;
+
 namespace OpenAgent.Conversations;
 
 public static class ConversationEndpoints
@@ -6,13 +8,13 @@ public static class ConversationEndpoints
     {
         var group = app.MapGroup("/api/conversations");
 
-        group.MapPost("/", (ConversationStore store) =>
+        group.MapPost("/", (IConversationStore store) =>
         {
             var conversation = store.Create();
             return Results.Ok(new { conversation.Id });
         });
 
-        group.MapGet("/{id}", (string id, ConversationStore store) =>
+        group.MapGet("/{id}", (string id, IConversationStore store) =>
         {
             var conversation = store.Get(id);
             return conversation is null
@@ -20,7 +22,7 @@ public static class ConversationEndpoints
                 : Results.Ok(new { conversation.Id });
         });
 
-        group.MapDelete("/{id}", (string id, ConversationStore store) =>
+        group.MapDelete("/{id}", (string id, IConversationStore store) =>
         {
             store.Delete(id);
             return Results.NoContent();

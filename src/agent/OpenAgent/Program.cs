@@ -1,9 +1,11 @@
+using ConversationStore.InMemory;
+using OpenAgent.Contracts;
 using OpenAgent.Conversations;
 using OpenAgent.WebSockets;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<ConversationStore>();
+builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
 
 var app = builder.Build();
 
