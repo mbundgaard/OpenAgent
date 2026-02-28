@@ -3,8 +3,8 @@ WORKDIR /src
 
 # Copy solution and project files first for layer caching
 COPY *.sln Directory.Build.props Directory.Packages.props ./
-COPY src/OpenAgent3.Api/OpenAgent3.Api.csproj src/OpenAgent3.Api/
-COPY tests/OpenAgent3.Api.Tests/OpenAgent3.Api.Tests.csproj tests/OpenAgent3.Api.Tests/
+COPY src/agent/OpenAgent3.Api/OpenAgent3.Api.csproj src/agent/OpenAgent3.Api/
+COPY tests/agent/OpenAgent3.Api.Tests/OpenAgent3.Api.Tests.csproj tests/agent/OpenAgent3.Api.Tests/
 RUN dotnet restore
 
 # Copy everything and build
@@ -16,7 +16,7 @@ RUN dotnet test -c Release --no-build --no-restore
 
 # Publish
 FROM build AS publish
-RUN dotnet publish src/OpenAgent3.Api -c Release --no-build -o /app/publish
+RUN dotnet publish src/agent/OpenAgent3.Api -c Release --no-build -o /app/publish
 
 # Runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
