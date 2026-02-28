@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 
-namespace OpenAgent3.Api.Tests;
+namespace OpenAgent.Tests;
 
 public class HealthEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {

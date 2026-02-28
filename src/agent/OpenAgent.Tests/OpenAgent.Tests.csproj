@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OpenAgent3.Api\OpenAgent3.Api.csproj" />
+    <ProjectReference Include="..\OpenAgent\OpenAgent.csproj" />
   </ItemGroup>
 
 </Project>

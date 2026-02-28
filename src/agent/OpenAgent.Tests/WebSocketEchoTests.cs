@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 
-namespace OpenAgent3.Api.Tests;
+namespace OpenAgent.Tests;
 
 public class WebSocketEchoTests : IClassFixture<WebApplicationFactory<Program>>
 {

@@ -1,5 +1,5 @@
-using OpenAgent3.Api.Conversations;
-using OpenAgent3.Api.WebSockets;
+using OpenAgent.Conversations;
+using OpenAgent.WebSockets;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,4 +16,7 @@ app.MapWebSocketEndpoints();
 app.Run();
 
 // Make Program accessible to integration tests
-public partial class Program;
+namespace OpenAgent
+{
+    public partial class Program;
+}

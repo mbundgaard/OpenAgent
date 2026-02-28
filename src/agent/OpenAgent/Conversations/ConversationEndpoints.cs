@@ -1,4 +1,4 @@
-namespace OpenAgent3.Api.Conversations;
+namespace OpenAgent.Conversations;
 
 public static class ConversationEndpoints
 {

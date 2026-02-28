@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
+using OpenAgent.Models;
 
-namespace OpenAgent3.Api.Conversations;
+namespace OpenAgent.Conversations;
 
 public sealed class ConversationStore
 {

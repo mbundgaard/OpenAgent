@@ -1,4 +1,4 @@
-namespace OpenAgent3.Api.Conversations;
+namespace OpenAgent.Models;
 
 public sealed class Conversation
 {

@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 
-namespace OpenAgent3.Api.Tests;
+namespace OpenAgent.Tests;
 
 public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {

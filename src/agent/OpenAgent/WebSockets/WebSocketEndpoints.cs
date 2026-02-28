@@ -1,6 +1,6 @@
 using System.Net.WebSockets;
 
-namespace OpenAgent3.Api.WebSockets;
+namespace OpenAgent.WebSockets;
 
 public static class WebSocketEndpoints
 {
