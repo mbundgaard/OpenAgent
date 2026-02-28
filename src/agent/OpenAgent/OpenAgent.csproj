@@ -4,6 +4,7 @@
     <ProjectReference Include="..\OpenAgent.ConversationStore.InMemory\OpenAgent.ConversationStore.InMemory.csproj" />
     <ProjectReference Include="..\OpenAgent.Models\OpenAgent.Models.csproj" />
     <ProjectReference Include="..\OpenAgent.Contracts\OpenAgent.Contracts.csproj" />
+    <ProjectReference Include="..\OpenAgent.LlmVoice.OpenAI\OpenAgent.LlmVoice.OpenAI.csproj" />
   </ItemGroup>
 
 </Project>

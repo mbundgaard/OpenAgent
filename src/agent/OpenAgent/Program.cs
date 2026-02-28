@@ -1,11 +1,13 @@
 using OpenAgent.Contracts;
 using OpenAgent.Conversations;
 using OpenAgent.ConversationStore.InMemory;
+using OpenAgent.LlmVoice.OpenAI;
 using OpenAgent.WebSockets;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
+builder.Services.AddSingleton<IConversationStore, InMemoryConversationStoreProvider>();
+builder.Services.AddSingleton<ILlmVoiceProvider, OpenAiRealtimeVoiceProvider>();
 
 var app = builder.Build();
 

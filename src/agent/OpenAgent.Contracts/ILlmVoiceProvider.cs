@@ -2,8 +2,19 @@ using OpenAgent.Models.Voice;
 
 namespace OpenAgent.Contracts;
 
-public interface ILlmVoiceProvider
+public interface ILlmVoiceProvider: IConfigurable
 {
-    Task<IVoiceSession> StartSessionAsync(
-        VoiceSessionConfig config, CancellationToken ct = default);
+    Task<IVoiceSession> StartSessionAsync(VoiceSessionConfig config, CancellationToken ct = default);
+}
+
+public interface IVoiceSession : IAsyncDisposable
+{
+    string SessionId { get; }
+
+    Task SendAudioAsync(ReadOnlyMemory<byte> audio, CancellationToken ct = default);
+    Task CommitAudioAsync(CancellationToken ct = default);
+
+    IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync(CancellationToken ct = default);
+
+    Task CancelResponseAsync(CancellationToken ct = default);
 }

@@ -2,7 +2,7 @@ using OpenAgent.Models.Conversations;
 
 namespace OpenAgent.Contracts;
 
-public interface IConversationStore
+public interface IConversationStore : IConfigurable
 {
     Conversation Create();
     Conversation? Get(string id);
