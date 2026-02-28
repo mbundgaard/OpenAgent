@@ -1,4 +1,4 @@
-namespace OpenAgent.Models;
+namespace OpenAgent.Models.Conversations;
 
 public sealed class Conversation
 {

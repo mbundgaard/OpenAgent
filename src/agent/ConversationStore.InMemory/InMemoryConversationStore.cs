@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using OpenAgent.Contracts;
-using OpenAgent.Models;
+using OpenAgent.Models.Conversations;
 
 namespace ConversationStore.InMemory;
 

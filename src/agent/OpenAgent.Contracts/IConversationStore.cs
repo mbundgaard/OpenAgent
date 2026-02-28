@@ -1,4 +1,4 @@
-using OpenAgent.Models;
+using OpenAgent.Models.Conversations;
 
 namespace OpenAgent.Contracts;
 

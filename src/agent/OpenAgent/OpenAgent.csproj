@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <ProjectReference Include="..\ConversationStore.InMemory\ConversationStore.InMemory.csproj" />
     <ProjectReference Include="..\OpenAgent.Models\OpenAgent.Models.csproj" />
     <ProjectReference Include="..\OpenAgent.Contracts\OpenAgent.Contracts.csproj" />
-    <ProjectReference Include="..\OpenAgent.Store.InMemory\ConversationStore.InMemory.csproj" />
   </ItemGroup>
 
 </Project>
