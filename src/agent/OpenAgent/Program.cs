@@ -1,6 +1,5 @@
 using OpenAgent;
-using OpenAgent.Api.Chat;
-using OpenAgent.Api.Conversations;
+using OpenAgent.Api.Endpoints;
 using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.InMemory;
 using OpenAgent.LlmText.OpenAIAzure;
@@ -12,7 +11,7 @@ builder.Services.AddSingleton<IAgentLogic, AgentLogic>();
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStoreProvider>();
 builder.Services.AddSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>();
 builder.Services.AddSingleton<ILlmTextProvider, AzureOpenAiTextProvider>();
-builder.Services.AddSingleton<VoiceSessionManager>();
+builder.Services.AddSingleton<IVoiceSessionManager, VoiceSessionManager>();
 
 var app = builder.Build();
 
@@ -21,7 +20,8 @@ app.UseWebSockets();
 app.MapGet("/health", () => Results.Ok());
 app.MapConversationEndpoints();
 app.MapChatEndpoints();
-app.MapVoiceWebSocketEndpoints();
+app.MapWebSocketVoiceEndpoints();
+app.MapWebSocketTextEndpoints();
 
 app.Run();
 

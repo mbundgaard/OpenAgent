@@ -6,6 +6,10 @@ using OpenAgent.Models.Voice;
 
 namespace OpenAgent.LlmVoice.OpenAIAzure;
 
+/// <summary>
+/// Voice provider that connects to the Azure OpenAI Realtime API over WebSockets.
+/// Requires apiKey, resourceName, and deploymentName to be configured before use.
+/// </summary>
 public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic) : ILlmVoiceProvider
 {
     private AzureRealtimeConfig? _config;

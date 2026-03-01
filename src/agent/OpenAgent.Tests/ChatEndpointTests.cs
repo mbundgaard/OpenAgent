@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 using OpenAgent.Models.Text;
 
@@ -19,7 +20,6 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         {
             builder.ConfigureServices(services =>
             {
-                // Replace real provider with a fake
                 var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(ILlmTextProvider));
                 if (descriptor is not null) services.Remove(descriptor);
                 services.AddSingleton<ILlmTextProvider, FakeTextProvider>();
@@ -42,15 +42,12 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task SendMessage_ValidConversation_ReturnsAssistantResponse()
     {
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversation = store.Create("app", ConversationType.Text);
         var client = _factory.CreateClient();
 
-        // Create a conversation first
-        var createResponse = await client.PostAsync("/api/conversations", null);
-        var created = await createResponse.Content.ReadFromJsonAsync<ConversationResponse>();
-
-        // Send a message
         var response = await client.PostAsJsonAsync(
-            $"/api/conversations/{created!.Id}/messages",
+            $"/api/conversations/{conversation.Id}/messages",
             new { Content = "hello" });
 
         response.EnsureSuccessStatusCode();
@@ -59,7 +56,6 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal("fake response", body.Content);
     }
 
-    private record ConversationResponse(string Id);
     private record ChatResponse(string Role, string Content);
 
     private sealed class FakeTextProvider : ILlmTextProvider

@@ -1,5 +1,8 @@
 namespace OpenAgent.LlmVoice.OpenAIAzure.Protocol;
 
+/// <summary>
+/// String constants for Azure OpenAI Realtime API event types (client-to-server and server-to-client).
+/// </summary>
 internal static class EventTypes
 {
     // Client → Server

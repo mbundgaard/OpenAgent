@@ -1,5 +1,9 @@
 namespace OpenAgent.Models.Voice;
 
+/// <summary>
+/// Base type for all events emitted by a voice session — audio chunks, transcripts,
+/// speech detection signals, and errors.
+/// </summary>
 public abstract record VoiceEvent;
 
 public sealed record SpeechStarted : VoiceEvent;

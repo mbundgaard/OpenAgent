@@ -1,5 +1,8 @@
 namespace OpenAgent.Models.Conversations;
 
+/// <summary>
+/// A single message within a conversation (user or assistant), with role, content, and timestamp.
+/// </summary>
 public sealed class Message
 {
     public required string Id { get; init; }

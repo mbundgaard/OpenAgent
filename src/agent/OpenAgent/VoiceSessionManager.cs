@@ -4,7 +4,7 @@ using OpenAgent.Models.Voice;
 
 namespace OpenAgent;
 
-public sealed class VoiceSessionManager : IAsyncDisposable
+public sealed class VoiceSessionManager : IVoiceSessionManager, IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, IVoiceSession> _sessions = new();
     private readonly ILlmVoiceProvider _voiceProvider;

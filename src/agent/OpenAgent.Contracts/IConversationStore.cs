@@ -8,16 +8,16 @@ namespace OpenAgent.Contracts;
 public interface IConversationStore : IConfigurable
 {
     /// <summary>Creates a new conversation with a generated ID.</summary>
-    Conversation Create();
+    Conversation Create(string source, ConversationType type);
 
     /// <summary>Returns the conversation with the given ID, or null if not found.</summary>
-    Conversation? Get(string id);
+    Conversation? Get(string conversationId);
 
     /// <summary>Persists changes to an existing conversation.</summary>
     void Update(Conversation conversation);
 
     /// <summary>Removes the conversation. Returns true if it existed.</summary>
-    bool Delete(string id);
+    bool Delete(string conversationId);
 
     /// <summary>Persists a message in the given conversation.</summary>
     void AddMessage(string conversationId, Message message);

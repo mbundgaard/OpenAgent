@@ -21,21 +21,21 @@ public sealed class InMemoryConversationStoreProvider : IConversationStore
     {
     }
 
-    public Conversation Create()
+    public Conversation Create(string source, ConversationType type)
     {
-        var conversation = new Conversation { Id = Guid.NewGuid().ToString() };
+        var conversation = new Conversation { Id = Guid.NewGuid().ToString(), Source = source, Type = type };
         _conversations[conversation.Id] = conversation;
         return conversation;
     }
 
-    public Conversation? Get(string id) => _conversations.GetValueOrDefault(id);
+    public Conversation? Get(string conversationId) => _conversations.GetValueOrDefault(conversationId);
 
     public void Update(Conversation conversation) => _conversations[conversation.Id] = conversation;
 
-    public bool Delete(string id)
+    public bool Delete(string conversationId)
     {
-        _messages.TryRemove(id, out _);
-        return _conversations.TryRemove(id, out _);
+        _messages.TryRemove(conversationId, out _);
+        return _conversations.TryRemove(conversationId, out _);
     }
 
     public void AddMessage(string conversationId, Message message)

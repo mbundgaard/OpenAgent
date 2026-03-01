@@ -5,19 +5,26 @@ using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Voice;
 
-namespace OpenAgent;
+namespace OpenAgent.Api.Endpoints;
 
-public static class VoiceWebSocketEndpoints
+/// <summary>
+/// Bidirectional voice streaming over WebSocket — bridges client audio to a realtime voice LLM session.
+/// Binary frames carry PCM audio; JSON text frames carry control events (transcripts, speech detection, errors).
+/// </summary>
+public static class WebSocketVoiceEndpoints
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
 
-    public static void MapVoiceWebSocketEndpoints(this WebApplication app)
+    /// <summary>
+    /// Maps /ws/conversations/{conversationId}/voice for bidirectional voice streaming.
+    /// </summary>
+    public static void MapWebSocketVoiceEndpoints(this WebApplication app)
     {
-        app.Map("/ws/conversations/{id}/voice", async (string id, HttpContext context,
-            IConversationStore store, VoiceSessionManager sessionManager) =>
+        app.Map("/ws/conversations/{conversationId}/voice", async (string conversationId, HttpContext context,
+            IConversationStore store, IVoiceSessionManager sessionManager) =>
         {
             if (!context.WebSockets.IsWebSocketRequest)
             {
@@ -25,14 +32,14 @@ public static class VoiceWebSocketEndpoints
                 return;
             }
 
-            if (store.Get(id) is null)
+            if (store.Get(conversationId) is null)
             {
                 context.Response.StatusCode = 404;
                 return;
             }
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
-            var session = await sessionManager.GetOrCreateSessionAsync(id, context.RequestAborted);
+            var session = await sessionManager.GetOrCreateSessionAsync(conversationId, context.RequestAborted);
 
             try
             {
@@ -40,7 +47,7 @@ public static class VoiceWebSocketEndpoints
             }
             finally
             {
-                await sessionManager.CloseSessionAsync(id);
+                await sessionManager.CloseSessionAsync(conversationId);
 
                 if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
                 {

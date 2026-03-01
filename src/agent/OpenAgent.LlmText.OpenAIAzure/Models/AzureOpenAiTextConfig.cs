@@ -1,4 +1,4 @@
-namespace OpenAgent.LlmText.OpenAIAzure;
+namespace OpenAgent.LlmText.OpenAIAzure.Models;
 
 internal sealed class AzureOpenAiTextConfig
 {

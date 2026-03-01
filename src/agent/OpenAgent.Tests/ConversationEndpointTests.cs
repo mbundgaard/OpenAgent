@@ -1,46 +1,41 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 
 namespace OpenAgent.Tests;
 
 public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
-    private readonly HttpClient _client;
+    private readonly WebApplicationFactory<Program> _factory;
 
     public ConversationEndpointTests(WebApplicationFactory<Program> factory)
     {
-        _client = factory.CreateClient();
+        _factory = factory;
     }
 
     [Fact]
-    public async Task CreateConversation_ReturnsId()
+    public async Task GetConversation_Exists_ReturnsIt()
     {
-        var response = await _client.PostAsync("/api/conversations", null);
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversation = store.Create("app", ConversationType.Text);
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync($"/api/conversations/{conversation.Id}");
 
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<ConversationResponse>();
-        Assert.NotNull(body);
-        Assert.False(string.IsNullOrEmpty(body.Id));
-    }
-
-    [Fact]
-    public async Task GetConversation_AfterCreate_ReturnsIt()
-    {
-        var createResponse = await _client.PostAsync("/api/conversations", null);
-        var created = await createResponse.Content.ReadFromJsonAsync<ConversationResponse>();
-
-        var response = await _client.GetAsync($"/api/conversations/{created!.Id}");
-
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<ConversationResponse>();
-        Assert.Equal(created.Id, body!.Id);
+        Assert.Equal(conversation.Id, body!.Id);
     }
 
     [Fact]
     public async Task GetConversation_NotFound_Returns404()
     {
-        var response = await _client.GetAsync("/api/conversations/does-not-exist");
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/conversations/does-not-exist");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -48,14 +43,15 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     [Fact]
     public async Task DeleteConversation_ReturnsNoContent()
     {
-        var createResponse = await _client.PostAsync("/api/conversations", null);
-        var created = await createResponse.Content.ReadFromJsonAsync<ConversationResponse>();
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversation = store.Create("app", ConversationType.Text);
+        var client = _factory.CreateClient();
 
-        var response = await _client.DeleteAsync($"/api/conversations/{created!.Id}");
+        var response = await client.DeleteAsync($"/api/conversations/{conversation.Id}");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
-        var getResponse = await _client.GetAsync($"/api/conversations/{created.Id}");
+        var getResponse = await client.GetAsync($"/api/conversations/{conversation.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
