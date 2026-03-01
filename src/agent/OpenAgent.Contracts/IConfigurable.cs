@@ -9,6 +9,9 @@ namespace OpenAgent.Contracts;
 /// </summary>
 public interface IConfigurable
 {
+    /// <summary>Unique key used to identify this provider in config storage and admin endpoints.</summary>
+    string Key { get; }
+
     /// <summary>Describes the configuration fields this provider accepts.</summary>
     IReadOnlyList<ProviderConfigField> ConfigFields { get; }
 

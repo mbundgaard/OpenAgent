@@ -70,6 +70,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 
     private sealed class FakeTextProvider : ILlmTextProvider
     {
+        public string Key => "text-provider";
         public IReadOnlyList<ProviderConfigField> ConfigFields => [];
         public void Configure(JsonElement configuration) { }
 

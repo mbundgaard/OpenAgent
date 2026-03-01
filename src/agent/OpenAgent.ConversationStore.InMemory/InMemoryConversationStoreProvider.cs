@@ -15,6 +15,8 @@ public sealed class InMemoryConversationStoreProvider : IConversationStore
     private readonly ConcurrentDictionary<string, Conversation> _conversations = new();
     private readonly ConcurrentDictionary<string, List<Message>> _messages = new();
 
+    public string Key => "conversation-store";
+
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } = [];
 
     public void Configure(JsonElement configuration)

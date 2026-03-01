@@ -13,6 +13,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
     private AzureOpenAiTextConfig? _config;
     private HttpClient? _httpClient;
 
+    public string Key => "text-provider";
+
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
         new() { Key = "apiKey", Label = "API Key", Type = "Secret", Required = true },
