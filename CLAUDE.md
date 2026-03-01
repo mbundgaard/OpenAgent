@@ -86,3 +86,19 @@ cd src/agent && dotnet test
 - VoiceSessionManager is pure session lifecycle (create, track, close) — no conversation state updates
 - Text provider has a tool call loop with a 10-round safety cap
 - In-memory conversation store is for dev/test only — production will need a persistent implementation
+
+## Memory
+
+Session-to-session notes. Update this section as decisions are made — don't use separate memory files.
+
+### User Preferences
+- Prefers design discussions before implementation — brainstorm first, then plan, then build
+- Wants to be consulted on naming and architecture, not surprised
+- Values small, frequent commits over accumulated batches
+- Prefers concise responses — don't over-explain
+
+### Upcoming Work
+- Telegram channel adapter (IChannelProvider) — designed but not yet built
+- Persistent conversation store — replace in-memory with a real database
+- Streaming text API — ILlmTextProvider needs IAsyncEnumerable variant for WebSocketTextEndpoints
+- System prompt varies by ConversationType — AgentLogic needs to use conversation type to select prompt
