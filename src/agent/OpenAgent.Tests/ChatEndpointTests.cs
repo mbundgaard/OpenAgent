@@ -78,5 +78,13 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         {
             return Task.FromResult(new TextResponse { Role = "assistant", Content = "fake response" });
         }
+
+        public async IAsyncEnumerable<string> StreamAsync(Conversation conversation, string userInput,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return "fake ";
+            yield return "response";
+            await Task.CompletedTask;
+        }
     }
 }

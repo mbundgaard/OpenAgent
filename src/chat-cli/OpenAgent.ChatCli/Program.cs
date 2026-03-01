@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 
 var baseUrl = args.Length > 0 ? args[0] : "http://localhost:5264";
-var mode = args.Length > 1 ? args[1].ToLowerInvariant() : "rest";
+var mode = args.Length > 1 ? args[1].ToLowerInvariant() : "websocket";
 
 if (mode is not "rest" and not "websocket")
 {
@@ -18,13 +18,18 @@ Console.WriteLine();
 
 using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
 
-var conversationId = await SelectConversationAsync(http);
+while (true)
+{
+    var conversationId = await SelectConversationAsync(http);
+    Console.WriteLine();
 
-Console.WriteLine();
+    var exit = mode == "websocket"
+        ? await RunWebSocketAsync(baseUrl, conversationId)
+        : await RunRestAsync(http, conversationId);
 
-return mode == "websocket"
-    ? await RunWebSocketAsync(baseUrl, conversationId)
-    : await RunRestAsync(http, conversationId);
+    if (exit) return 0;
+    Console.WriteLine();
+}
 
 static async Task<string> SelectConversationAsync(HttpClient http)
 {
@@ -36,6 +41,7 @@ static async Task<string> SelectConversationAsync(HttpClient http)
         if (response.IsSuccessStatusCode)
         {
             conversations = await response.Content.ReadFromJsonAsync<List<ConversationInfo>>() ?? [];
+            conversations.Sort((a, b) => b.CreatedAt.CompareTo(a.CreatedAt));
         }
     }
     catch
@@ -66,14 +72,16 @@ static async Task<string> SelectConversationAsync(HttpClient http)
     return newId;
 }
 
-static async Task<int> RunRestAsync(HttpClient http, string conversationId)
+static async Task<bool> RunRestAsync(HttpClient http, string conversationId)
 {
     while (true)
     {
         Console.Write("> ");
         var input = Console.ReadLine();
         if (input is null or "exit" or "quit")
-            break;
+            return true;
+        if (input is "/back")
+            return false;
         if (string.IsNullOrWhiteSpace(input))
             continue;
 
@@ -99,11 +107,9 @@ static async Task<int> RunRestAsync(HttpClient http, string conversationId)
             Console.WriteLine($"[Error] {ex.Message}");
         }
     }
-
-    return 0;
 }
 
-static async Task<int> RunWebSocketAsync(string baseUrl, string conversationId)
+static async Task<bool> RunWebSocketAsync(string baseUrl, string conversationId)
 {
     var wsUrl = baseUrl.Replace("http://", "ws://").Replace("https://", "wss://");
     var uri = new Uri($"{wsUrl}/ws/conversations/{conversationId}/text");
@@ -120,7 +126,7 @@ static async Task<int> RunWebSocketAsync(string baseUrl, string conversationId)
     catch (Exception ex)
     {
         Console.Error.WriteLine($"Failed to connect: {ex.Message}");
-        return 1;
+        return false;
     }
 
     var receiveTask = Task.Run(async () =>
@@ -139,7 +145,18 @@ static async Task<int> RunWebSocketAsync(string baseUrl, string conversationId)
                 var root = doc.RootElement;
 
                 var type = root.GetProperty("type").GetString();
-                if (type == "message")
+                if (type == "delta")
+                {
+                    var content = root.GetProperty("content").GetString();
+                    Console.Write(content);
+                }
+                else if (type == "done")
+                {
+                    Console.WriteLine();
+                    Console.WriteLine();
+                    Console.Write("> ");
+                }
+                else if (type == "message")
                 {
                     var content = root.GetProperty("content").GetString();
                     Console.WriteLine(content);
@@ -154,12 +171,18 @@ static async Task<int> RunWebSocketAsync(string baseUrl, string conversationId)
         }
     });
 
+    var back = false;
     while (ws.State == WebSocketState.Open)
     {
         Console.Write("> ");
         var input = Console.ReadLine();
         if (input is null or "exit" or "quit")
             break;
+        if (input is "/back")
+        {
+            back = true;
+            break;
+        }
         if (string.IsNullOrWhiteSpace(input))
             continue;
 
@@ -173,7 +196,7 @@ static async Task<int> RunWebSocketAsync(string baseUrl, string conversationId)
     }
 
     await receiveTask;
-    return 0;
+    return !back;
 }
 
 record ConversationInfo(string Id, string Source, string Type, DateTimeOffset CreatedAt);

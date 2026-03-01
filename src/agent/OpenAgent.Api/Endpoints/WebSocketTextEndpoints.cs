@@ -78,9 +78,12 @@ public static class WebSocketTextEndpoints
             if (request?.Content is null)
                 continue;
 
-            var response = await textProvider.CompleteAsync(conversation, request.Content, ct);
+            await foreach (var chunk in textProvider.StreamAsync(conversation, request.Content, ct))
+            {
+                await SendJsonAsync(ws, new { type = "delta", content = chunk }, ct);
+            }
 
-            await SendJsonAsync(ws, new { type = "message", role = response.Role, content = response.Content }, ct);
+            await SendJsonAsync(ws, new { type = "done" }, ct);
         }
     }
 

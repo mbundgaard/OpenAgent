@@ -10,4 +10,6 @@ namespace OpenAgent.Contracts;
 public interface ILlmTextProvider : IConfigurable
 {
     Task<TextResponse> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default);
+
+    IAsyncEnumerable<string> StreamAsync(Conversation conversation, string userInput, CancellationToken ct = default);
 }

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
@@ -173,5 +174,111 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         logger.LogError("Tool call loop exceeded {MaxRounds} rounds for conversation {ConversationId}",
             maxToolRounds, conversationId);
         throw new InvalidOperationException($"Tool call loop exceeded {maxToolRounds} rounds.");
+    }
+
+    public async IAsyncEnumerable<string> StreamAsync(
+        Conversation conversation, string userInput, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (_config is null || _httpClient is null)
+            throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
+
+        var conversationId = conversation.Id;
+        logger.LogDebug("StreamAsync called for conversation {ConversationId}", conversationId);
+
+        agentLogic.AddMessage(conversationId, new Message
+        {
+            Id = Guid.NewGuid().ToString(),
+            ConversationId = conversationId,
+            Role = "user",
+            Content = userInput
+        });
+
+        var chatMessages = BuildChatMessages(conversation);
+        var tools = BuildTools();
+
+        var request = new ChatCompletionRequest
+        {
+            Messages = chatMessages,
+            Tools = tools,
+            ToolChoice = tools is not null ? "auto" : null,
+            Stream = true
+        };
+
+        var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
+
+        var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(request)
+        };
+        var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        if (!httpResponse.IsSuccessStatusCode)
+        {
+            var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+            logger.LogError("Azure OpenAI returned {StatusCode} for conversation {ConversationId}: {ErrorBody}",
+                (int)httpResponse.StatusCode, conversationId, errorBody);
+            throw new HttpRequestException(
+                $"Azure OpenAI returned {(int)httpResponse.StatusCode}: {errorBody}");
+        }
+
+        var fullContent = new System.Text.StringBuilder();
+        using var stream = await httpResponse.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream);
+
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (!line.StartsWith("data: ")) continue;
+
+            var data = line["data: ".Length..];
+            if (data == "[DONE]") break;
+
+            var chunk = JsonSerializer.Deserialize<ChatCompletionResponse>(data);
+            var delta = chunk?.Choices?.FirstOrDefault()?.Delta;
+            if (delta?.Content is { } content && content.Length > 0)
+            {
+                fullContent.Append(content);
+                yield return content;
+            }
+        }
+
+        agentLogic.AddMessage(conversationId, new Message
+        {
+            Id = Guid.NewGuid().ToString(),
+            ConversationId = conversationId,
+            Role = "assistant",
+            Content = fullContent.ToString()
+        });
+
+        logger.LogDebug("Stream finished for conversation {ConversationId}, {ContentLength} chars",
+            conversationId, fullContent.Length);
+    }
+
+    private List<ChatMessage> BuildChatMessages(Conversation conversation)
+    {
+        var chatMessages = new List<ChatMessage>();
+
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type);
+        if (!string.IsNullOrEmpty(systemPrompt))
+            chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
+
+        foreach (var msg in agentLogic.GetMessages(conversation.Id))
+            chatMessages.Add(new ChatMessage { Role = msg.Role, Content = msg.Content });
+
+        return chatMessages;
+    }
+
+    private List<ChatTool>? BuildTools()
+    {
+        return agentLogic.Tools.Count > 0
+            ? agentLogic.Tools.Select(t => new ChatTool
+            {
+                Function = new ChatFunction
+                {
+                    Name = t.Name,
+                    Description = t.Description,
+                    Parameters = t.Parameters
+                }
+            }).ToList()
+            : null;
     }
 }

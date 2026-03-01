@@ -14,6 +14,10 @@ internal sealed class ChatCompletionRequest
     [JsonPropertyName("tool_choice")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ToolChoice { get; set; }
+
+    [JsonPropertyName("stream")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Stream { get; set; }
 }
 
 internal sealed class ChatMessage
