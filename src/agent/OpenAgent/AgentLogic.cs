@@ -4,12 +4,13 @@ using OpenAgent.Models.Conversations;
 namespace OpenAgent;
 
 /// <summary>
-/// Default no-op agent implementation. Returns an empty system prompt and no tools.
-/// Placeholder until a real agent is configured.
+/// Core agent logic. Composes system prompts from markdown files and delegates
+/// message persistence to the conversation store.
 /// </summary>
-internal sealed class AgentLogic(IConversationStore store) : IAgentLogic
+internal sealed class AgentLogic(IConversationStore store, SystemPromptBuilder promptBuilder) : IAgentLogic
 {
-    public string GetSystemPrompt(string source, ConversationType type) => "";
+    public string GetSystemPrompt(string source, ConversationType type)
+        => promptBuilder.Build(type);
 
     public IReadOnlyList<AgentToolDefinition> Tools => [];
 

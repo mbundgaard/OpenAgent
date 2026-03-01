@@ -32,6 +32,7 @@ builder.Host.UseSerilog((context, serilog) =>
         serilog.MinimumLevel.Override(module, levelSwitch);
 });
 
+builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddSingleton<IAgentLogic, AgentLogic>();
 
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
