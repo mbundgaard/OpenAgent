@@ -19,9 +19,9 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
         new() { Key = "apiKey", Label = "API Key", Type = "Secret", Required = true },
-        new() { Key = "resourceName", Label = "Resource Name", Type = "String", Required = true },
+        new() { Key = "endpoint", Label = "Endpoint", Type = "String", Required = true },
         new() { Key = "deploymentName", Label = "Deployment Name", Type = "String", Required = true },
-        new() { Key = "apiVersion", Label = "API Version", Type = "String", DefaultValue = "2024-06-01" }
+        new() { Key = "apiVersion", Label = "API Version", Type = "String", DefaultValue = "2025-04-01-preview" }
     ];
 
     public void Configure(JsonElement configuration)
@@ -32,20 +32,21 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
         if (string.IsNullOrWhiteSpace(_config.ApiKey))
             throw new InvalidOperationException("apiKey is required.");
-        if (string.IsNullOrWhiteSpace(_config.ResourceName))
-            throw new InvalidOperationException("resourceName is required.");
+        if (string.IsNullOrWhiteSpace(_config.Endpoint))
+            throw new InvalidOperationException("endpoint is required.");
         if (string.IsNullOrWhiteSpace(_config.DeploymentName))
             throw new InvalidOperationException("deploymentName is required.");
 
+        var baseUri = _config.Endpoint.TrimEnd('/');
         _httpClient?.Dispose();
         _httpClient = new HttpClient
         {
-            BaseAddress = new Uri($"https://{_config.ResourceName}.openai.azure.com/")
+            BaseAddress = new Uri(baseUri + "/")
         };
         _httpClient.DefaultRequestHeaders.Add("api-key", _config.ApiKey);
 
-        logger.LogInformation("Text provider configured for deployment {DeploymentName} on {ResourceName}",
-            _config.DeploymentName, _config.ResourceName);
+        logger.LogInformation("Text provider configured for deployment {DeploymentName} at {Endpoint}",
+            _config.DeploymentName, _config.Endpoint);
     }
 
     public void Dispose() => _httpClient?.Dispose();

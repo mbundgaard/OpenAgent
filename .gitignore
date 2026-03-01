@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Provider config (contains API keys)
+src/agent/OpenAgent/config/
+
 # User-specific files
 *.rsuser
 *.suo

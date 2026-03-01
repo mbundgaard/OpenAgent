@@ -41,8 +41,9 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     internal async Task ConnectAsync(CancellationToken ct)
     {
+        var host = new Uri(_config.Endpoint).Host;
         var uri = new Uri(
-            $"wss://{_config.ResourceName}.openai.azure.com/openai/realtime" +
+            $"wss://{host}/openai/realtime" +
             $"?api-version={_config.ApiVersion}&deployment={_config.DeploymentName}");
 
         _ws.Options.SetRequestHeader("api-key", _config.ApiKey);

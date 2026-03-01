@@ -9,7 +9,7 @@ namespace OpenAgent.LlmVoice.OpenAIAzure;
 
 /// <summary>
 /// Voice provider that connects to the Azure OpenAI Realtime API over WebSockets.
-/// Requires apiKey, resourceName, and deploymentName to be configured before use.
+/// Requires apiKey, endpoint, and deploymentName to be configured before use.
 /// </summary>
 public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILogger<AzureOpenAiRealtimeVoiceProvider> logger) : ILlmVoiceProvider
 {
@@ -28,8 +28,8 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
         },
         new ProviderConfigField
         {
-            Key = "resourceName",
-            Label = "Resource Name",
+            Key = "endpoint",
+            Label = "Endpoint",
             Type = "String",
             Required = true
         },
@@ -57,13 +57,13 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
 
         if (string.IsNullOrWhiteSpace(_config.ApiKey))
             throw new InvalidOperationException("apiKey is required.");
-        if (string.IsNullOrWhiteSpace(_config.ResourceName))
-            throw new InvalidOperationException("resourceName is required.");
+        if (string.IsNullOrWhiteSpace(_config.Endpoint))
+            throw new InvalidOperationException("endpoint is required.");
         if (string.IsNullOrWhiteSpace(_config.DeploymentName))
             throw new InvalidOperationException("deploymentName is required.");
 
-        logger.LogInformation("Voice provider configured for deployment {DeploymentName} on {ResourceName}",
-            _config.DeploymentName, _config.ResourceName);
+        logger.LogInformation("Voice provider configured for deployment {DeploymentName} at {Endpoint}",
+            _config.DeploymentName, _config.Endpoint);
     }
 
     public async Task<IVoiceSession> StartSessionAsync(Conversation conversation, CancellationToken ct = default)

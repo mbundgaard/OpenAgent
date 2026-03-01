@@ -3,7 +3,7 @@ namespace OpenAgent.LlmText.OpenAIAzure.Models;
 internal sealed class AzureOpenAiTextConfig
 {
     public string ApiKey { get; set; } = "";
-    public string ResourceName { get; set; } = "";
+    public string Endpoint { get; set; } = "";
     public string DeploymentName { get; set; } = "";
-    public string ApiVersion { get; set; } = "2024-06-01";
+    public string ApiVersion { get; set; } = "2025-04-01-preview";
 }
