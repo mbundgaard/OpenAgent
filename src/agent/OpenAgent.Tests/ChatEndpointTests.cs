@@ -73,7 +73,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         public IReadOnlyList<ProviderConfigField> ConfigFields => [];
         public void Configure(JsonElement configuration) { }
 
-        public Task<TextResponse> CompleteAsync(string conversationId, string userInput, CancellationToken ct = default)
+        public Task<TextResponse> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default)
         {
             return Task.FromResult(new TextResponse { Role = "assistant", Content = "fake response" });
         }

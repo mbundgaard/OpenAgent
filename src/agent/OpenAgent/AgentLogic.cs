@@ -9,7 +9,7 @@ namespace OpenAgent;
 /// </summary>
 internal sealed class AgentLogic(IConversationStore store) : IAgentLogic
 {
-    public string SystemPrompt => "";
+    public string GetSystemPrompt(string source, ConversationType type) => "";
 
     public IReadOnlyList<AgentToolDefinition> Tools => [];
 

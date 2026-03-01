@@ -2,7 +2,7 @@ using System.Text.Json;
 using OpenAgent.Contracts;
 using OpenAgent.LlmVoice.OpenAIAzure.Models;
 using OpenAgent.Models.Providers;
-using OpenAgent.Models.Voice;
+using OpenAgent.Models.Conversations;
 
 namespace OpenAgent.LlmVoice.OpenAIAzure;
 
@@ -60,12 +60,12 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic) : I
             throw new InvalidOperationException("deploymentName is required.");
     }
 
-    public async Task<IVoiceSession> StartSessionAsync(VoiceSessionOptions options, CancellationToken ct = default)
+    public async Task<IVoiceSession> StartSessionAsync(Conversation conversation, CancellationToken ct = default)
     {
         if (_config is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
-        var session = new AzureOpenAiVoiceSession(_config, options, agentLogic);
+        var session = new AzureOpenAiVoiceSession(_config, conversation, agentLogic);
         await session.ConnectAsync(ct);
         return session;
     }

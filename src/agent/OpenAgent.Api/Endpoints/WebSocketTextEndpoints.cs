@@ -34,13 +34,13 @@ public static class WebSocketTextEndpoints
                 return;
             }
 
-            store.GetOrCreate(conversationId, "app", ConversationType.Text);
+            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
 
             try
             {
-                await RunChatLoopAsync(ws, conversationId, textProvider, context.RequestAborted);
+                await RunChatLoopAsync(ws, conversation, textProvider, context.RequestAborted);
             }
             finally
             {
@@ -58,7 +58,7 @@ public static class WebSocketTextEndpoints
     }
 
     private static async Task RunChatLoopAsync(
-        WebSocket ws, string conversationId, ILlmTextProvider textProvider, CancellationToken ct)
+        WebSocket ws, Conversation conversation, ILlmTextProvider textProvider, CancellationToken ct)
     {
         var buffer = new byte[8192];
 
@@ -78,7 +78,7 @@ public static class WebSocketTextEndpoints
             if (request?.Content is null)
                 continue;
 
-            var response = await textProvider.CompleteAsync(conversationId, request.Content, ct);
+            var response = await textProvider.CompleteAsync(conversation, request.Content, ct);
 
             await SendJsonAsync(ws, new { type = "message", role = response.Role, content = response.Content }, ct);
         }

@@ -1,3 +1,4 @@
+using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
 
 namespace OpenAgent.Contracts;
@@ -8,7 +9,7 @@ namespace OpenAgent.Contracts;
 public interface ILlmVoiceProvider: IConfigurable
 {
     /// <summary>Opens a new bidirectional voice session with the configured backend.</summary>
-    Task<IVoiceSession> StartSessionAsync(VoiceSessionOptions config, CancellationToken ct = default);
+    Task<IVoiceSession> StartSessionAsync(Conversation conversation, CancellationToken ct = default);
 }
 
 /// <summary>

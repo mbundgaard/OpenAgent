@@ -44,10 +44,12 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
 
     public void Dispose() => _httpClient?.Dispose();
 
-    public async Task<TextResponse> CompleteAsync(string conversationId, string userInput, CancellationToken ct = default)
+    public async Task<TextResponse> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
+
+        var conversationId = conversation.Id;
 
         // Store user message
         agentLogic.AddMessage(conversationId, new Message
@@ -61,9 +63,10 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
         // Build request messages: system prompt + conversation history
         var chatMessages = new List<ChatMessage>();
 
-        if (!string.IsNullOrEmpty(agentLogic.SystemPrompt))
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type);
+        if (!string.IsNullOrEmpty(systemPrompt))
         {
-            chatMessages.Add(new ChatMessage { Role = "system", Content = agentLogic.SystemPrompt });
+            chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
         }
 
         foreach (var msg in agentLogic.GetMessages(conversationId))

@@ -1,3 +1,4 @@
+using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Text;
 
 namespace OpenAgent.Contracts;
@@ -8,5 +9,5 @@ namespace OpenAgent.Contracts;
 /// </summary>
 public interface ILlmTextProvider : IConfigurable
 {
-    Task<TextResponse> CompleteAsync(string conversationId, string userInput, CancellationToken ct = default);
+    Task<TextResponse> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default);
 }

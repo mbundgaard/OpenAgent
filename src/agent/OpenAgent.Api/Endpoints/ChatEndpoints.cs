@@ -23,9 +23,9 @@ public static class ChatEndpoints
             ILlmTextProvider textProvider,
             CancellationToken ct) =>
         {
-            store.GetOrCreate(conversationId, "app", ConversationType.Text);
+            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text);
 
-            var response = await textProvider.CompleteAsync(conversationId, request.Content, ct);
+            var response = await textProvider.CompleteAsync(conversation, request.Content, ct);
 
             return Results.Ok(new { conversationId, response.Role, response.Content });
         });

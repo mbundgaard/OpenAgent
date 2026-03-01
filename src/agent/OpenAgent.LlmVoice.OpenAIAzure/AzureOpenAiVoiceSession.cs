@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
 using OpenAgent.LlmVoice.OpenAIAzure.Protocol;
 using OpenAgent.LlmVoice.OpenAIAzure.Models;
@@ -17,7 +18,7 @@ namespace OpenAgent.LlmVoice.OpenAIAzure;
 internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 {
     private readonly AzureRealtimeConfig _config;
-    private readonly VoiceSessionOptions _options;
+    private readonly Conversation _conversation;
     private readonly IAgentLogic _agentLogic;
     private readonly ClientWebSocket _ws = new();
     private readonly Channel<VoiceEvent> _channel = Channel.CreateUnbounded<VoiceEvent>(
@@ -28,10 +29,10 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     public string SessionId { get; private set; } = string.Empty;
 
-    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, VoiceSessionOptions options, IAgentLogic agentLogic)
+    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, Conversation conversation, IAgentLogic agentLogic)
     {
         _config = config;
-        _options = options;
+        _conversation = conversation;
         _agentLogic = agentLogic;
     }
 
@@ -115,8 +116,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         var sessionConfig = new RealtimeSessionConfig
         {
             Modalities = ["audio", "text"],
-            Voice = _options.Voice ?? "alloy",
-            Instructions = _agentLogic.SystemPrompt,
+            Voice = _config.Voice ?? "alloy",
+            Instructions = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type),
             InputAudioFormat = "pcm16",
             OutputAudioFormat = "pcm16",
             InputAudioTranscription = new InputAudioTranscriptionConfig { Model = "whisper-1" },
@@ -209,7 +210,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             var name = envelope.Name ?? "";
             var arguments = envelope.Arguments ?? "";
             var callId = envelope.CallId ?? "";
-            var conversationId = _options.ConversationId;
+            var conversationId = _conversation.Id;
 
             _ = Task.Run(async () =>
             {
