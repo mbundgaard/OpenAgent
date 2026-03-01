@@ -9,4 +9,10 @@
     <ProjectReference Include="..\OpenAgent.ConfigStore.File\OpenAgent.ConfigStore.File.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+
 </Project>
