@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 
-namespace OpenAgent.WebSockets;
+namespace OpenAgent.Api.WebSockets;
 
 public static class WebSocketEndpoints
 {

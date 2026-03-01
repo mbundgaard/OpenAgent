@@ -4,7 +4,7 @@ public interface IAgentLogic
 {
     string SystemPrompt { get; }
     IReadOnlyList<AgentToolDefinition> Tools { get; }
-    Task<string> ExecuteToolAsync(string name, string arguments, CancellationToken ct = default);
+    Task<string> ExecuteToolAsync(string conversationId, string name, string arguments, CancellationToken ct = default);
 }
 
 public sealed class AgentToolDefinition

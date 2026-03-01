@@ -131,9 +131,9 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         await SendEventAsync(evt, ct);
     }
 
-    private async Task SendToolResultAsync(string callId, string result, CancellationToken ct)
+    private async Task SendToolResultAndContinueAsync(string callId, string result, CancellationToken ct)
     {
-        var evt = new ClientEvent
+        await SendEventAsync(new ClientEvent
         {
             Type = EventTypes.ConversationItemCreate,
             Item = new
@@ -142,8 +142,9 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                 call_id = callId,
                 output = result
             }
-        };
-        await SendEventAsync(evt, ct);
+        }, ct);
+
+        await SendEventAsync(new ClientEvent { Type = EventTypes.ResponseCreate }, ct);
     }
 
     private async Task SendEventAsync(ClientEvent evt, CancellationToken ct)
@@ -164,7 +165,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
         var buffer = new ArrayBufferWriter<byte>();
-        var rentedBuffer = new byte[8192];
+        var rentedBuffer = new byte[65536];
 
         try
         {
@@ -207,9 +208,21 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             var name = envelope.Name ?? "";
             var arguments = envelope.Arguments ?? "";
             var callId = envelope.CallId ?? "";
+            var conversationId = _options.ConversationId;
 
-            var toolResult = await _agentLogic.ExecuteToolAsync(name, arguments, ct);
-            await SendToolResultAsync(callId, toolResult, ct);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var result = await _agentLogic.ExecuteToolAsync(conversationId, name, arguments, ct);
+                    await SendToolResultAndContinueAsync(callId, result, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    var errorResult = JsonSerializer.Serialize(new { error = ex.Message });
+                    await SendToolResultAndContinueAsync(callId, errorResult, ct);
+                }
+            }, ct);
             return;
         }
 

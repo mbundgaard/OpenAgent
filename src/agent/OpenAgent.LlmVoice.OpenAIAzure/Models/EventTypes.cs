@@ -8,6 +8,7 @@ internal static class EventTypes
     public const string InputAudioBufferCommit = "input_audio_buffer.commit";
     public const string ResponseCancel = "response.cancel";
     public const string ConversationItemCreate = "conversation.item.create";
+    public const string ResponseCreate = "response.create";
 
     // Server → Client
     public const string SessionCreated = "session.created";

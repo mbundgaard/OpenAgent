@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
 
-namespace OpenAgent.Conversations;
+namespace OpenAgent.Api.Conversations;
 
 public static class ConversationEndpoints
 {

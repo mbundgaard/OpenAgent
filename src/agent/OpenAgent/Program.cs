@@ -1,9 +1,9 @@
 using OpenAgent;
+using OpenAgent.Api.Conversations;
+using OpenAgent.Api.WebSockets;
 using OpenAgent.Contracts;
-using OpenAgent.Conversations;
 using OpenAgent.ConversationStore.InMemory;
 using OpenAgent.LlmVoice.OpenAIAzure;
-using OpenAgent.WebSockets;
 
 var builder = WebApplication.CreateBuilder(args);
 

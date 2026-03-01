@@ -8,5 +8,5 @@ internal sealed class AgentLogic : IAgentLogic
 
     public IReadOnlyList<AgentToolDefinition> Tools => [];
 
-    public Task<string> ExecuteToolAsync(string name, string arguments, CancellationToken ct = default) => Task.FromResult("{}");
+    public Task<string> ExecuteToolAsync(string conversationId, string name, string arguments, CancellationToken ct = default) => Task.FromResult("{}");
 }
