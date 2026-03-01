@@ -28,35 +28,45 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task SendMessage_ConversationNotFound_Returns404()
+    public async Task SendMessage_NewConversation_CreatesAndReturnsResponse()
     {
         var client = _factory.CreateClient();
+        var conversationId = Guid.NewGuid().ToString();
 
         var response = await client.PostAsJsonAsync(
-            "/api/conversations/does-not-exist/messages",
-            new { Content = "hello" });
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task SendMessage_ValidConversation_ReturnsAssistantResponse()
-    {
-        var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversation = store.Create("app", ConversationType.Text);
-        var client = _factory.CreateClient();
-
-        var response = await client.PostAsJsonAsync(
-            $"/api/conversations/{conversation.Id}/messages",
+            $"/api/conversations/{conversationId}/messages",
             new { Content = "hello" });
 
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<ChatResponse>();
-        Assert.Equal("assistant", body!.Role);
+        Assert.Equal(conversationId, body!.ConversationId);
+        Assert.Equal("assistant", body.Role);
         Assert.Equal("fake response", body.Content);
     }
 
-    private record ChatResponse(string Role, string Content);
+    [Fact]
+    public async Task SendMessage_ExistingConversation_ReturnsResponse()
+    {
+        var client = _factory.CreateClient();
+        var conversationId = Guid.NewGuid().ToString();
+
+        // First message creates the conversation
+        await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/messages",
+            new { Content = "hello" });
+
+        // Second message reuses it
+        var response = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/messages",
+            new { Content = "follow up" });
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<ChatResponse>();
+        Assert.Equal(conversationId, body!.ConversationId);
+        Assert.Equal("assistant", body.Role);
+    }
+
+    private record ChatResponse(string ConversationId, string Role, string Content);
 
     private sealed class FakeTextProvider : ILlmTextProvider
     {

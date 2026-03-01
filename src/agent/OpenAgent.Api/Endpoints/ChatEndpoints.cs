@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 
 namespace OpenAgent.Api.Endpoints;
 
@@ -11,6 +12,7 @@ public static class ChatEndpoints
 {
     /// <summary>
     /// Maps POST /api/conversations/{conversationId}/messages for request/response text interaction.
+    /// Creates the conversation automatically if it doesn't exist.
     /// </summary>
     public static void MapChatEndpoints(this WebApplication app)
     {
@@ -21,12 +23,11 @@ public static class ChatEndpoints
             ILlmTextProvider textProvider,
             CancellationToken ct) =>
         {
-            if (store.Get(conversationId) is null)
-                return Results.NotFound();
+            store.GetOrCreate(conversationId, "app", ConversationType.Text);
 
             var response = await textProvider.CompleteAsync(conversationId, request.Content, ct);
 
-            return Results.Ok(new { response.Role, response.Content });
+            return Results.Ok(new { conversationId, response.Role, response.Content });
         });
     }
 }

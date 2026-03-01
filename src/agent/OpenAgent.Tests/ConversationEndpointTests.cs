@@ -20,7 +20,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     public async Task GetConversation_Exists_ReturnsIt()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversation = store.Create("app", ConversationType.Text);
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text);
         var client = _factory.CreateClient();
 
         var response = await client.GetAsync($"/api/conversations/{conversation.Id}");
@@ -44,7 +44,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     public async Task DeleteConversation_ReturnsNoContent()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversation = store.Create("app", ConversationType.Text);
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text);
         var client = _factory.CreateClient();
 
         var response = await client.DeleteAsync($"/api/conversations/{conversation.Id}");

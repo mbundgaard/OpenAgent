@@ -21,11 +21,10 @@ public sealed class InMemoryConversationStoreProvider : IConversationStore
     {
     }
 
-    public Conversation Create(string source, ConversationType type)
+    public Conversation GetOrCreate(string conversationId, string source, ConversationType type)
     {
-        var conversation = new Conversation { Id = Guid.NewGuid().ToString(), Source = source, Type = type };
-        _conversations[conversation.Id] = conversation;
-        return conversation;
+        return _conversations.GetOrAdd(conversationId,
+            _ => new Conversation { Id = conversationId, Source = source, Type = type });
     }
 
     public Conversation? Get(string conversationId) => _conversations.GetValueOrDefault(conversationId);
