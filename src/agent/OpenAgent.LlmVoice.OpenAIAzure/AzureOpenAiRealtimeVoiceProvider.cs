@@ -1,14 +1,14 @@
 using System.Text.Json;
 using OpenAgent.Contracts;
-using OpenAgent.LlmVoice.OpenAI.Models;
+using OpenAgent.LlmVoice.OpenAIAzure.Models;
 using OpenAgent.Models.Providers;
 using OpenAgent.Models.Voice;
 
-namespace OpenAgent.LlmVoice.OpenAI;
+namespace OpenAgent.LlmVoice.OpenAIAzure;
 
-public sealed class OpenAiRealtimeVoiceProvider : ILlmVoiceProvider
+public sealed class AzureOpenAiRealtimeVoiceProvider : ILlmVoiceProvider
 {
-    private RealtimeConfig? _options;
+    private AzureRealtimeConfig? _options;
 
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
@@ -21,28 +21,39 @@ public sealed class OpenAiRealtimeVoiceProvider : ILlmVoiceProvider
         },
         new ProviderConfigField
         {
-            Key = "model",
-            Label = "Model",
+            Key = "resourceName",
+            Label = "Resource Name",
             Type = "String",
-            DefaultValue = "gpt-4o-realtime-preview"
+            Required = true
         },
         new ProviderConfigField
         {
-            Key = "baseUrl",
-            Label = "Base URL",
+            Key = "deploymentName",
+            Label = "Deployment Name",
             Type = "String",
-            DefaultValue = "wss://api.openai.com/v1/realtime"
+            Required = true
+        },
+        new ProviderConfigField
+        {
+            Key = "apiVersion",
+            Label = "API Version",
+            Type = "String",
+            DefaultValue = "2025-04-01-preview"
         }
     ];
 
     public void Configure(JsonElement configuration)
     {
-        _options = JsonSerializer.Deserialize<RealtimeConfig>(configuration,
+        _options = JsonSerializer.Deserialize<AzureRealtimeConfig>(configuration,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new InvalidOperationException("Failed to deserialize provider configuration.");
 
         if (string.IsNullOrWhiteSpace(_options.ApiKey))
             throw new InvalidOperationException("apiKey is required.");
+        if (string.IsNullOrWhiteSpace(_options.ResourceName))
+            throw new InvalidOperationException("resourceName is required.");
+        if (string.IsNullOrWhiteSpace(_options.DeploymentName))
+            throw new InvalidOperationException("deploymentName is required.");
     }
 
     public async Task<IVoiceSession> StartSessionAsync(
@@ -51,7 +62,7 @@ public sealed class OpenAiRealtimeVoiceProvider : ILlmVoiceProvider
         if (_options is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
-        var session = new OpenAiVoiceSession(_options, config);
+        var session = new AzureOpenAiVoiceSession(_options, config);
         await session.ConnectAsync(ct);
         return session;
     }

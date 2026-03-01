@@ -1,6 +1,6 @@
 namespace OpenAgent.LlmVoice.OpenAI.Models;
 
-public sealed class RealtimeOptions
+public sealed class RealtimeConfig
 {
     public string ApiKey { get; set; } = "";
     public string Model { get; set; } = "gpt-4o-realtime-preview";

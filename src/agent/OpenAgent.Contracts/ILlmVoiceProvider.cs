@@ -4,7 +4,7 @@ namespace OpenAgent.Contracts;
 
 public interface ILlmVoiceProvider: IConfigurable
 {
-    Task<IVoiceSession> StartSessionAsync(VoiceSessionConfig config, CancellationToken ct = default);
+    Task<IVoiceSession> StartSessionAsync(VoiceSessionOptions config, CancellationToken ct = default);
 }
 
 public interface IVoiceSession : IAsyncDisposable
@@ -17,4 +17,5 @@ public interface IVoiceSession : IAsyncDisposable
     IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync(CancellationToken ct = default);
 
     Task CancelResponseAsync(CancellationToken ct = default);
+    Task SendToolResultAsync(string callId, string result, CancellationToken ct = default);
 }

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace OpenAgent.LlmVoice.OpenAI.Models;
+namespace OpenAgent.LlmVoice.OpenAIAzure.Models;
 
 internal sealed class RealtimeEnvelope
 {

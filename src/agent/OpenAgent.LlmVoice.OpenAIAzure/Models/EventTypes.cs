@@ -1,4 +1,4 @@
-namespace OpenAgent.LlmVoice.OpenAI.Protocol;
+namespace OpenAgent.LlmVoice.OpenAIAzure.Protocol;
 
 internal static class EventTypes
 {

@@ -5,14 +5,14 @@ using System.Text.Json;
 using System.Threading.Channels;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Voice;
-using OpenAgent.LlmVoice.OpenAI.Protocol;
-using OpenAgent.LlmVoice.OpenAI.Models;
+using OpenAgent.LlmVoice.OpenAIAzure.Protocol;
+using OpenAgent.LlmVoice.OpenAIAzure.Models;
 
-namespace OpenAgent.LlmVoice.OpenAI;
+namespace OpenAgent.LlmVoice.OpenAIAzure;
 
-internal sealed class OpenAiVoiceSession : IVoiceSession
+internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 {
-    private readonly RealtimeConfig _config;
+    private readonly AzureRealtimeConfig _config;
     private readonly VoiceSessionOptions _options;
     private readonly ClientWebSocket _ws = new();
     private readonly Channel<VoiceEvent> _channel = Channel.CreateUnbounded<VoiceEvent>(
@@ -23,7 +23,7 @@ internal sealed class OpenAiVoiceSession : IVoiceSession
 
     public string SessionId { get; private set; } = string.Empty;
 
-    internal OpenAiVoiceSession(RealtimeConfig config, VoiceSessionOptions options)
+    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, VoiceSessionOptions options)
     {
         _config = config;
         _options = options;
@@ -31,10 +31,11 @@ internal sealed class OpenAiVoiceSession : IVoiceSession
 
     internal async Task ConnectAsync(CancellationToken ct)
     {
-        var uri = new Uri($"{_config.BaseUrl}?model={_config.Model}");
+        var uri = new Uri(
+            $"wss://{_config.ResourceName}.openai.azure.com/openai/realtime" +
+            $"?api-version={_config.ApiVersion}&deployment={_config.DeploymentName}");
 
-        _ws.Options.SetRequestHeader("Authorization", $"Bearer {_config.ApiKey}");
-        _ws.Options.SetRequestHeader("OpenAI-Beta", "realtime=v1");
+        _ws.Options.SetRequestHeader("api-key", _config.ApiKey);
 
         await _ws.ConnectAsync(uri, ct);
 
