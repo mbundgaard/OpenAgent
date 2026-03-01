@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
 
 namespace OpenAgent.Api.Endpoints;
@@ -32,11 +33,7 @@ public static class WebSocketVoiceEndpoints
                 return;
             }
 
-            if (store.Get(conversationId) is null)
-            {
-                context.Response.StatusCode = 404;
-                return;
-            }
+            store.GetOrCreate(conversationId, "app", ConversationType.Voice);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
             var session = await sessionManager.GetOrCreateSessionAsync(conversationId, context.RequestAborted);
