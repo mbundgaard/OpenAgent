@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.LlmVoice.OpenAIAzure.Models;
 using OpenAgent.Models.Providers;
@@ -10,7 +11,7 @@ namespace OpenAgent.LlmVoice.OpenAIAzure;
 /// Voice provider that connects to the Azure OpenAI Realtime API over WebSockets.
 /// Requires apiKey, resourceName, and deploymentName to be configured before use.
 /// </summary>
-public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic) : ILlmVoiceProvider
+public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILogger<AzureOpenAiRealtimeVoiceProvider> logger) : ILlmVoiceProvider
 {
     private AzureRealtimeConfig? _config;
 
@@ -60,6 +61,9 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic) : I
             throw new InvalidOperationException("resourceName is required.");
         if (string.IsNullOrWhiteSpace(_config.DeploymentName))
             throw new InvalidOperationException("deploymentName is required.");
+
+        logger.LogInformation("Voice provider configured for deployment {DeploymentName} on {ResourceName}",
+            _config.DeploymentName, _config.ResourceName);
     }
 
     public async Task<IVoiceSession> StartSessionAsync(Conversation conversation, CancellationToken ct = default)
@@ -67,8 +71,11 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic) : I
         if (_config is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
-        var session = new AzureOpenAiVoiceSession(_config, conversation, agentLogic);
+        logger.LogDebug("Starting voice session for conversation {ConversationId}", conversation.Id);
+        var session = new AzureOpenAiVoiceSession(_config, conversation, agentLogic, logger);
         await session.ConnectAsync(ct);
+        logger.LogInformation("Voice session {SessionId} started for conversation {ConversationId}",
+            session.SessionId, conversation.Id);
         return session;
     }
 }

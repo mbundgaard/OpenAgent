@@ -10,6 +10,9 @@ public interface IConversationStore : IConfigurable
     /// <summary>Returns the existing conversation or creates a new one with the given ID.</summary>
     Conversation GetOrCreate(string conversationId, string source, ConversationType type);
 
+    /// <summary>Returns all conversations.</summary>
+    IReadOnlyList<Conversation> GetAll();
+
     /// <summary>Returns the conversation with the given ID, or null if not found.</summary>
     Conversation? Get(string conversationId);
 

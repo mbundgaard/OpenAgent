@@ -28,7 +28,8 @@ builder.Services.AddSingleton<IConversationStore, InMemoryConversationStoreProvi
 builder.Services.AddSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>();
 builder.Services.AddSingleton<ILlmTextProvider, AzureOpenAiTextProvider>();
 builder.Services.AddSingleton<IVoiceSessionManager, VoiceSessionManager>();
-builder.Services.AddSingleton<IConfigStore, FileConfigStore>(_ => new FileConfigStore(builder.Environment.ContentRootPath));
+builder.Services.AddSingleton<IConfigStore, FileConfigStore>(sp =>
+    new FileConfigStore(builder.Environment.ContentRootPath, sp.GetRequiredService<ILogger<FileConfigStore>>()));
 
 builder.Services.AddSingleton<IConfigurable>(loggingConfig);
 builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<IConversationStore>());

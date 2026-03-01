@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.LlmText.OpenAIAzure.Models;
 using OpenAgent.Models.Conversations;
@@ -8,7 +9,7 @@ using OpenAgent.Models.Text;
 
 namespace OpenAgent.LlmText.OpenAIAzure;
 
-public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextProvider, IDisposable
+public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<AzureOpenAiTextProvider> logger) : ILlmTextProvider, IDisposable
 {
     private AzureOpenAiTextConfig? _config;
     private HttpClient? _httpClient;
@@ -42,6 +43,9 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
             BaseAddress = new Uri($"https://{_config.ResourceName}.openai.azure.com/")
         };
         _httpClient.DefaultRequestHeaders.Add("api-key", _config.ApiKey);
+
+        logger.LogInformation("Text provider configured for deployment {DeploymentName} on {ResourceName}",
+            _config.DeploymentName, _config.ResourceName);
     }
 
     public void Dispose() => _httpClient?.Dispose();
@@ -52,6 +56,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
         var conversationId = conversation.Id;
+        logger.LogDebug("CompleteAsync called for conversation {ConversationId}", conversationId);
 
         // Store user message
         agentLogic.AddMessage(conversationId, new Message
@@ -105,6 +110,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
             if (!httpResponse.IsSuccessStatusCode)
             {
                 var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                logger.LogError("Azure OpenAI returned {StatusCode} for conversation {ConversationId}: {ErrorBody}",
+                    (int)httpResponse.StatusCode, conversationId, errorBody);
                 throw new HttpRequestException(
                     $"Azure OpenAI returned {(int)httpResponse.StatusCode}: {errorBody}");
             }
@@ -121,12 +128,17 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
             // If the model wants to call tools
             if (message.ToolCalls is { Count: > 0 })
             {
+                logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
+                    conversationId, string.Join(", ", message.ToolCalls.Select(t => t.Function.Name)));
+
                 // Add assistant message with tool calls to the conversation
                 chatMessages.Add(message);
 
                 // Execute each tool call and add results
                 foreach (var toolCall in message.ToolCalls)
                 {
+                    logger.LogDebug("Executing tool {ToolName} for conversation {ConversationId}",
+                        toolCall.Function.Name, conversationId);
                     var result = await agentLogic.ExecuteToolAsync(
                         conversationId, toolCall.Function.Name, toolCall.Function.Arguments, ct);
 
@@ -152,9 +164,13 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
                 Content = content
             });
 
+            logger.LogDebug("Completion finished for conversation {ConversationId}, {ContentLength} chars",
+                conversationId, content.Length);
             return new TextResponse { Content = content, Role = "assistant" };
         }
 
+        logger.LogError("Tool call loop exceeded {MaxRounds} rounds for conversation {ConversationId}",
+            maxToolRounds, conversationId);
         throw new InvalidOperationException($"Tool call loop exceeded {maxToolRounds} rounds.");
     }
 }

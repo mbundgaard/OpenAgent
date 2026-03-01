@@ -17,6 +17,12 @@ public static class ConversationEndpoints
     {
         var group = app.MapGroup("/api/conversations");
 
+        group.MapGet("/", (IConversationStore store) =>
+        {
+            var conversations = store.GetAll();
+            return Results.Ok(conversations.Select(c => new { c.Id, c.Source, Type = c.Type.ToString(), c.CreatedAt }));
+        });
+
         group.MapGet("/{conversationId}", (string conversationId, IConversationStore store) =>
         {
             var conversation = store.Get(conversationId);

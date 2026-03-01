@@ -29,6 +29,8 @@ public sealed class InMemoryConversationStoreProvider : IConversationStore
             _ => new Conversation { Id = conversationId, Source = source, Type = type });
     }
 
+    public IReadOnlyList<Conversation> GetAll() => _conversations.Values.ToList();
+
     public Conversation? Get(string conversationId) => _conversations.GetValueOrDefault(conversationId);
 
     public void Update(Conversation conversation) => _conversations[conversation.Id] = conversation;

@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
@@ -20,6 +21,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
     private readonly AzureRealtimeConfig _config;
     private readonly Conversation _conversation;
     private readonly IAgentLogic _agentLogic;
+    private readonly ILogger _logger;
     private readonly ClientWebSocket _ws = new();
     private readonly Channel<VoiceEvent> _channel = Channel.CreateUnbounded<VoiceEvent>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
@@ -29,11 +31,12 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     public string SessionId { get; private set; } = string.Empty;
 
-    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, Conversation conversation, IAgentLogic agentLogic)
+    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, Conversation conversation, IAgentLogic agentLogic, ILogger logger)
     {
         _config = config;
         _conversation = conversation;
         _agentLogic = agentLogic;
+        _logger = logger;
     }
 
     internal async Task ConnectAsync(CancellationToken ct)
@@ -44,7 +47,9 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
         _ws.Options.SetRequestHeader("api-key", _config.ApiKey);
 
+        _logger.LogDebug("Connecting to Azure OpenAI Realtime at {Uri}", uri);
         await _ws.ConnectAsync(uri, ct);
+        _logger.LogDebug("WebSocket connected for conversation {ConversationId}", _conversation.Id);
 
         _receiveTask = ReceiveLoopAsync(_receiveCts.Token);
 
@@ -196,7 +201,10 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             }
         }
         catch (OperationCanceledException) { /* expected on dispose */ }
-        catch (WebSocketException) { /* connection lost */ }
+        catch (WebSocketException ex)
+        {
+            _logger.LogWarning(ex, "WebSocket connection lost for conversation {ConversationId}", _conversation.Id);
+        }
         finally
         {
             _channel.Writer.TryComplete();
@@ -216,11 +224,13 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             {
                 try
                 {
+                    _logger.LogDebug("Executing voice tool {ToolName} for conversation {ConversationId}", name, conversationId);
                     var result = await _agentLogic.ExecuteToolAsync(conversationId, name, arguments, ct);
                     await SendToolResultAndContinueAsync(callId, result, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    _logger.LogError(ex, "Voice tool {ToolName} failed for conversation {ConversationId}", name, conversationId);
                     var errorResult = JsonSerializer.Serialize(new { error = ex.Message });
                     await SendToolResultAndContinueAsync(callId, errorResult, ct);
                 }
@@ -256,6 +266,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             session.TryGetProperty("id", out var idProp))
         {
             SessionId = idProp.GetString() ?? "";
+            _logger.LogDebug("Session created with ID {SessionId} for conversation {ConversationId}",
+                SessionId, _conversation.Id);
         }
         return null;
     }
