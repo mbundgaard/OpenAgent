@@ -1,7 +1,6 @@
 using OpenAgent;
 using OpenAgent.Api.Chat;
 using OpenAgent.Api.Conversations;
-using OpenAgent.Api.Voice;
 using OpenAgent.Api.WebSockets;
 using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.InMemory;
