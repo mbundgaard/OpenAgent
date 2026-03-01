@@ -3,6 +3,10 @@ using System.Text.Json.Serialization;
 
 namespace OpenAgent.LlmVoice.OpenAIAzure.Models;
 
+/// <summary>
+/// Deserialization target for incoming Azure OpenAI Realtime WebSocket messages.
+/// A superset of all possible server event fields — only the relevant ones are populated per event type.
+/// </summary>
 internal sealed class RealtimeEnvelope
 {
     [JsonPropertyName("type")]
@@ -42,6 +46,9 @@ internal sealed class RealtimeEnvelope
     public string? ItemId { get; set; }
 }
 
+/// <summary>
+/// Serialization model for outgoing Azure OpenAI Realtime WebSocket messages.
+/// </summary>
 internal sealed class ClientEvent
 {
     [JsonPropertyName("type")]
@@ -49,7 +56,7 @@ internal sealed class ClientEvent
 
     [JsonPropertyName("session")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? Session { get; set; }
+    public RealtimeSessionConfig? Session { get; set; }
 
     [JsonPropertyName("audio")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

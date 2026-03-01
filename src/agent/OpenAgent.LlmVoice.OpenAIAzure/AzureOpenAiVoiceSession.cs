@@ -10,6 +10,10 @@ using OpenAgent.LlmVoice.OpenAIAzure.Models;
 
 namespace OpenAgent.LlmVoice.OpenAIAzure;
 
+/// <summary>
+/// A live voice session backed by an Azure OpenAI Realtime WebSocket connection.
+/// Streams audio in/out, handles server VAD, transcripts, and tool-call execution.
+/// </summary>
 internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 {
     private readonly AzureRealtimeConfig _config;
@@ -100,35 +104,32 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
     private async Task SendSessionUpdateAsync(CancellationToken ct)
     {
         var tools = _agentLogic.Tools.Count > 0
-            ? _agentLogic.Tools.Select(t => new
+            ? _agentLogic.Tools.Select(t => new RealtimeToolDefinition
             {
-                type = "function",
-                name = t.Name,
-                description = t.Description ?? "",
-                parameters = t.Parameters
-            }).ToArray()
+                Name = t.Name,
+                Description = t.Description ?? "",
+                Parameters = t.Parameters
+            }).ToList()
             : null;
 
-        var sessionConfig = new
+        var sessionConfig = new RealtimeSessionConfig
         {
-            modalities = new[] { "audio", "text" },
-            voice = _options.Voice ?? "alloy",
-            instructions = _agentLogic.SystemPrompt,
-            input_audio_format = "pcm16",
-            output_audio_format = "pcm16",
-            input_audio_transcription = new { model = "whisper-1" },
-            turn_detection = new { type = "server_vad" },
-            tools,
-            tool_choice = tools is not null ? "auto" : (string?)null
+            Modalities = ["audio", "text"],
+            Voice = _options.Voice ?? "alloy",
+            Instructions = _agentLogic.SystemPrompt,
+            InputAudioFormat = "pcm16",
+            OutputAudioFormat = "pcm16",
+            InputAudioTranscription = new InputAudioTranscriptionConfig { Model = "whisper-1" },
+            TurnDetection = new TurnDetectionConfig { Type = "server_vad" },
+            Tools = tools,
+            ToolChoice = tools is not null ? "auto" : null
         };
 
-        var evt = new ClientEvent
+        await SendEventAsync(new ClientEvent
         {
             Type = EventTypes.SessionUpdate,
             Session = sessionConfig
-        };
-
-        await SendEventAsync(evt, ct);
+        }, ct);
     }
 
     private async Task SendToolResultAndContinueAsync(string callId, string result, CancellationToken ct)
