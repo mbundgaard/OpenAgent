@@ -14,6 +14,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 {
     private readonly AzureRealtimeConfig _config;
     private readonly VoiceSessionOptions _options;
+    private readonly IAgentLogic _agentLogic;
     private readonly ClientWebSocket _ws = new();
     private readonly Channel<VoiceEvent> _channel = Channel.CreateUnbounded<VoiceEvent>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
@@ -23,10 +24,11 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     public string SessionId { get; private set; } = string.Empty;
 
-    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, VoiceSessionOptions options)
+    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, VoiceSessionOptions options, IAgentLogic agentLogic)
     {
         _config = config;
         _options = options;
+        _agentLogic = agentLogic;
     }
 
     internal async Task ConnectAsync(CancellationToken ct)
@@ -64,21 +66,6 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         await SendEventAsync(new ClientEvent { Type = EventTypes.ResponseCancel }, ct);
     }
 
-    public async Task SendToolResultAsync(string callId, string result, CancellationToken ct = default)
-    {
-        var evt = new ClientEvent
-        {
-            Type = EventTypes.ConversationItemCreate,
-            Item = new
-            {
-                type = "function_call_output",
-                call_id = callId,
-                output = result
-            }
-        };
-        await SendEventAsync(evt, ct);
-    }
-
     public async IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync([EnumeratorCancellation] CancellationToken ct = default)
     {
         await foreach (var evt in _channel.Reader.ReadAllAsync(ct))
@@ -112,25 +99,27 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     private async Task SendSessionUpdateAsync(CancellationToken ct)
     {
-        var tools = _options.Tools?.Select(t => new
-        {
-            type = "function",
-            name = t.Name,
-            description = t.Description ?? "",
-            parameters = t.Parameters
-        }).ToArray();
+        var tools = _agentLogic.Tools.Count > 0
+            ? _agentLogic.Tools.Select(t => new
+            {
+                type = "function",
+                name = t.Name,
+                description = t.Description ?? "",
+                parameters = t.Parameters
+            }).ToArray()
+            : null;
 
         var sessionConfig = new
         {
             modalities = new[] { "audio", "text" },
             voice = _options.Voice ?? "alloy",
-            instructions = _options.SystemPrompt ?? "",
+            instructions = _agentLogic.SystemPrompt,
             input_audio_format = "pcm16",
             output_audio_format = "pcm16",
             input_audio_transcription = new { model = "whisper-1" },
             turn_detection = new { type = "server_vad" },
             tools,
-            tool_choice = tools is { Length: > 0 } ? "auto" : (string?)null
+            tool_choice = tools is not null ? "auto" : (string?)null
         };
 
         var evt = new ClientEvent
@@ -139,6 +128,21 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             Session = sessionConfig
         };
 
+        await SendEventAsync(evt, ct);
+    }
+
+    private async Task SendToolResultAsync(string callId, string result, CancellationToken ct)
+    {
+        var evt = new ClientEvent
+        {
+            Type = EventTypes.ConversationItemCreate,
+            Item = new
+            {
+                type = "function_call_output",
+                call_id = callId,
+                output = result
+            }
+        };
         await SendEventAsync(evt, ct);
     }
 
@@ -185,11 +189,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
                 if (envelope is null) continue;
 
-                var voiceEvent = MapEvent(envelope);
-                if (voiceEvent is not null)
-                {
-                    await _channel.Writer.WriteAsync(voiceEvent, ct);
-                }
+                await HandleEnvelopeAsync(envelope, ct);
             }
         }
         catch (OperationCanceledException) { /* expected on dispose */ }
@@ -197,6 +197,26 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         finally
         {
             _channel.Writer.TryComplete();
+        }
+    }
+
+    private async Task HandleEnvelopeAsync(RealtimeEnvelope envelope, CancellationToken ct)
+    {
+        if (envelope.Type == EventTypes.FunctionCallArgumentsDone)
+        {
+            var name = envelope.Name ?? "";
+            var arguments = envelope.Arguments ?? "";
+            var callId = envelope.CallId ?? "";
+
+            var toolResult = await _agentLogic.ExecuteToolAsync(name, arguments, ct);
+            await SendToolResultAsync(callId, toolResult, ct);
+            return;
+        }
+
+        var voiceEvent = MapEvent(envelope);
+        if (voiceEvent is not null)
+        {
+            await _channel.Writer.WriteAsync(voiceEvent, ct);
         }
     }
 
@@ -211,10 +231,6 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         EventTypes.InputAudioTranscriptionCompleted => new TranscriptDone(envelope.Transcript ?? "", TranscriptSource.User),
         EventTypes.ResponseAudioTranscriptDelta => new TranscriptDelta(envelope.Delta ?? "", TranscriptSource.Assistant),
         EventTypes.ResponseAudioTranscriptDone => new TranscriptDone(envelope.Transcript ?? "", TranscriptSource.Assistant),
-        EventTypes.FunctionCallArgumentsDelta => new ToolCallDelta(
-            envelope.CallId ?? "", envelope.Name ?? "", envelope.Delta ?? ""),
-        EventTypes.FunctionCallArgumentsDone => new ToolCallDone(
-            envelope.CallId ?? "", envelope.Name ?? "", envelope.Arguments ?? ""),
         EventTypes.Error => new SessionError(ExtractErrorMessage(envelope)),
         _ => null
     };

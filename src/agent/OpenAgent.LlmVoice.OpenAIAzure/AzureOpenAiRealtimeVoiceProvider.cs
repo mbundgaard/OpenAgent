@@ -6,9 +6,9 @@ using OpenAgent.Models.Voice;
 
 namespace OpenAgent.LlmVoice.OpenAIAzure;
 
-public sealed class AzureOpenAiRealtimeVoiceProvider : ILlmVoiceProvider
+public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic) : ILlmVoiceProvider
 {
-    private AzureRealtimeConfig? _options;
+    private AzureRealtimeConfig? _config;
 
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
@@ -44,25 +44,24 @@ public sealed class AzureOpenAiRealtimeVoiceProvider : ILlmVoiceProvider
 
     public void Configure(JsonElement configuration)
     {
-        _options = JsonSerializer.Deserialize<AzureRealtimeConfig>(configuration,
+        _config = JsonSerializer.Deserialize<AzureRealtimeConfig>(configuration,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new InvalidOperationException("Failed to deserialize provider configuration.");
 
-        if (string.IsNullOrWhiteSpace(_options.ApiKey))
+        if (string.IsNullOrWhiteSpace(_config.ApiKey))
             throw new InvalidOperationException("apiKey is required.");
-        if (string.IsNullOrWhiteSpace(_options.ResourceName))
+        if (string.IsNullOrWhiteSpace(_config.ResourceName))
             throw new InvalidOperationException("resourceName is required.");
-        if (string.IsNullOrWhiteSpace(_options.DeploymentName))
+        if (string.IsNullOrWhiteSpace(_config.DeploymentName))
             throw new InvalidOperationException("deploymentName is required.");
     }
 
-    public async Task<IVoiceSession> StartSessionAsync(
-        VoiceSessionOptions config, CancellationToken ct = default)
+    public async Task<IVoiceSession> StartSessionAsync(VoiceSessionOptions options, CancellationToken ct = default)
     {
-        if (_options is null)
+        if (_config is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
-        var session = new AzureOpenAiVoiceSession(_options, config);
+        var session = new AzureOpenAiVoiceSession(_config, options, agentLogic);
         await session.ConnectAsync(ct);
         return session;
     }

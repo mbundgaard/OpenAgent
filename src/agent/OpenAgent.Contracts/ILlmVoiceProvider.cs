@@ -17,5 +17,4 @@ public interface IVoiceSession : IAsyncDisposable
     IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync(CancellationToken ct = default);
 
     Task CancelResponseAsync(CancellationToken ct = default);
-    Task SendToolResultAsync(string callId, string result, CancellationToken ct = default);
 }
