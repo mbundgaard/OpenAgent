@@ -2,7 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenAgent.Api\OpenAgent.Api.csproj" />
-    <ProjectReference Include="..\OpenAgent.ConversationStore.InMemory\OpenAgent.ConversationStore.InMemory.csproj" />
+    <ProjectReference Include="..\OpenAgent.ConversationStore.Sqlite\OpenAgent.ConversationStore.Sqlite.csproj" />
     <ProjectReference Include="..\OpenAgent.Contracts\OpenAgent.Contracts.csproj" />
     <ProjectReference Include="..\OpenAgent.LlmVoice.OpenAIAzure\OpenAgent.LlmVoice.OpenAIAzure.csproj" />
     <ProjectReference Include="..\OpenAgent.LlmText.OpenAIAzure\OpenAgent.LlmText.OpenAIAzure.csproj" />

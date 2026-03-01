@@ -21,7 +21,7 @@ src/agent/
       WebSocketTextEndpoints.cs           Bidirectional text chat (WebSocket)
   OpenAgent.Contracts/                    Interfaces — IAgentLogic, IConversationStore, ILlmTextProvider, ILlmVoiceProvider, IVoiceSessionManager
   OpenAgent.Models/                       Shared models — Conversation, Message, ConversationType, voice events
-  OpenAgent.ConversationStore.InMemory/   In-memory store for dev/test
+  OpenAgent.ConversationStore.Sqlite/     SQLite persistent store (conversations.db)
   OpenAgent.LlmText.OpenAIAzure/         Azure OpenAI Chat Completions provider
   OpenAgent.LlmVoice.OpenAIAzure/        Azure OpenAI Realtime voice provider
   OpenAgent.Tests/                        Integration tests
@@ -85,7 +85,7 @@ cd src/agent && dotnet test
 - WebSocket is just transport — which LLM a WebSocket endpoint uses depends on the route, not the protocol
 - VoiceSessionManager is pure session lifecycle (create, track, close) — no conversation state updates
 - Text provider has a tool call loop with a 10-round safety cap
-- In-memory conversation store is for dev/test only — production will need a persistent implementation
+- SQLite conversation store (conversations.db in dataPath) — persistent across restarts
 
 ## Memory
 
@@ -99,6 +99,5 @@ Session-to-session notes. Update this section as decisions are made — don't us
 
 ### Upcoming Work
 - Telegram channel adapter (IChannelProvider) — designed but not yet built
-- Persistent conversation store — replace in-memory with a real database
 - Streaming text API — ILlmTextProvider needs IAsyncEnumerable variant for WebSocketTextEndpoints
 - System prompt varies by ConversationType — AgentLogic needs to use conversation type to select prompt

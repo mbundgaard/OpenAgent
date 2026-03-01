@@ -12,9 +12,9 @@ public sealed class FileConfigStore : IConfigStore
     private readonly string _directory;
     private readonly ILogger<FileConfigStore> _logger;
 
-    public FileConfigStore(string contentRootPath, ILogger<FileConfigStore> logger)
+    public FileConfigStore(AgentEnvironment environment, ILogger<FileConfigStore> logger)
     {
-        _directory = Path.Combine(contentRootPath, "config");
+        _directory = Path.Combine(environment.DataPath, "config");
         _logger = logger;
         Directory.CreateDirectory(_directory);
         _logger.LogInformation("Config store using directory {ConfigDirectory}", _directory);

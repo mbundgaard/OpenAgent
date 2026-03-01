@@ -8,6 +8,7 @@
 
 # Provider config (contains API keys)
 src/agent/OpenAgent/config/
+src/agent/OpenAgent/data/
 
 # User-specific files
 *.rsuser

@@ -2,13 +2,21 @@ using OpenAgent;
 using OpenAgent.Api.Endpoints;
 using OpenAgent.ConfigStore.File;
 using OpenAgent.Contracts;
-using OpenAgent.ConversationStore.InMemory;
+using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.LlmText.OpenAIAzure;
 using OpenAgent.LlmVoice.OpenAIAzure;
 using Serilog;
 using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var environment = new AgentEnvironment
+{
+    DataPath = Environment.GetEnvironmentVariable("DATA_DIR") ?? "/home/data"
+};
+Directory.CreateDirectory(environment.DataPath);
+
+builder.Services.AddSingleton(environment);
 
 var loggingConfig = new LoggingConfig();
 
@@ -17,19 +25,20 @@ builder.Host.UseSerilog((context, serilog) =>
     serilog
         .MinimumLevel.ControlledBy(loggingConfig.DefaultLevel)
         .WriteTo.Console()
-        .WriteTo.File(new CompactJsonFormatter(), "logs/log-.jsonl", rollingInterval: RollingInterval.Day);
+        .WriteTo.File(new CompactJsonFormatter(),
+            Path.Combine(environment.DataPath, "logs", "log-.jsonl"), rollingInterval: RollingInterval.Day);
 
     foreach (var (module, levelSwitch) in loggingConfig.Overrides)
         serilog.MinimumLevel.Override(module, levelSwitch);
 });
 
 builder.Services.AddSingleton<IAgentLogic, AgentLogic>();
-builder.Services.AddSingleton<IConversationStore, InMemoryConversationStoreProvider>();
+
+builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>();
 builder.Services.AddSingleton<ILlmTextProvider, AzureOpenAiTextProvider>();
 builder.Services.AddSingleton<IVoiceSessionManager, VoiceSessionManager>();
-builder.Services.AddSingleton<IConfigStore, FileConfigStore>(sp =>
-    new FileConfigStore(builder.Environment.ContentRootPath, sp.GetRequiredService<ILogger<FileConfigStore>>()));
+builder.Services.AddSingleton<IConfigStore, FileConfigStore>();
 
 builder.Services.AddSingleton<IConfigurable>(loggingConfig);
 builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<IConversationStore>());
