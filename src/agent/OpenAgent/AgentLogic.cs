@@ -1,12 +1,24 @@
 using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 
 namespace OpenAgent;
 
-internal sealed class AgentLogic : IAgentLogic
+/// <summary>
+/// Default no-op agent implementation. Returns an empty system prompt and no tools.
+/// Placeholder until a real agent is configured.
+/// </summary>
+internal sealed class AgentLogic(IConversationStore store) : IAgentLogic
 {
     public string SystemPrompt => "";
 
     public IReadOnlyList<AgentToolDefinition> Tools => [];
 
-    public Task<string> ExecuteToolAsync(string conversationId, string name, string arguments, CancellationToken ct = default) => Task.FromResult("{}");
+    public Task<string> ExecuteToolAsync(string conversationId, string name, string arguments, CancellationToken ct = default)
+        => Task.FromResult("{}");
+
+    public void AddMessage(string conversationId, Message message)
+        => store.AddMessage(conversationId, message);
+
+    public IReadOnlyList<Message> GetMessages(string conversationId)
+        => store.GetMessages(conversationId);
 }
