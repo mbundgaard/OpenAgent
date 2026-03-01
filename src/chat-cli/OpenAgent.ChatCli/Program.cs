@@ -3,6 +3,8 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
+Console.OutputEncoding = Encoding.UTF8;
+
 var baseUrl = args.Length > 0 ? args[0] : "http://localhost:5264";
 var mode = args.Length > 1 ? args[1].ToLowerInvariant() : "websocket";
 
@@ -136,11 +138,21 @@ static async Task<bool> RunWebSocketAsync(string baseUrl, string conversationId)
         {
             try
             {
-                var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+                // Accumulate frames until we have a complete message
+                var offset = 0;
+                WebSocketReceiveResult result;
+                do
+                {
+                    result = await ws.ReceiveAsync(
+                        new ArraySegment<byte>(buffer, offset, buffer.Length - offset),
+                        CancellationToken.None);
+                    offset += result.Count;
+                } while (!result.EndOfMessage);
+
                 if (result.MessageType == WebSocketMessageType.Close)
                     break;
 
-                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                var json = Encoding.UTF8.GetString(buffer, 0, offset);
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 

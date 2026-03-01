@@ -69,32 +69,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             Content = userInput
         });
 
-        // Build request messages: system prompt + conversation history
-        var chatMessages = new List<ChatMessage>();
-
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type);
-        if (!string.IsNullOrEmpty(systemPrompt))
-        {
-            chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
-        }
-
-        foreach (var msg in agentLogic.GetMessages(conversationId))
-        {
-            chatMessages.Add(new ChatMessage { Role = msg.Role, Content = msg.Content });
-        }
-
-        // Build tools
-        List<ChatTool>? tools = agentLogic.Tools.Count > 0
-            ? agentLogic.Tools.Select(t => new ChatTool
-            {
-                Function = new ChatFunction
-                {
-                    Name = t.Name,
-                    Description = t.Description,
-                    Parameters = t.Parameters
-                }
-            }).ToList()
-            : null;
+        var chatMessages = BuildChatMessages(conversation);
+        var tools = BuildTools();
 
         // Completion loop (handles tool calls)
         const int maxToolRounds = 10;
@@ -131,7 +107,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             if (message.ToolCalls is { Count: > 0 })
             {
                 logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
-                    conversationId, string.Join(", ", message.ToolCalls.Select(t => t.Function.Name)));
+                    conversationId, string.Join(", ", message.ToolCalls.Select(t => t.Function!.Name)));
 
                 // Add assistant message with tool calls to the conversation
                 chatMessages.Add(message);
@@ -140,9 +116,9 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 foreach (var toolCall in message.ToolCalls)
                 {
                     logger.LogDebug("Executing tool {ToolName} for conversation {ConversationId}",
-                        toolCall.Function.Name, conversationId);
+                        toolCall.Function!.Name, conversationId);
                     var result = await agentLogic.ExecuteToolAsync(
-                        conversationId, toolCall.Function.Name, toolCall.Function.Arguments, ct);
+                        conversationId, toolCall.Function.Name!, toolCall.Function.Arguments!, ct);
 
                     chatMessages.Add(new ChatMessage
                     {
@@ -185,6 +161,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         var conversationId = conversation.Id;
         logger.LogDebug("StreamAsync called for conversation {ConversationId}", conversationId);
 
+        // Store user message
         agentLogic.AddMessage(conversationId, new Message
         {
             Id = Guid.NewGuid().ToString(),
@@ -195,62 +172,139 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
         var chatMessages = BuildChatMessages(conversation);
         var tools = BuildTools();
-
-        var request = new ChatCompletionRequest
-        {
-            Messages = chatMessages,
-            Tools = tools,
-            ToolChoice = tools is not null ? "auto" : null,
-            Stream = true
-        };
-
         var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
 
-        var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+        // Completion loop (handles tool calls across streaming rounds)
+        const int maxToolRounds = 10;
+        for (var round = 0; round < maxToolRounds; round++)
         {
-            Content = JsonContent.Create(request)
-        };
-        var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
-
-        if (!httpResponse.IsSuccessStatusCode)
-        {
-            var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
-            logger.LogError("Azure OpenAI returned {StatusCode} for conversation {ConversationId}: {ErrorBody}",
-                (int)httpResponse.StatusCode, conversationId, errorBody);
-            throw new HttpRequestException(
-                $"Azure OpenAI returned {(int)httpResponse.StatusCode}: {errorBody}");
-        }
-
-        var fullContent = new System.Text.StringBuilder();
-        using var stream = await httpResponse.Content.ReadAsStreamAsync(ct);
-        using var reader = new StreamReader(stream);
-
-        while (await reader.ReadLineAsync(ct) is { } line)
-        {
-            if (!line.StartsWith("data: ")) continue;
-
-            var data = line["data: ".Length..];
-            if (data == "[DONE]") break;
-
-            var chunk = JsonSerializer.Deserialize<ChatCompletionResponse>(data);
-            var delta = chunk?.Choices?.FirstOrDefault()?.Delta;
-            if (delta?.Content is { } content && content.Length > 0)
+            var request = new ChatCompletionRequest
             {
-                fullContent.Append(content);
-                yield return content;
+                Messages = chatMessages,
+                Tools = tools,
+                ToolChoice = tools is not null ? "auto" : null,
+                Stream = true
+            };
+
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = JsonContent.Create(request)
+            };
+            var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                logger.LogError("Azure OpenAI returned {StatusCode} for conversation {ConversationId}: {ErrorBody}",
+                    (int)httpResponse.StatusCode, conversationId, errorBody);
+                throw new HttpRequestException(
+                    $"Azure OpenAI returned {(int)httpResponse.StatusCode}: {errorBody}");
             }
+
+            // Read SSE stream, accumulating text content and tool call fragments
+            var fullContent = new System.Text.StringBuilder();
+            var toolCallAccumulator = new Dictionary<int, (string Id, string Name, System.Text.StringBuilder Args)>();
+            string? finishReason = null;
+
+            using var stream = await httpResponse.Content.ReadAsStreamAsync(ct);
+            using var reader = new StreamReader(stream);
+
+            while (await reader.ReadLineAsync(ct) is { } line)
+            {
+                if (!line.StartsWith("data: ")) continue;
+
+                var data = line["data: ".Length..];
+                if (data == "[DONE]") break;
+
+                var chunk = JsonSerializer.Deserialize<ChatCompletionResponse>(data);
+                var choice = chunk?.Choices?.FirstOrDefault();
+                if (choice is null) continue;
+
+                finishReason = choice.FinishReason ?? finishReason;
+                var delta = choice.Delta;
+                if (delta is null) continue;
+
+                // Accumulate text content and yield to caller
+                if (delta.Content is { Length: > 0 } content)
+                {
+                    fullContent.Append(content);
+                    yield return content;
+                }
+
+                // Accumulate streamed tool call fragments (name and arguments arrive incrementally)
+                if (delta.ToolCalls is { Count: > 0 })
+                {
+                    foreach (var tc in delta.ToolCalls)
+                    {
+                        var idx = tc.Index ?? 0;
+                        if (!toolCallAccumulator.ContainsKey(idx))
+                            toolCallAccumulator[idx] = (tc.Id ?? "", tc.Function?.Name ?? "", new System.Text.StringBuilder());
+
+                        var entry = toolCallAccumulator[idx];
+                        if (tc.Id is not null) entry.Id = tc.Id;
+                        if (tc.Function?.Name is not null) entry.Name = tc.Function.Name;
+                        if (tc.Function?.Arguments is not null) entry.Args.Append(tc.Function.Arguments);
+                        toolCallAccumulator[idx] = entry;
+                    }
+                }
+            }
+
+            // If the model requested tool calls, execute them and loop
+            if (finishReason == "tool_calls" && toolCallAccumulator.Count > 0)
+            {
+                logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
+                    conversationId, string.Join(", ", toolCallAccumulator.Values.Select(t => t.Name)));
+
+                // Add assistant message with accumulated tool calls
+                chatMessages.Add(new ChatMessage
+                {
+                    Role = "assistant",
+                    ToolCalls = toolCallAccumulator.OrderBy(kv => kv.Key).Select(kv => new ToolCall
+                    {
+                        Id = kv.Value.Id,
+                        Type = "function",
+                        Function = new ToolCallFunction
+                        {
+                            Name = kv.Value.Name,
+                            Arguments = kv.Value.Args.ToString()
+                        }
+                    }).ToList()
+                });
+
+                // Execute each tool call and add results
+                foreach (var (_, (id, name, args)) in toolCallAccumulator.OrderBy(kv => kv.Key))
+                {
+                    logger.LogDebug("Executing tool {ToolName} for conversation {ConversationId}", name, conversationId);
+                    var result = await agentLogic.ExecuteToolAsync(conversationId, name, args.ToString(), ct);
+
+                    chatMessages.Add(new ChatMessage
+                    {
+                        Role = "tool",
+                        Content = result,
+                        ToolCallId = id
+                    });
+                }
+
+                continue; // Re-call the LLM with tool results
+            }
+
+            // Final text response — store and return
+            agentLogic.AddMessage(conversationId, new Message
+            {
+                Id = Guid.NewGuid().ToString(),
+                ConversationId = conversationId,
+                Role = "assistant",
+                Content = fullContent.ToString()
+            });
+
+            logger.LogDebug("Stream finished for conversation {ConversationId}, {ContentLength} chars",
+                conversationId, fullContent.Length);
+            yield break;
         }
 
-        agentLogic.AddMessage(conversationId, new Message
-        {
-            Id = Guid.NewGuid().ToString(),
-            ConversationId = conversationId,
-            Role = "assistant",
-            Content = fullContent.ToString()
-        });
-
-        logger.LogDebug("Stream finished for conversation {ConversationId}, {ContentLength} chars",
-            conversationId, fullContent.Length);
+        logger.LogError("Tool call loop exceeded {MaxRounds} rounds for conversation {ConversationId}",
+            maxToolRounds, conversationId);
+        throw new InvalidOperationException($"Tool call loop exceeded {maxToolRounds} rounds.");
     }
 
     private List<ChatMessage> BuildChatMessages(Conversation conversation)

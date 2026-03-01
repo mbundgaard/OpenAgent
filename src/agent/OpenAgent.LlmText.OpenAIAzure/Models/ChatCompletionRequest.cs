@@ -23,7 +23,8 @@ internal sealed class ChatCompletionRequest
 internal sealed class ChatMessage
 {
     [JsonPropertyName("role")]
-    public required string Role { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Role { get; set; }
 
     [JsonPropertyName("content")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -62,21 +63,30 @@ internal sealed class ChatFunction
 
 internal sealed class ToolCall
 {
+    [JsonPropertyName("index")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Index { get; set; }
+
     [JsonPropertyName("id")]
-    public required string Id { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Id { get; set; }
 
     [JsonPropertyName("type")]
-    public string Type { get; set; } = "function";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Type { get; set; }
 
     [JsonPropertyName("function")]
-    public required ToolCallFunction Function { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ToolCallFunction? Function { get; set; }
 }
 
 internal sealed class ToolCallFunction
 {
     [JsonPropertyName("name")]
-    public required string Name { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; set; }
 
     [JsonPropertyName("arguments")]
-    public required string Arguments { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Arguments { get; set; }
 }
