@@ -1,7 +1,6 @@
 using OpenAgent;
 using OpenAgent.Api.Chat;
 using OpenAgent.Api.Conversations;
-using OpenAgent.Api.WebSockets;
 using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.InMemory;
 using OpenAgent.LlmText.OpenAIAzure;
@@ -22,7 +21,7 @@ app.UseWebSockets();
 app.MapGet("/health", () => Results.Ok());
 app.MapConversationEndpoints();
 app.MapChatEndpoints();
-app.MapWebSocketEndpoints();
+app.MapVoiceWebSocketEndpoints();
 
 app.Run();
 

@@ -1,0 +1,135 @@
+using System.Net.WebSockets;
+using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using OpenAgent.Contracts;
+using OpenAgent.Models.Voice;
+
+namespace OpenAgent;
+
+public static class VoiceWebSocketEndpoints
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
+    public static void MapVoiceWebSocketEndpoints(this WebApplication app)
+    {
+        app.Map("/ws/conversations/{id}/voice", async (string id, HttpContext context,
+            IConversationStore store, VoiceSessionManager sessionManager) =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            if (store.Get(id) is null)
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+
+            var ws = await context.WebSockets.AcceptWebSocketAsync();
+            var session = await sessionManager.GetOrCreateSessionAsync(id, context.RequestAborted);
+
+            try
+            {
+                await RunBridgeAsync(ws, session, context.RequestAborted);
+            }
+            finally
+            {
+                await sessionManager.CloseSessionAsync(id);
+
+                if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                {
+                    try
+                    {
+                        await ws.CloseAsync(
+                            WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                    }
+                    catch { /* best-effort close */ }
+                }
+            }
+        });
+    }
+
+    private static async Task RunBridgeAsync(WebSocket ws, IVoiceSession session, CancellationToken ct)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var readTask = ReadLoopAsync(ws, session, cts.Token);
+        var writeTask = WriteLoopAsync(ws, session, cts.Token);
+
+        await Task.WhenAny(readTask, writeTask);
+        await cts.CancelAsync();
+
+        try { await readTask; } catch (OperationCanceledException) { }
+        try { await writeTask; } catch (OperationCanceledException) { }
+    }
+
+    private static async Task ReadLoopAsync(WebSocket ws, IVoiceSession session, CancellationToken ct)
+    {
+        var buffer = new byte[16384];
+
+        while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+        {
+            var result = await ws.ReceiveAsync(buffer, ct);
+
+            if (result.MessageType == WebSocketMessageType.Close)
+                break;
+
+            if (result.MessageType == WebSocketMessageType.Binary)
+            {
+                await session.SendAudioAsync(buffer.AsMemory(0, result.Count), ct);
+            }
+        }
+    }
+
+    private static async Task WriteLoopAsync(WebSocket ws, IVoiceSession session, CancellationToken ct)
+    {
+        await foreach (var evt in session.ReceiveEventsAsync(ct))
+        {
+            if (ws.State != WebSocketState.Open)
+                break;
+
+            switch (evt)
+            {
+                case AudioDelta audio:
+                    await ws.SendAsync(audio.Audio, WebSocketMessageType.Binary, true, ct);
+                    break;
+
+                case SpeechStarted:
+                    await SendJsonAsync(ws, new { type = "speech_started" }, ct);
+                    break;
+
+                case SpeechStopped:
+                    await SendJsonAsync(ws, new { type = "speech_stopped" }, ct);
+                    break;
+
+                case AudioDone:
+                    await SendJsonAsync(ws, new { type = "audio_done" }, ct);
+                    break;
+
+                case TranscriptDelta td:
+                    await SendJsonAsync(ws, new { type = "transcript_delta", text = td.Text, source = td.Source.ToString().ToLowerInvariant() }, ct);
+                    break;
+
+                case TranscriptDone td:
+                    await SendJsonAsync(ws, new { type = "transcript_done", text = td.Text, source = td.Source.ToString().ToLowerInvariant() }, ct);
+                    break;
+
+                case SessionError err:
+                    await SendJsonAsync(ws, new { type = "error", message = err.Message }, ct);
+                    break;
+            }
+        }
+    }
+
+    private static async Task SendJsonAsync<T>(WebSocket ws, T value, CancellationToken ct)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+        await ws.SendAsync(json, WebSocketMessageType.Text, true, ct);
+    }
+}
