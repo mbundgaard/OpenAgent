@@ -8,7 +8,7 @@ using OpenAgent.Models.Text;
 
 namespace OpenAgent.LlmText.OpenAIAzure;
 
-public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextProvider
+public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextProvider, IDisposable
 {
     private AzureOpenAiTextConfig? _config;
     private HttpClient? _httpClient;
@@ -34,12 +34,15 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
         if (string.IsNullOrWhiteSpace(_config.DeploymentName))
             throw new InvalidOperationException("deploymentName is required.");
 
+        _httpClient?.Dispose();
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri($"https://{_config.ResourceName}.openai.azure.com/")
         };
         _httpClient.DefaultRequestHeaders.Add("api-key", _config.ApiKey);
     }
+
+    public void Dispose() => _httpClient?.Dispose();
 
     public async Task<TextResponse> CompleteAsync(string conversationId, string userInput, CancellationToken ct = default)
     {
@@ -82,7 +85,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
             : null;
 
         // Completion loop (handles tool calls)
-        while (true)
+        const int maxToolRounds = 10;
+        for (var round = 0; round < maxToolRounds; round++)
         {
             var request = new ChatCompletionRequest
             {
@@ -93,7 +97,12 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
 
             var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
             var httpResponse = await _httpClient.PostAsJsonAsync(url, request, ct);
-            httpResponse.EnsureSuccessStatusCode();
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                throw new HttpRequestException(
+                    $"Azure OpenAI returned {(int)httpResponse.StatusCode}: {errorBody}");
+            }
 
             var response = await httpResponse.Content.ReadFromJsonAsync<ChatCompletionResponse>(ct)
                 ?? throw new InvalidOperationException("Empty response from Azure OpenAI.");
@@ -140,5 +149,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic) : ILlmTextPr
 
             return new TextResponse { Content = content, Role = "assistant" };
         }
+
+        throw new InvalidOperationException($"Tool call loop exceeded {maxToolRounds} rounds.");
     }
 }
