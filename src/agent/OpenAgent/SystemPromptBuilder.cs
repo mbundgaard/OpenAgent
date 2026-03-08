@@ -6,8 +6,7 @@ namespace OpenAgent;
 
 /// <summary>
 /// Composes the system prompt from markdown files in the data directory.
-/// Files are loaded once at startup and cached. Which files are included
-/// depends on the conversation type.
+/// Static files are cached at startup. Daily memory files are read fresh.
 /// </summary>
 internal sealed class SystemPromptBuilder
 {
@@ -15,15 +14,18 @@ internal sealed class SystemPromptBuilder
     private readonly string _dataPath;
     private readonly Dictionary<string, string> _files = new();
 
+    private static readonly ConversationType[] AllTypes =
+        [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook];
+
     // Prompt files and which conversation types include them
     private static readonly (string FilePath, ConversationType[] Types)[] FileMap =
     [
-        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("memory/MEMORY.md", [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
+        ("AGENTS.md",        AllTypes),
+        ("SOUL.md",          AllTypes),
+        ("IDENTITY.md",      AllTypes),
+        ("USER.md",          AllTypes),
+        ("TOOLS.md",         AllTypes),
+        ("memory/MEMORY.md", AllTypes),
         ("VOICE.md",         [ConversationType.Voice]),
     ];
 
@@ -51,16 +53,10 @@ internal sealed class SystemPromptBuilder
                 sections.Add(content);
         }
 
-        // Append yesterday's and today's daily memory (read fresh — these change during the day)
+        // Daily memory — yesterday and today, read fresh
         var today = DateTime.UtcNow.Date;
-        foreach (var date in new[] { today.AddDays(-1), today })
-        {
-            var dailyPath = Path.Combine(_dataPath, "memory", $"{date:yyyy-MM-dd}.md");
-            if (!File.Exists(dailyPath)) continue;
-            var daily = File.ReadAllText(dailyPath).Trim();
-            if (daily.Length > 0)
-                sections.Add(daily);
-        }
+        TryAppendFile(sections, Path.Combine(_dataPath, "memory", $"{today.AddDays(-1):yyyy-MM-dd}.md"));
+        TryAppendFile(sections, Path.Combine(_dataPath, "memory", $"{today:yyyy-MM-dd}.md"));
 
         return string.Join("\n\n", sections);
     }
@@ -80,5 +76,12 @@ internal sealed class SystemPromptBuilder
             _files[filePath] = File.ReadAllText(fullPath).Trim();
             _logger.LogInformation("Loaded prompt file: {FilePath}", filePath);
         }
+    }
+
+    private static void TryAppendFile(List<string> sections, string path)
+    {
+        if (!File.Exists(path)) return;
+        var content = File.ReadAllText(path).Trim();
+        if (content.Length > 0) sections.Add(content);
     }
 }
