@@ -107,7 +107,7 @@ cd src/agent && dotnet test
 - Text provider has a tool call loop with a 10-round safety cap
 - SQLite conversation store (conversations.db in dataPath) — persistent across restarts, with schema migration via TryAddColumn
 - File tools use UTF-8 without BOM, controlled from a single constant in FileSystemToolHandler
-- All tools scoped to `{dataPath}/workspace` — no access outside workspace
+- All tools scoped to `{dataPath}` — no access outside data directory
 - BuildChatMessages validates tool call rounds — skips orphaned tool calls to avoid API 400 errors
 
 ## Memory
