@@ -5,7 +5,7 @@ namespace OpenAgent.Tools.Shell;
 
 /// <summary>
 /// Groups shell tools under a single handler.
-/// All operations are scoped to the workspace directory.
+/// All operations are scoped to the data directory.
 /// </summary>
 public sealed class ShellToolHandler : IToolHandler
 {
@@ -13,8 +13,8 @@ public sealed class ShellToolHandler : IToolHandler
 
     public ShellToolHandler(AgentEnvironment environment, ILoggerFactory loggerFactory)
     {
-        var workspace = Path.GetFullPath(Path.Combine(environment.DataPath, "workspace"));
-        Directory.CreateDirectory(workspace);
-        Tools = [new ShellExecTool(workspace, loggerFactory.CreateLogger<ShellExecTool>())];
+        var dataPath = Path.GetFullPath(environment.DataPath);
+        Directory.CreateDirectory(dataPath);
+        Tools = [new ShellExecTool(dataPath, loggerFactory.CreateLogger<ShellExecTool>())];
     }
 }
