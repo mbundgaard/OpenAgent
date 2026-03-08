@@ -24,6 +24,7 @@
     <ProjectReference Include="..\OpenAgent.ConfigStore.File\OpenAgent.ConfigStore.File.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.FileSystem\OpenAgent.Tools.FileSystem.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.Shell\OpenAgent.Tools.Shell.csproj" />
+    <ProjectReference Include="..\OpenAgent.Security.ApiKey\OpenAgent.Security.ApiKey.csproj" />
   </ItemGroup>
 
   <ItemGroup>
