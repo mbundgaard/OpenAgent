@@ -12,9 +12,10 @@ namespace OpenAgent;
 internal sealed class SystemPromptBuilder
 {
     private readonly ILogger<SystemPromptBuilder> _logger;
+    private readonly string _dataPath;
     private readonly Dictionary<string, string> _files = new();
 
-    // Files and which conversation types include them
+    // Static prompt files cached at startup — which conversation types include them
     private static readonly (string FileName, ConversationType[] Types)[] FileMap =
     [
         ("AGENTS.md",   [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
@@ -28,17 +29,19 @@ internal sealed class SystemPromptBuilder
     public SystemPromptBuilder(AgentEnvironment environment, ILogger<SystemPromptBuilder> logger)
     {
         _logger = logger;
-        LoadFiles(environment.DataPath);
+        _dataPath = environment.DataPath;
+        LoadFiles(_dataPath);
     }
 
     /// <summary>
     /// Builds the system prompt for the given conversation type by concatenating
     /// the relevant files in order, separated by blank lines.
+    /// Memory is read fresh each time (it changes between conversations).
     /// </summary>
     public string Build(ConversationType type)
     {
+        // Cached static prompt files
         var sections = new List<string>();
-
         foreach (var (fileName, types) in FileMap)
         {
             if (!types.Contains(type))
@@ -46,6 +49,15 @@ internal sealed class SystemPromptBuilder
 
             if (_files.TryGetValue(fileName, out var content))
                 sections.Add(content);
+        }
+
+        // Append memory (read fresh — it changes across conversations)
+        var memoryPath = Path.Combine(_dataPath, "memory", "MEMORY.md");
+        if (File.Exists(memoryPath))
+        {
+            var memory = File.ReadAllText(memoryPath).Trim();
+            if (memory.Length > 0)
+                sections.Add(memory);
         }
 
         return string.Join("\n\n", sections);
