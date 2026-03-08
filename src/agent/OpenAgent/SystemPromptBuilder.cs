@@ -12,6 +12,7 @@ namespace OpenAgent;
 internal sealed class SystemPromptBuilder
 {
     private readonly ILogger<SystemPromptBuilder> _logger;
+    private readonly string _dataPath;
     private readonly Dictionary<string, string> _files = new();
 
     // Prompt files and which conversation types include them
@@ -29,7 +30,8 @@ internal sealed class SystemPromptBuilder
     public SystemPromptBuilder(AgentEnvironment environment, ILogger<SystemPromptBuilder> logger)
     {
         _logger = logger;
-        LoadFiles(environment.DataPath);
+        _dataPath = environment.DataPath;
+        LoadFiles(_dataPath);
     }
 
     /// <summary>
@@ -47,6 +49,17 @@ internal sealed class SystemPromptBuilder
 
             if (_files.TryGetValue(filePath, out var content))
                 sections.Add(content);
+        }
+
+        // Append yesterday's and today's daily memory (read fresh — these change during the day)
+        var today = DateTime.UtcNow.Date;
+        foreach (var date in new[] { today.AddDays(-1), today })
+        {
+            var dailyPath = Path.Combine(_dataPath, "memory", $"{date:yyyy-MM-dd}.md");
+            if (!File.Exists(dailyPath)) continue;
+            var daily = File.ReadAllText(dailyPath).Trim();
+            if (daily.Length > 0)
+                sections.Add(daily);
         }
 
         return string.Join("\n\n", sections);
