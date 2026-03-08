@@ -6,11 +6,27 @@ using Spectre.Console;
 
 Console.OutputEncoding = Encoding.UTF8;
 
-// API key from environment — required for authenticated endpoints
+// Load .env file if present (KEY=VALUE lines, supports comments and blank lines)
+var envFile = Path.Combine(AppContext.BaseDirectory, ".env");
+if (File.Exists(envFile))
+{
+    foreach (var line in File.ReadAllLines(envFile))
+    {
+        var trimmed = line.Trim();
+        if (trimmed.Length == 0 || trimmed.StartsWith('#')) continue;
+        var sep = trimmed.IndexOf('=');
+        if (sep <= 0) continue;
+        var key = trimmed[..sep].Trim();
+        var value = trimmed[(sep + 1)..].Trim();
+        Environment.SetEnvironmentVariable(key, value);
+    }
+}
+
+// API key from environment or .env — required for authenticated endpoints
 var apiKey = Environment.GetEnvironmentVariable("OPENAGENT_API_KEY");
 if (string.IsNullOrWhiteSpace(apiKey))
 {
-    AnsiConsole.MarkupLine("[red]OPENAGENT_API_KEY environment variable is not set.[/]");
+    AnsiConsole.MarkupLine("[red]OPENAGENT_API_KEY is not set. Add it to .env or set as environment variable.[/]");
     return 1;
 }
 
