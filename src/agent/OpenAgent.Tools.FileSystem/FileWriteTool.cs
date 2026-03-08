@@ -5,8 +5,9 @@ namespace OpenAgent.Tools.FileSystem;
 
 /// <summary>
 /// Writes content to a file, creating it if it does not exist or overwriting if it does.
+/// Guards against writing excessively large content.
 /// </summary>
-public sealed class FileWriteTool(string basePath) : ITool
+public sealed class FileWriteTool(string basePath, int maxFileSize = 1_048_576) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -36,6 +37,10 @@ public sealed class FileWriteTool(string basePath) : ITool
         var fullPath = Path.GetFullPath(Path.Combine(basePath, path));
         if (!fullPath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase))
             return JsonSerializer.Serialize(new { error = "path is outside allowed directory" });
+
+        // Guard against writing excessively large content
+        if (content.Length > maxFileSize)
+            return JsonSerializer.Serialize(new { error = $"content too large: {content.Length} bytes (max {maxFileSize})", path });
 
         // Ensure directory exists
         var directory = Path.GetDirectoryName(fullPath);
