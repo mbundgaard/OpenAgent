@@ -11,7 +11,7 @@ src/agent/OpenAgent/config/
 src/agent/OpenAgent/data/
 
 # Development settings (may contain secrets)
-**/appsettings.Development.json
+# Note: appsettings.Development.json is tracked — it only contains test API keys
 
 # User-specific files
 *.rsuser
