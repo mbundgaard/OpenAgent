@@ -5,6 +5,7 @@ using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.LlmText.OpenAIAzure;
 using OpenAgent.LlmVoice.OpenAIAzure;
+using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Tools.Shell;
 using Serilog;
@@ -51,6 +52,9 @@ builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<IConver
 builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<ILlmTextProvider>());
 builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<ILlmVoiceProvider>());
 
+// Authentication — swap AddApiKeyAuth for AddEntraIdAuth when migrating to Entra ID
+builder.Services.AddApiKeyAuth(builder.Configuration);
+
 var app = builder.Build();
 
 // Load persisted provider configs (providers stay unconfigured if no config exists)
@@ -63,8 +67,10 @@ foreach (var configurable in app.Services.GetServices<IConfigurable>())
 }
 
 app.UseWebSockets();
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok());
+app.MapGet("/health", () => Results.Ok()).AllowAnonymous();
 app.MapConversationEndpoints();
 app.MapChatEndpoints();
 app.MapWebSocketVoiceEndpoints();

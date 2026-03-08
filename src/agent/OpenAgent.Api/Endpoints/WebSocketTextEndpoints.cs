@@ -56,7 +56,7 @@ public static class WebSocketTextEndpoints
                     catch { /* best-effort close */ }
                 }
             }
-        });
+        }).RequireAuthorization();
     }
 
     private static async Task RunChatLoopAsync(

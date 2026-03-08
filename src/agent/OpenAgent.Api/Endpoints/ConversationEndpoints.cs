@@ -16,7 +16,7 @@ public static class ConversationEndpoints
     /// </summary>
     public static void MapConversationEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/conversations");
+        var group = app.MapGroup("/api/conversations").RequireAuthorization();
 
         group.MapGet("/", (IConversationStore store) =>
         {

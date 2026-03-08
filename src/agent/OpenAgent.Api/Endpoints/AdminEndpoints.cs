@@ -15,7 +15,7 @@ public static class AdminEndpoints
     /// </summary>
     public static void MapAdminEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/admin/providers");
+        var group = app.MapGroup("/api/admin/providers").RequireAuthorization();
 
         group.MapGet("/", (IEnumerable<IConfigurable> configurables) =>
         {

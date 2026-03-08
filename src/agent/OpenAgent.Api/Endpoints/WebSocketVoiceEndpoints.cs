@@ -56,7 +56,7 @@ public static class WebSocketVoiceEndpoints
                     catch { /* best-effort close */ }
                 }
             }
-        });
+        }).RequireAuthorization();
     }
 
     private static async Task RunBridgeAsync(WebSocket ws, IVoiceSession session, CancellationToken ct)

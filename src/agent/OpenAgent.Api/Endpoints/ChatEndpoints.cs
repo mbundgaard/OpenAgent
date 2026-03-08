@@ -49,6 +49,6 @@ public static class ChatEndpoints
             }
 
             return Results.Json(events, JsonOptions);
-        });
+        }).RequireAuthorization();
     }
 }
