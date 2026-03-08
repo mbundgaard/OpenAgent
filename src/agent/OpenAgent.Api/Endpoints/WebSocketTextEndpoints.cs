@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Text;
 
@@ -79,9 +80,30 @@ public static class WebSocketTextEndpoints
             if (request?.Content is null)
                 continue;
 
-            await foreach (var chunk in textProvider.StreamAsync(conversation, request.Content, ct))
+            await foreach (var evt in textProvider.StreamAsync(conversation, request.Content, ct))
             {
-                await SendJsonAsync(ws, new TextWebSocketDelta { Content = chunk }, ct);
+                switch (evt)
+                {
+                    case TextDelta delta:
+                        await SendJsonAsync(ws, new TextWebSocketDelta { Content = delta.Content }, ct);
+                        break;
+                    case ToolCallEvent toolCall:
+                        await SendJsonAsync(ws, new TextWebSocketToolCall
+                        {
+                            ToolCallId = toolCall.ToolCallId,
+                            Name = toolCall.Name,
+                            Arguments = toolCall.Arguments
+                        }, ct);
+                        break;
+                    case ToolResultEvent toolResult:
+                        await SendJsonAsync(ws, new TextWebSocketToolResult
+                        {
+                            ToolCallId = toolResult.ToolCallId,
+                            Name = toolResult.Name,
+                            Result = toolResult.Result
+                        }, ct);
+                        break;
+                }
             }
 
             await SendJsonAsync(ws, new TextWebSocketDone(), ct);

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.LlmText.OpenAIAzure.Models;
+using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 using OpenAgent.Models.Text;
@@ -168,7 +169,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         throw new InvalidOperationException($"Tool call loop exceeded {maxToolRounds} rounds.");
     }
 
-    public async IAsyncEnumerable<string> StreamAsync(
+    public async IAsyncEnumerable<CompletionEvent> StreamAsync(
         Conversation conversation, string userInput, [EnumeratorCancellation] CancellationToken ct = default)
     {
         if (_config is null || _httpClient is null)
@@ -244,7 +245,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 if (delta.Content is { Length: > 0 } content)
                 {
                     fullContent.Append(content);
-                    yield return content;
+                    yield return new TextDelta(content);
                 }
 
                 // Accumulate streamed tool call fragments (name and arguments arrive incrementally)
@@ -297,11 +298,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     ToolCalls = assembledToolCalls
                 });
 
-                // Execute each tool call, persist results
+                // Execute each tool call, yield events, persist results
                 foreach (var (_, (id, name, args)) in toolCallAccumulator.OrderBy(kv => kv.Key))
                 {
+                    var argsString = args.ToString();
+                    yield return new ToolCallEvent(id, name, argsString);
+
                     logger.LogDebug("Executing tool {ToolName} for conversation {ConversationId}", name, conversationId);
-                    var result = await agentLogic.ExecuteToolAsync(conversationId, name, args.ToString(), ct);
+                    var result = await agentLogic.ExecuteToolAsync(conversationId, name, argsString, ct);
+
+                    yield return new ToolResultEvent(id, name, result);
 
                     // Persist tool result
                     agentLogic.AddMessage(conversationId, new Message

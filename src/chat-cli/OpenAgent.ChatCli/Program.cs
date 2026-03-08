@@ -252,6 +252,16 @@ static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId)
                     var content = root.GetProperty("content").GetString() ?? "";
                     Console.Write(content);
                 }
+                else if (type == "tool_call")
+                {
+                    var name = root.GetProperty("name").GetString() ?? "";
+                    var arguments = root.GetProperty("arguments").GetString() ?? "";
+                    AnsiConsole.MarkupLine($"[dim]> calling [yellow]{Markup.Escape(name)}[/]({Markup.Escape(TruncateArgs(arguments))})[/]");
+                }
+                else if (type == "tool_result")
+                {
+                    // Tool results are available but not shown in the UI
+                }
                 else if (type == "done")
                 {
                     // Print the response separator
@@ -298,6 +308,14 @@ static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId)
 
     await receiveTask;
     return nav;
+}
+
+// --- Helpers ---
+
+static string TruncateArgs(string args, int max = 80)
+{
+    if (args.Length <= max) return args;
+    return args[..max] + "...";
 }
 
 // --- Navigation signal ---

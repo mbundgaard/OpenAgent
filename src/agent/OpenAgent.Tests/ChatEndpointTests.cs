@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 using OpenAgent.Models.Text;
@@ -77,11 +78,11 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
             return Task.FromResult(new TextResponse { Role = "assistant", Content = "fake response" });
         }
 
-        public async IAsyncEnumerable<string> StreamAsync(Conversation conversation, string userInput,
+        public async IAsyncEnumerable<CompletionEvent> StreamAsync(Conversation conversation, string userInput,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            yield return "fake ";
-            yield return "response";
+            yield return new TextDelta("fake ");
+            yield return new TextDelta("response");
             await Task.CompletedTask;
         }
     }
