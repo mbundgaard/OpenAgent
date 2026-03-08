@@ -105,27 +105,41 @@ public static class WebSocketVoiceEndpoints
                     break;
 
                 case SpeechStarted:
-                    await SendJsonAsync(ws, new { type = "speech_started" }, ct);
+                    await SendJsonAsync(ws, new VoiceWebSocketEvent { Type = "speech_started" }, ct);
                     break;
 
                 case SpeechStopped:
-                    await SendJsonAsync(ws, new { type = "speech_stopped" }, ct);
+                    await SendJsonAsync(ws, new VoiceWebSocketEvent { Type = "speech_stopped" }, ct);
                     break;
 
                 case AudioDone:
-                    await SendJsonAsync(ws, new { type = "audio_done" }, ct);
+                    await SendJsonAsync(ws, new VoiceWebSocketEvent { Type = "audio_done" }, ct);
                     break;
 
                 case TranscriptDelta td:
-                    await SendJsonAsync(ws, new { type = "transcript_delta", text = td.Text, source = td.Source.ToString().ToLowerInvariant() }, ct);
+                    await SendJsonAsync(ws, new VoiceTranscriptEvent
+                    {
+                        Type = "transcript_delta",
+                        Text = td.Text,
+                        Source = td.Source.ToString().ToLowerInvariant()
+                    }, ct);
                     break;
 
                 case TranscriptDone td:
-                    await SendJsonAsync(ws, new { type = "transcript_done", text = td.Text, source = td.Source.ToString().ToLowerInvariant() }, ct);
+                    await SendJsonAsync(ws, new VoiceTranscriptEvent
+                    {
+                        Type = "transcript_done",
+                        Text = td.Text,
+                        Source = td.Source.ToString().ToLowerInvariant()
+                    }, ct);
                     break;
 
                 case SessionError err:
-                    await SendJsonAsync(ws, new { type = "error", message = err.Message }, ct);
+                    await SendJsonAsync(ws, new VoiceErrorEvent
+                    {
+                        Type = "error",
+                        Message = err.Message
+                    }, ct);
                     break;
             }
         }

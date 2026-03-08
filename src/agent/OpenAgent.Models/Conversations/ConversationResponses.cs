@@ -2,30 +2,30 @@ using System.Text.Json.Serialization;
 
 namespace OpenAgent.Models.Conversations;
 
-public enum ConversationType
-{
-    Text,
-    Voice,
-    Cron,
-    WebHook
-}
-
 /// <summary>
-/// Represents a single user conversation, including its voice session state.
+/// Conversation list item payload returned by API endpoints.
 /// </summary>
-public sealed class Conversation
+public sealed class ConversationListItemResponse
 {
     [JsonPropertyName("id")]
     public required string Id { get; init; }
+
     [JsonPropertyName("source")]
     public required string Source { get; init; }
+
     [JsonPropertyName("type")]
     [JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
     public required ConversationType Type { get; init; }
+
     [JsonPropertyName("created_at")]
-    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
-    [JsonPropertyName("voice_session_id")]
-    public string? VoiceSessionId { get; set; }
-    [JsonPropertyName("voice_session_open")]
-    public bool VoiceSessionOpen { get; set; }
+    public required DateTimeOffset CreatedAt { get; init; }
+}
+
+/// <summary>
+/// Minimal conversation payload returned by API endpoints.
+/// </summary>
+public sealed class ConversationIdResponse
+{
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
 }

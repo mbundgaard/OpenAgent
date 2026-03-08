@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
+using OpenAgent.Models.Text;
 
 namespace OpenAgent.Api.Endpoints;
 
@@ -73,17 +74,17 @@ public static class WebSocketTextEndpoints
                 continue;
 
             var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-            var request = JsonSerializer.Deserialize<InboundMessage>(json, JsonOptions);
+            var request = JsonSerializer.Deserialize<TextWebSocketInboundMessage>(json, JsonOptions);
 
             if (request?.Content is null)
                 continue;
 
             await foreach (var chunk in textProvider.StreamAsync(conversation, request.Content, ct))
             {
-                await SendJsonAsync(ws, new { type = "delta", content = chunk }, ct);
+                await SendJsonAsync(ws, new TextWebSocketDelta { Content = chunk }, ct);
             }
 
-            await SendJsonAsync(ws, new { type = "done" }, ct);
+            await SendJsonAsync(ws, new TextWebSocketDone(), ct);
         }
     }
 
@@ -93,8 +94,4 @@ public static class WebSocketTextEndpoints
         await ws.SendAsync(json, WebSocketMessageType.Text, true, ct);
     }
 
-    private sealed class InboundMessage
-    {
-        public string? Content { get; set; }
-    }
 }

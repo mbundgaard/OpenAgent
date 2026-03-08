@@ -10,6 +10,7 @@ namespace OpenAgent;
 internal sealed class AgentLogic(IConversationStore store, SystemPromptBuilder promptBuilder) : IAgentLogic
 {
     public string GetSystemPrompt(string source, ConversationType type)
+        // TODO: incorporate source to support channel-specific prompt variants (e.g., app vs telegram).
         => promptBuilder.Build(type);
 
     public IReadOnlyList<AgentToolDefinition> Tools => [];

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 
 namespace OpenAgent.Api.Endpoints;
 
@@ -20,7 +21,13 @@ public static class ConversationEndpoints
         group.MapGet("/", (IConversationStore store) =>
         {
             var conversations = store.GetAll();
-            return Results.Ok(conversations.Select(c => new { c.Id, c.Source, Type = c.Type.ToString(), c.CreatedAt }));
+            return Results.Ok(conversations.Select(c => new ConversationListItemResponse
+            {
+                Id = c.Id,
+                Source = c.Source,
+                Type = c.Type,
+                CreatedAt = c.CreatedAt
+            }));
         });
 
         group.MapGet("/{conversationId}", (string conversationId, IConversationStore store) =>
@@ -28,7 +35,7 @@ public static class ConversationEndpoints
             var conversation = store.Get(conversationId);
             return conversation is null
                 ? Results.NotFound()
-                : Results.Ok(new { conversation.Id });
+                : Results.Ok(new ConversationIdResponse { Id = conversation.Id });
         });
 
         group.MapDelete("/{conversationId}", (string conversationId, IConversationStore store) =>

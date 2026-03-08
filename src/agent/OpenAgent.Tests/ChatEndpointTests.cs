@@ -66,8 +66,6 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal("assistant", body.Role);
     }
 
-    private record ChatResponse(string ConversationId, string Role, string Content);
-
     private sealed class FakeTextProvider : ILlmTextProvider
     {
         public string Key => "text-provider";

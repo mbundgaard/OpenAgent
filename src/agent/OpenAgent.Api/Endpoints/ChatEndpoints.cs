@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
+using OpenAgent.Models.Text;
 
 namespace OpenAgent.Api.Endpoints;
 
@@ -27,9 +28,12 @@ public static class ChatEndpoints
 
             var response = await textProvider.CompleteAsync(conversation, request.Content, ct);
 
-            return Results.Ok(new { conversationId, response.Role, response.Content });
+            return Results.Ok(new ChatResponse
+            {
+                ConversationId = conversationId,
+                Role = response.Role,
+                Content = response.Content
+            });
         });
     }
 }
-
-public sealed record ChatRequest(string Content);
