@@ -2,135 +2,223 @@ using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Spectre.Console;
 
 Console.OutputEncoding = Encoding.UTF8;
 
-var baseUrl = args.Length > 0 ? args[0] : "http://localhost:5264";
-var mode = args.Length > 1 ? args[1].ToLowerInvariant() : "websocket";
-
-if (mode is not "rest" and not "websocket")
+// Known servers
+var servers = new Dictionary<string, string>
 {
-    Console.Error.WriteLine("Mode must be 'rest' or 'websocket'.");
-    return 1;
-}
+    ["localhost"] = "http://localhost:5264",
+    ["openagent-test"] = "https://openagent-test.azurewebsites.net",
+};
 
-Console.WriteLine($"Mode: {mode}");
-Console.WriteLine($"Server: {baseUrl}");
-Console.WriteLine();
+// Header
+AnsiConsole.Write(new FigletText("OpenAgent").Color(Color.DodgerBlue1));
+AnsiConsole.WriteLine();
 
-using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
-
+// Main navigation loop
 while (true)
 {
-    var conversationId = await SelectConversationAsync(http);
-    Console.WriteLine();
+    // Select server
+    var serverName = AnsiConsole.Prompt(
+        new SelectionPrompt<string>()
+            .Title("[bold]Select server[/]")
+            .HighlightStyle(Style.Parse("dodgerblue1"))
+            .AddChoices(servers.Keys.Append("Exit")));
 
-    var exit = mode == "websocket"
-        ? await RunWebSocketAsync(baseUrl, conversationId)
-        : await RunRestAsync(http, conversationId);
+    if (serverName == "Exit") return 0;
+    var baseUrl = servers[serverName];
 
-    if (exit) return 0;
-    Console.WriteLine();
+    // Select mode
+    var modeResult = SelectMode();
+    if (modeResult is null) continue; // /back to server select
+    var (mode, transport) = modeResult.Value;
+
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+
+    // Conversation loop — /back returns here to pick another conversation
+    while (true)
+    {
+        var conversationId = await SelectConversationAsync(http);
+        if (conversationId is null) break; // /back to mode select
+
+        // Show chat header
+        var label = mode == "voice" ? "voice" : transport;
+        AnsiConsole.Write(new Rule($"[dodgerblue1]{serverName}[/] · [green]{label}[/]").LeftJustified());
+        AnsiConsole.WriteLine();
+
+        var nav = mode == "voice"
+            ? Nav.Exit // voice not yet implemented in CLI
+            : transport == "websocket"
+                ? await RunWebSocketAsync(baseUrl, conversationId)
+                : await RunRestAsync(http, conversationId);
+
+        if (nav == Nav.Exit) return 0;
+        if (nav == Nav.Menu) break; // back to server select — will re-enter outer loop
+    }
 }
 
-static async Task<string> SelectConversationAsync(HttpClient http)
+// --- Mode selection ---
+
+static (string Mode, string Transport)? SelectMode()
+{
+    var mode = AnsiConsole.Prompt(
+        new SelectionPrompt<string>()
+            .Title("[bold]Select mode[/]")
+            .HighlightStyle(Style.Parse("dodgerblue1"))
+            .AddChoices("Text", "Voice", "Back"));
+
+    if (mode == "Back") return null;
+
+    if (mode == "Text")
+    {
+        var transport = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[bold]Select transport[/]")
+                .HighlightStyle(Style.Parse("dodgerblue1"))
+                .AddChoices("WebSocket (streaming)", "REST", "Back"));
+
+        if (transport == "Back") return null;
+        var transportKey = transport.StartsWith("WebSocket") ? "websocket" : "rest";
+        return ("text", transportKey);
+    }
+
+    return ("voice", "voice");
+}
+
+// --- Conversation selection ---
+
+static async Task<string?> SelectConversationAsync(HttpClient http)
 {
     var conversations = new List<ConversationInfo>();
 
-    try
-    {
-        var response = await http.GetAsync("/api/conversations");
-        if (response.IsSuccessStatusCode)
+    await AnsiConsole.Status()
+        .Spinner(Spinner.Known.Dots)
+        .StartAsync("Fetching conversations...", async _ =>
         {
-            conversations = await response.Content.ReadFromJsonAsync<List<ConversationInfo>>() ?? [];
-            conversations.Sort((a, b) => b.CreatedAt.CompareTo(a.CreatedAt));
-        }
-    }
-    catch
+            try
+            {
+                var response = await http.GetAsync("/api/conversations");
+                if (response.IsSuccessStatusCode)
+                {
+                    conversations = await response.Content.ReadFromJsonAsync<List<ConversationInfo>>() ?? [];
+                    conversations.Sort((a, b) => b.CreatedAt.CompareTo(a.CreatedAt));
+                }
+            }
+            catch
+            {
+                AnsiConsole.MarkupLine("[yellow]Could not fetch conversations from server.[/]");
+            }
+        });
+
+    // Build choices
+    var choices = new List<string> { "[green]+ New conversation[/]" };
+    foreach (var c in conversations)
+        choices.Add($"{c.Id[..8]}... [dim]{c.Type} · {c.CreatedAt:g}[/]");
+    choices.Add("[dim]Back[/]");
+
+    var selected = AnsiConsole.Prompt(
+        new SelectionPrompt<string>()
+            .Title("[bold]Select conversation[/]")
+            .HighlightStyle(Style.Parse("dodgerblue1"))
+            .AddChoices(choices));
+
+    if (selected == "[dim]Back[/]") return null;
+
+    if (selected.StartsWith("[green]"))
     {
-        Console.WriteLine("[Warning] Could not fetch conversations from server.");
+        var newId = Guid.NewGuid().ToString();
+        AnsiConsole.MarkupLine($"[dim]Created {newId[..8]}...[/]");
+        return newId;
     }
 
-    Console.WriteLine("  0) New conversation");
-    for (var i = 0; i < conversations.Count; i++)
-    {
-        var c = conversations[i];
-        Console.WriteLine($"  {i + 1}) {c.Id[..8]}... [{c.Type}] {c.CreatedAt:g}");
-    }
-
-    Console.WriteLine();
-    Console.Write("Select: ");
-    var input = Console.ReadLine()?.Trim();
-
-    if (int.TryParse(input, out var choice) && choice > 0 && choice <= conversations.Count)
-    {
-        var selected = conversations[choice - 1];
-        Console.WriteLine($"Resuming conversation {selected.Id[..8]}...");
-        return selected.Id;
-    }
-
-    var newId = Guid.NewGuid().ToString();
-    Console.WriteLine($"New conversation {newId[..8]}...");
-    return newId;
+    // Find selected conversation by matching the truncated ID prefix
+    var prefix = selected[..8];
+    var match = conversations.FirstOrDefault(c => c.Id.StartsWith(prefix));
+    return match?.Id ?? Guid.NewGuid().ToString();
 }
 
-static async Task<bool> RunRestAsync(HttpClient http, string conversationId)
+// --- REST chat loop ---
+
+static async Task<Nav> RunRestAsync(HttpClient http, string conversationId)
 {
     while (true)
     {
-        Console.Write("> ");
-        var input = Console.ReadLine();
-        if (input is null or "exit" or "quit")
-            return true;
-        if (input is "/back")
-            return false;
-        if (string.IsNullOrWhiteSpace(input))
-            continue;
+        var input = AnsiConsole.Prompt(
+            new TextPrompt<string>("[dodgerblue1]>[/]").AllowEmpty());
+
+        if (input is "exit" or "quit" or "/exit") return Nav.Exit;
+        if (input is "/back") return Nav.Back;
+        if (input is "/menu") return Nav.Menu;
+        if (string.IsNullOrWhiteSpace(input)) continue;
 
         try
         {
-            var response = await http.PostAsJsonAsync(
-                $"/api/conversations/{conversationId}/messages",
-                new { content = input });
+            string? content = null;
 
-            if (!response.IsSuccessStatusCode)
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("green"))
+                .StartAsync("Thinking...", async _ =>
+                {
+                    var response = await http.PostAsJsonAsync(
+                        $"/api/conversations/{conversationId}/messages",
+                        new { content = input });
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        content = $"[red]Error {(int)response.StatusCode}:[/] {await response.Content.ReadAsStringAsync()}";
+                        return;
+                    }
+
+                    using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+                    content = doc.RootElement.GetProperty("content").GetString();
+                });
+
+            if (content is not null)
             {
-                Console.WriteLine($"[Error {(int)response.StatusCode}] {await response.Content.ReadAsStringAsync()}");
-                continue;
+                AnsiConsole.MarkupLine($"[green]Assistant[/]");
+                AnsiConsole.WriteLine(content);
+                AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
             }
-
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
-            var content = doc.RootElement.GetProperty("content").GetString();
-            Console.WriteLine(content);
-            Console.WriteLine();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Error] {ex.Message}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
         }
     }
 }
 
-static async Task<bool> RunWebSocketAsync(string baseUrl, string conversationId)
+// --- WebSocket streaming chat loop ---
+
+static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId)
 {
     var wsUrl = baseUrl.Replace("http://", "ws://").Replace("https://", "wss://");
     var uri = new Uri($"{wsUrl}/ws/conversations/{conversationId}/text");
 
     using var ws = new ClientWebSocket();
 
+    // Connect with spinner
     try
     {
-        Console.WriteLine($"Connecting to {uri}...");
-        await ws.ConnectAsync(uri, CancellationToken.None);
-        Console.WriteLine("Connected.");
-        Console.WriteLine();
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .StartAsync("Connecting...", async _ =>
+            {
+                await ws.ConnectAsync(uri, CancellationToken.None);
+            });
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"Failed to connect: {ex.Message}");
-        return false;
+        AnsiConsole.MarkupLine($"[red]Failed to connect:[/] {ex.Message}");
+        return Nav.Back;
     }
 
+    // Shared state for streaming output
+    var done = new TaskCompletionSource();
+
+    // Background receive loop
     var receiveTask = Task.Run(async () =>
     {
         var buffer = new byte[8192];
@@ -155,25 +243,19 @@ static async Task<bool> RunWebSocketAsync(string baseUrl, string conversationId)
                 var json = Encoding.UTF8.GetString(buffer, 0, offset);
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-
                 var type = root.GetProperty("type").GetString();
+
                 if (type == "delta")
                 {
-                    var content = root.GetProperty("content").GetString();
+                    var content = root.GetProperty("content").GetString() ?? "";
                     Console.Write(content);
                 }
                 else if (type == "done")
                 {
+                    // Print the response separator
                     Console.WriteLine();
-                    Console.WriteLine();
-                    Console.Write("> ");
-                }
-                else if (type == "message")
-                {
-                    var content = root.GetProperty("content").GetString();
-                    Console.WriteLine(content);
-                    Console.WriteLine();
-                    Console.Write("> ");
+                    AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
+                    done.TrySetResult();
                 }
             }
             catch (WebSocketException)
@@ -183,32 +265,41 @@ static async Task<bool> RunWebSocketAsync(string baseUrl, string conversationId)
         }
     });
 
-    var back = false;
+    // Input loop
+    var nav = Nav.Exit;
     while (ws.State == WebSocketState.Open)
     {
-        Console.Write("> ");
-        var input = Console.ReadLine();
-        if (input is null or "exit" or "quit")
-            break;
-        if (input is "/back")
-        {
-            back = true;
-            break;
-        }
-        if (string.IsNullOrWhiteSpace(input))
-            continue;
+        var input = AnsiConsole.Prompt(
+            new TextPrompt<string>("[dodgerblue1]>[/]").AllowEmpty());
 
+        if (input is "exit" or "quit" or "/exit") { nav = Nav.Exit; break; }
+        if (input is "/back") { nav = Nav.Back; break; }
+        if (input is "/menu") { nav = Nav.Menu; break; }
+        if (string.IsNullOrWhiteSpace(input)) continue;
+
+        // Send message
         var payload = JsonSerializer.SerializeToUtf8Bytes(new { content = input });
         await ws.SendAsync(payload, WebSocketMessageType.Text, true, CancellationToken.None);
+
+        // Show assistant label and wait for streaming response
+        AnsiConsole.MarkupLine("[green]Assistant[/]");
+        done = new TaskCompletionSource();
+
+        // Wait for the response to complete before prompting again
+        await done.Task;
     }
 
     if (ws.State == WebSocketState.Open)
-    {
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
-    }
 
     await receiveTask;
-    return !back;
+    return nav;
 }
+
+// --- Navigation signal ---
+
+enum Nav { Back, Menu, Exit }
+
+// --- DTOs ---
 
 record ConversationInfo(string Id, string Source, string Type, DateTimeOffset CreatedAt);
