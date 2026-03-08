@@ -31,6 +31,8 @@ jobs:
 
       - name: Test
         run: dotnet test src/agent --no-build --configuration Release
+        env:
+          DATA_DIR: ${{ runner.temp }}/openagent-data
 
       - name: Publish
         run: dotnet publish ${{ env.PROJECT_PATH }} --no-build --configuration Release --output ./publish
