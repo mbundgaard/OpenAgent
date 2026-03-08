@@ -6,7 +6,8 @@ namespace OpenAgent;
 
 /// <summary>
 /// Composes the system prompt from markdown files in the data directory.
-/// Static files are cached at startup. Daily memory files are read fresh.
+/// Files are loaded once at startup and cached. Which files are included
+/// depends on the conversation type.
 /// </summary>
 internal sealed class SystemPromptBuilder
 {
@@ -14,18 +15,15 @@ internal sealed class SystemPromptBuilder
     private readonly string _dataPath;
     private readonly Dictionary<string, string> _files = new();
 
-    private static readonly ConversationType[] AllTypes =
-        [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook];
-
     // Prompt files and which conversation types include them
     private static readonly (string FilePath, ConversationType[] Types)[] FileMap =
     [
-        ("AGENTS.md",        AllTypes),
-        ("SOUL.md",          AllTypes),
-        ("IDENTITY.md",      AllTypes),
-        ("USER.md",          AllTypes),
-        ("TOOLS.md",         AllTypes),
-        ("memory/MEMORY.md", AllTypes),
+        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
+        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
+        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
+        ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
+        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
+        ("MEMORY.md", [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
         ("VOICE.md",         [ConversationType.Voice]),
     ];
 
@@ -51,12 +49,15 @@ internal sealed class SystemPromptBuilder
 
             if (_files.TryGetValue(filePath, out var content))
                 sections.Add(content);
-        }
 
-        // Daily memory — yesterday and today, read fresh
-        var today = DateTime.UtcNow.Date;
-        TryAppendFile(sections, Path.Combine(_dataPath, "memory", $"{today.AddDays(-1):yyyy-MM-dd}.md"));
-        TryAppendFile(sections, Path.Combine(_dataPath, "memory", $"{today:yyyy-MM-dd}.md"));
+            // After MEMORY.md, append yesterday's and today's daily memory
+            if (filePath == "MEMORY.md")
+            {
+                var today = DateTime.UtcNow.Date;
+                TryAppendFile(sections, Path.Combine(_dataPath, "memory", $"{today.AddDays(-1):yyyy-MM-dd}.md"));
+                TryAppendFile(sections, Path.Combine(_dataPath, "memory", $"{today:yyyy-MM-dd}.md"));
+            }
+        }
 
         return string.Join("\n\n", sections);
     }
