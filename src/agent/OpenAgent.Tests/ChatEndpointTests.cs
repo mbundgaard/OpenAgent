@@ -30,6 +30,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task SendMessage_NewConversation_ReturnsCompletionEvents()
     {
         var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
         var conversationId = Guid.NewGuid().ToString();
 
         var response = await client.PostAsJsonAsync(
@@ -51,6 +52,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task SendMessage_ExistingConversation_ReturnsCompletionEvents()
     {
         var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
         var conversationId = Guid.NewGuid().ToString();
 
         // First message creates the conversation

@@ -22,6 +22,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text);
         var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
 
         var response = await client.GetAsync($"/api/conversations/{conversation.Id}");
 
@@ -34,6 +35,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     public async Task GetConversation_NotFound_Returns404()
     {
         var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
 
         var response = await client.GetAsync("/api/conversations/does-not-exist");
 
@@ -46,6 +48,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text);
         var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
 
         var response = await client.DeleteAsync($"/api/conversations/{conversation.Id}");
 

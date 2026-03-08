@@ -34,6 +34,7 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task VoiceEndpoint_NonWebSocket_Returns400()
     {
         var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
 
         var response = await client.GetAsync("/ws/conversations/test-123/voice");
 
@@ -87,6 +88,10 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
     private async Task<WebSocket> ConnectVoiceWebSocketAsync(string conversationId, CancellationToken ct)
     {
         var wsClient = _factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = request =>
+        {
+            request.Headers["X-Api-Key"] = "dev-api-key-change-me";
+        };
         return await wsClient.ConnectAsync(
             new Uri(_factory.Server.BaseAddress, $"/ws/conversations/{conversationId}/voice"),
             ct);
