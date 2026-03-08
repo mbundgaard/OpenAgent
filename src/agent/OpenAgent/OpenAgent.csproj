@@ -8,6 +8,7 @@
     <ProjectReference Include="..\OpenAgent.LlmText.OpenAIAzure\OpenAgent.LlmText.OpenAIAzure.csproj" />
     <ProjectReference Include="..\OpenAgent.ConfigStore.File\OpenAgent.ConfigStore.File.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.FileSystem\OpenAgent.Tools.FileSystem.csproj" />
+    <ProjectReference Include="..\OpenAgent.Tools.Shell\OpenAgent.Tools.Shell.csproj" />
   </ItemGroup>
 
   <ItemGroup>

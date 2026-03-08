@@ -69,21 +69,20 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             Content = userInput
         });
 
-        var chatMessages = BuildChatMessages(conversation);
-        var tools = BuildTools();
+        // Build request once — messages and tools are mutated across tool call rounds
+        var request = new ChatCompletionRequest
+        {
+            Messages = BuildChatMessages(conversation),
+            Tools = BuildTools(),
+            ToolChoice = agentLogic.Tools.Count > 0 ? "auto" : null
+        };
+
+        var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
 
         // Completion loop (handles tool calls)
         const int maxToolRounds = 10;
         for (var round = 0; round < maxToolRounds; round++)
         {
-            var request = new ChatCompletionRequest
-            {
-                Messages = chatMessages,
-                Tools = tools,
-                ToolChoice = tools is not null ? "auto" : null
-            };
-
-            var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
             var httpResponse = await _httpClient.PostAsJsonAsync(url, request, ct);
             if (!httpResponse.IsSuccessStatusCode)
             {
@@ -109,10 +108,18 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
                     conversationId, string.Join(", ", message.ToolCalls.Select(t => t.Function!.Name)));
 
-                // Add assistant message with tool calls to the conversation
-                chatMessages.Add(message);
+                // Persist assistant message with tool calls
+                agentLogic.AddMessage(conversationId, new Message
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    ConversationId = conversationId,
+                    Role = "assistant",
+                    Content = message.Content,
+                    ToolCalls = JsonSerializer.Serialize(message.ToolCalls)
+                });
+                request.Messages.Add(message);
 
-                // Execute each tool call and add results
+                // Execute each tool call, persist results
                 foreach (var toolCall in message.ToolCalls)
                 {
                     logger.LogDebug("Executing tool {ToolName} for conversation {ConversationId}",
@@ -120,7 +127,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     var result = await agentLogic.ExecuteToolAsync(
                         conversationId, toolCall.Function.Name!, toolCall.Function.Arguments!, ct);
 
-                    chatMessages.Add(new ChatMessage
+                    // Persist tool result
+                    agentLogic.AddMessage(conversationId, new Message
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        ConversationId = conversationId,
+                        Role = "tool",
+                        Content = result,
+                        ToolCallId = toolCall.Id
+                    });
+                    request.Messages.Add(new ChatMessage
                     {
                         Role = "tool",
                         Content = result,
@@ -170,21 +186,21 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             Content = userInput
         });
 
-        var chatMessages = BuildChatMessages(conversation);
-        var tools = BuildTools();
+        // Build request once — messages are mutated across tool call rounds
+        var request = new ChatCompletionRequest
+        {
+            Messages = BuildChatMessages(conversation),
+            Tools = BuildTools(),
+            ToolChoice = agentLogic.Tools.Count > 0 ? "auto" : null,
+            Stream = true
+        };
+
         var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
 
         // Completion loop (handles tool calls across streaming rounds)
         const int maxToolRounds = 10;
         for (var round = 0; round < maxToolRounds; round++)
         {
-            var request = new ChatCompletionRequest
-            {
-                Messages = chatMessages,
-                Tools = tools,
-                ToolChoice = tools is not null ? "auto" : null,
-                Stream = true
-            };
 
             var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
             {
@@ -255,29 +271,48 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
                     conversationId, string.Join(", ", toolCallAccumulator.Values.Select(t => t.Name)));
 
-                // Add assistant message with accumulated tool calls
-                chatMessages.Add(new ChatMessage
+                // Build the tool calls list for the wire message and persistence
+                var assembledToolCalls = toolCallAccumulator.OrderBy(kv => kv.Key).Select(kv => new ToolCall
+                {
+                    Id = kv.Value.Id,
+                    Type = "function",
+                    Function = new ToolCallFunction
+                    {
+                        Name = kv.Value.Name,
+                        Arguments = kv.Value.Args.ToString()
+                    }
+                }).ToList();
+
+                // Persist assistant message with tool calls
+                agentLogic.AddMessage(conversationId, new Message
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    ConversationId = conversationId,
+                    Role = "assistant",
+                    ToolCalls = JsonSerializer.Serialize(assembledToolCalls)
+                });
+                request.Messages.Add(new ChatMessage
                 {
                     Role = "assistant",
-                    ToolCalls = toolCallAccumulator.OrderBy(kv => kv.Key).Select(kv => new ToolCall
-                    {
-                        Id = kv.Value.Id,
-                        Type = "function",
-                        Function = new ToolCallFunction
-                        {
-                            Name = kv.Value.Name,
-                            Arguments = kv.Value.Args.ToString()
-                        }
-                    }).ToList()
+                    ToolCalls = assembledToolCalls
                 });
 
-                // Execute each tool call and add results
+                // Execute each tool call, persist results
                 foreach (var (_, (id, name, args)) in toolCallAccumulator.OrderBy(kv => kv.Key))
                 {
                     logger.LogDebug("Executing tool {ToolName} for conversation {ConversationId}", name, conversationId);
                     var result = await agentLogic.ExecuteToolAsync(conversationId, name, args.ToString(), ct);
 
-                    chatMessages.Add(new ChatMessage
+                    // Persist tool result
+                    agentLogic.AddMessage(conversationId, new Message
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        ConversationId = conversationId,
+                        Role = "tool",
+                        Content = result,
+                        ToolCallId = id
+                    });
+                    request.Messages.Add(new ChatMessage
                     {
                         Role = "tool",
                         Content = result,
@@ -311,12 +346,71 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
     {
         var chatMessages = new List<ChatMessage>();
 
+        // System prompt
         var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type);
         if (!string.IsNullOrEmpty(systemPrompt))
             chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
 
-        foreach (var msg in agentLogic.GetMessages(conversation.Id))
-            chatMessages.Add(new ChatMessage { Role = msg.Role, Content = msg.Content });
+        // Reconstruct full message history including tool calls
+        var storedMessages = agentLogic.GetMessages(conversation.Id);
+        for (var i = 0; i < storedMessages.Count; i++)
+        {
+            var msg = storedMessages[i];
+
+            // Assistant message with tool calls — verify all tool results follow
+            if (msg.ToolCalls is not null)
+            {
+                var toolCalls = JsonSerializer.Deserialize<List<ToolCall>>(msg.ToolCalls);
+                if (toolCalls is { Count: > 0 })
+                {
+                    // Collect the expected tool_call_ids
+                    var expectedIds = toolCalls.Select(tc => tc.Id).ToHashSet();
+
+                    // Look ahead for matching tool result messages
+                    var foundIds = new HashSet<string>();
+                    for (var j = i + 1; j < storedMessages.Count && foundIds.Count < expectedIds.Count; j++)
+                    {
+                        if (storedMessages[j].Role == "tool" && storedMessages[j].ToolCallId is not null)
+                            foundIds.Add(storedMessages[j].ToolCallId!);
+                        else
+                            break; // Tool results must be contiguous
+                    }
+
+                    // Skip this tool call round if incomplete — avoids API 400 errors
+                    if (!expectedIds.SetEquals(foundIds))
+                    {
+                        logger.LogWarning("Skipping orphaned tool call round at message {MessageId}: expected [{Expected}], found [{Found}]",
+                            msg.Id, string.Join(", ", expectedIds), string.Join(", ", foundIds));
+                        // Skip the assistant message and any partial tool results
+                        while (i + 1 < storedMessages.Count && storedMessages[i + 1].Role == "tool")
+                            i++;
+                        continue;
+                    }
+
+                    // Complete round — add assistant message with tool calls
+                    chatMessages.Add(new ChatMessage { Role = "assistant", Content = msg.Content, ToolCalls = toolCalls });
+
+                    // Add the matching tool result messages
+                    foreach (var id in expectedIds)
+                    {
+                        i++;
+                        chatMessages.Add(new ChatMessage
+                        {
+                            Role = "tool",
+                            Content = storedMessages[i].Content,
+                            ToolCallId = storedMessages[i].ToolCallId
+                        });
+                    }
+                    continue;
+                }
+            }
+
+            // Regular message (user, assistant text, or tool with id)
+            var chatMsg = new ChatMessage { Role = msg.Role, Content = msg.Content };
+            if (msg.ToolCallId is not null)
+                chatMsg.ToolCallId = msg.ToolCallId;
+            chatMessages.Add(chatMsg);
+        }
 
         return chatMessages;
     }

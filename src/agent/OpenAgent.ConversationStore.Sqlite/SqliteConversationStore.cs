@@ -52,14 +52,20 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 Id TEXT PRIMARY KEY,
                 ConversationId TEXT NOT NULL,
                 Role TEXT NOT NULL,
-                Content TEXT NOT NULL,
+                Content TEXT,
                 CreatedAt TEXT NOT NULL,
+                ToolCalls TEXT,
+                ToolCallId TEXT,
                 FOREIGN KEY (ConversationId) REFERENCES Conversations(Id) ON DELETE CASCADE
             );
 
             CREATE INDEX IF NOT EXISTS IX_Messages_ConversationId ON Messages(ConversationId);
             """;
         cmd.ExecuteNonQuery();
+
+        // Migrate existing databases — add columns that may not exist yet
+        TryAddColumn(connection, "Messages", "ToolCalls", "TEXT");
+        TryAddColumn(connection, "Messages", "ToolCallId", "TEXT");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
@@ -162,14 +168,16 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO Messages (Id, ConversationId, Role, Content, CreatedAt)
-            VALUES (@id, @conversationId, @role, @content, @createdAt)
+            INSERT INTO Messages (Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId)
+            VALUES (@id, @conversationId, @role, @content, @createdAt, @toolCalls, @toolCallId)
             """;
         cmd.Parameters.AddWithValue("@id", message.Id);
         cmd.Parameters.AddWithValue("@conversationId", message.ConversationId);
         cmd.Parameters.AddWithValue("@role", message.Role);
-        cmd.Parameters.AddWithValue("@content", message.Content);
+        cmd.Parameters.AddWithValue("@content", (object?)message.Content ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@createdAt", message.CreatedAt.ToString("O"));
+        cmd.Parameters.AddWithValue("@toolCalls", (object?)message.ToolCalls ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@toolCallId", (object?)message.ToolCallId ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
@@ -177,7 +185,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, ConversationId, Role, Content, CreatedAt FROM Messages WHERE ConversationId = @id ORDER BY CreatedAt";
+        cmd.CommandText = "SELECT Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId FROM Messages WHERE ConversationId = @id ORDER BY CreatedAt";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -189,8 +197,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 Id = reader.GetString(0),
                 ConversationId = reader.GetString(1),
                 Role = reader.GetString(2),
-                Content = reader.GetString(3),
-                CreatedAt = DateTimeOffset.Parse(reader.GetString(4))
+                Content = reader.IsDBNull(3) ? null : reader.GetString(3),
+                CreatedAt = DateTimeOffset.Parse(reader.GetString(4)),
+                ToolCalls = reader.IsDBNull(5) ? null : reader.GetString(5),
+                ToolCallId = reader.IsDBNull(6) ? null : reader.GetString(6)
             });
         }
 
@@ -213,6 +223,21 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         pragma.ExecuteNonQuery();
 
         return connection;
+    }
+
+    /// <summary>Adds a column to an existing table, ignoring if it already exists.</summary>
+    private static void TryAddColumn(SqliteConnection connection, string table, string column, string type)
+    {
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {type}";
+            cmd.ExecuteNonQuery();
+        }
+        catch (SqliteException)
+        {
+            // Column already exists — safe to ignore
+        }
     }
 
     private static Conversation ReadConversation(SqliteDataReader reader)

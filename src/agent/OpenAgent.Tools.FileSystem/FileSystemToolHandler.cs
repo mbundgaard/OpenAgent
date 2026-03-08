@@ -1,3 +1,4 @@
+using System.Text;
 using OpenAgent.Contracts;
 
 namespace OpenAgent.Tools.FileSystem;
@@ -8,12 +9,19 @@ namespace OpenAgent.Tools.FileSystem;
 /// </summary>
 public sealed class FileSystemToolHandler : IToolHandler
 {
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+
     public IReadOnlyList<ITool> Tools { get; }
 
     public FileSystemToolHandler(AgentEnvironment environment)
     {
         var workspace = Path.GetFullPath(Path.Combine(environment.DataPath, "workspace"));
         Directory.CreateDirectory(workspace);
-        Tools = [new FileReadTool(workspace), new FileWriteTool(workspace), new FileAppendTool(workspace), new FileEditTool(workspace)];
+        Tools = [
+            new FileReadTool(workspace, encoding: Utf8NoBom),
+            new FileWriteTool(workspace, encoding: Utf8NoBom),
+            new FileAppendTool(workspace, encoding: Utf8NoBom),
+            new FileEditTool(workspace, encoding: Utf8NoBom)
+        ];
     }
 }

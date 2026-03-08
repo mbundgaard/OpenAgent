@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using OpenAgent.Contracts;
 
@@ -7,7 +8,7 @@ namespace OpenAgent.Tools.FileSystem;
 /// Performs a find-and-replace edit on a file. Requires exactly one match of old_text.
 /// Returns a contextual diff showing the change.
 /// </summary>
-public sealed class FileEditTool(string basePath, int maxFileSize = 1_048_576) : ITool
+public sealed class FileEditTool(string basePath, Encoding encoding, int maxFileSize = 1_048_576) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -49,7 +50,7 @@ public sealed class FileEditTool(string basePath, int maxFileSize = 1_048_576) :
         if (fileInfo.Length > maxFileSize)
             return JsonSerializer.Serialize(new { error = $"file too large: {fileInfo.Length} bytes (max {maxFileSize})", path });
 
-        var content = await File.ReadAllTextAsync(fullPath, ct);
+        var content = await File.ReadAllTextAsync(fullPath, encoding, ct);
 
         // Count occurrences to ensure uniqueness
         var count = CountOccurrences(content, oldText);
@@ -65,7 +66,7 @@ public sealed class FileEditTool(string basePath, int maxFileSize = 1_048_576) :
         if (content == updated)
             return JsonSerializer.Serialize(new { error = "no changes would be made, old_text and new_text produce identical content", path });
 
-        await File.WriteAllTextAsync(fullPath, updated, ct);
+        await File.WriteAllTextAsync(fullPath, updated, encoding, ct);
 
         // Generate a contextual diff for verification
         var diff = GenerateDiff(content, updated);

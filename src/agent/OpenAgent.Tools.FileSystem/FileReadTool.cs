@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using OpenAgent.Contracts;
 
@@ -7,7 +8,7 @@ namespace OpenAgent.Tools.FileSystem;
 /// Reads the contents of a file at a given path. Supports offset/limit pagination
 /// and returns numbered lines for easy reference.
 /// </summary>
-public sealed class FileReadTool(string basePath, int maxFileSize = 1_048_576, int defaultMaxLines = 2000) : ITool
+public sealed class FileReadTool(string basePath, Encoding encoding, int maxFileSize = 1_048_576, int defaultMaxLines = 2000) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -53,7 +54,7 @@ public sealed class FileReadTool(string basePath, int maxFileSize = 1_048_576, i
             ? Math.Max(1, limitEl.GetInt32())
             : defaultMaxLines;
 
-        var allLines = await File.ReadAllLinesAsync(fullPath, ct);
+        var allLines = await File.ReadAllLinesAsync(fullPath, encoding, ct);
         var totalLines = allLines.Length;
 
         // Slice to requested range (offset is 1-based)

@@ -14,7 +14,21 @@ public sealed class Message
     [JsonPropertyName("role")]
     public required string Role { get; init; }
     [JsonPropertyName("content")]
-    public required string Content { get; init; }
+    public string? Content { get; init; }
     [JsonPropertyName("created_at")]
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Serialized JSON array of tool calls (only for assistant messages that invoke tools).
+    /// </summary>
+    [JsonPropertyName("tool_calls")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolCalls { get; init; }
+
+    /// <summary>
+    /// The tool call ID this message is a response to (only for role "tool").
+    /// </summary>
+    [JsonPropertyName("tool_call_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolCallId { get; init; }
 }

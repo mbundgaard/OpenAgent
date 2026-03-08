@@ -26,11 +26,15 @@ internal sealed class LoggingConfig : IConfigurable
 
     public string Key => "logging";
 
-    public LoggingLevelSwitch DefaultLevel { get; } = new(LogEventLevel.Information);
+    public LoggingLevelSwitch DefaultLevel { get; } = new(LogEventLevel.Debug);
 
     public Dictionary<string, LoggingLevelSwitch> Overrides { get; } = Modules
-        .ToDictionary(m => m, m => new LoggingLevelSwitch(
-            m == "Microsoft.AspNetCore.Mvc" ? LogEventLevel.Error : LogEventLevel.Information));
+        .ToDictionary(m => m, m => new LoggingLevelSwitch(m switch
+        {
+            "Microsoft.AspNetCore.Mvc" => LogEventLevel.Error,
+            "Microsoft.AspNetCore" => LogEventLevel.Information,
+            _ => LogEventLevel.Debug
+        }));
 
     public IReadOnlyList<ProviderConfigField> ConfigFields
     {

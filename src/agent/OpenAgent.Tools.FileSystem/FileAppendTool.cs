@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using OpenAgent.Contracts;
 
@@ -6,7 +7,7 @@ namespace OpenAgent.Tools.FileSystem;
 /// <summary>
 /// Appends content to the end of a file, creating it if it does not exist.
 /// </summary>
-public sealed class FileAppendTool(string basePath) : ITool
+public sealed class FileAppendTool(string basePath, Encoding encoding) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -42,7 +43,7 @@ public sealed class FileAppendTool(string basePath) : ITool
         if (directory is not null)
             Directory.CreateDirectory(directory);
 
-        await File.AppendAllTextAsync(fullPath, content, ct);
+        await File.AppendAllTextAsync(fullPath, content, encoding, ct);
         return JsonSerializer.Serialize(new { path, bytes_appended = content.Length });
     }
 }

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using OpenAgent.Contracts;
 
@@ -7,7 +8,7 @@ namespace OpenAgent.Tools.FileSystem;
 /// Writes content to a file, creating it if it does not exist or overwriting if it does.
 /// Guards against writing excessively large content.
 /// </summary>
-public sealed class FileWriteTool(string basePath, int maxFileSize = 1_048_576) : ITool
+public sealed class FileWriteTool(string basePath, Encoding encoding, int maxFileSize = 1_048_576) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -47,7 +48,7 @@ public sealed class FileWriteTool(string basePath, int maxFileSize = 1_048_576) 
         if (directory is not null)
             Directory.CreateDirectory(directory);
 
-        await File.WriteAllTextAsync(fullPath, content, ct);
+        await File.WriteAllTextAsync(fullPath, content, encoding, ct);
         return JsonSerializer.Serialize(new { path, bytes_written = content.Length });
     }
 }
