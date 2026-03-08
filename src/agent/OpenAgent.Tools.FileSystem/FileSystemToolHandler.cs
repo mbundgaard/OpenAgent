@@ -21,6 +21,7 @@ public sealed class FileSystemToolHandler : IToolHandler
         // Ensure standard folders exist
         Directory.CreateDirectory(Path.Combine(dataPath, "documents"));
         Directory.CreateDirectory(Path.Combine(dataPath, "projects"));
+        Directory.CreateDirectory(Path.Combine(dataPath, "repos"));
         Directory.CreateDirectory(Path.Combine(dataPath, "memory"));
         Tools = [
             new FileReadTool(dataPath, encoding: Utf8NoBom),
