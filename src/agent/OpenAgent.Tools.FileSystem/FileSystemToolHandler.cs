@@ -13,6 +13,6 @@ public sealed class FileSystemToolHandler : IToolHandler
     public FileSystemToolHandler(AgentEnvironment environment)
     {
         var basePath = Path.GetFullPath(environment.DataPath);
-        Tools = [new FileReadTool(basePath), new FileWriteTool(basePath), new FileEditTool(basePath)];
+        Tools = [new FileReadTool(basePath), new FileWriteTool(basePath), new FileAppendTool(basePath), new FileEditTool(basePath)];
     }
 }

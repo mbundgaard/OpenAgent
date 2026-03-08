@@ -1,0 +1,48 @@
+using System.Text.Json;
+using OpenAgent.Contracts;
+
+namespace OpenAgent.Tools.FileSystem;
+
+/// <summary>
+/// Appends content to the end of a file, creating it if it does not exist.
+/// </summary>
+public sealed class FileAppendTool(string basePath) : ITool
+{
+    public AgentToolDefinition Definition { get; } = new()
+    {
+        Name = "file_append",
+        Description = "Append content to the end of a file. Creates the file if it does not exist.",
+        Parameters = new
+        {
+            type = "object",
+            properties = new
+            {
+                path = new { type = "string", description = "Relative file path to append to" },
+                content = new { type = "string", description = "Content to append to the file" }
+            },
+            required = new[] { "path", "content" }
+        }
+    };
+
+    public async Task<string> ExecuteAsync(string arguments, CancellationToken ct = default)
+    {
+        var args = JsonDocument.Parse(arguments).RootElement;
+        var path = args.GetProperty("path").GetString()
+            ?? throw new ArgumentException("path is required");
+        var content = args.GetProperty("content").GetString()
+            ?? throw new ArgumentException("content is required");
+
+        // Resolve against base path and prevent directory traversal
+        var fullPath = Path.GetFullPath(Path.Combine(basePath, path));
+        if (!fullPath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase))
+            return JsonSerializer.Serialize(new { error = "path is outside allowed directory" });
+
+        // Ensure directory exists
+        var directory = Path.GetDirectoryName(fullPath);
+        if (directory is not null)
+            Directory.CreateDirectory(directory);
+
+        await File.AppendAllTextAsync(fullPath, content, ct);
+        return JsonSerializer.Serialize(new { path, bytes_appended = content.Length });
+    }
+}
