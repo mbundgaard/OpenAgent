@@ -145,6 +145,7 @@ static async Task<Nav> RunRestAsync(HttpClient http, string conversationId)
 {
     while (true)
     {
+        AnsiConsole.MarkupLine("[dodgerblue1]You[/]");
         var input = AnsiConsole.Prompt(
             new TextPrompt<string>("[dodgerblue1]>[/]").AllowEmpty());
 
@@ -178,7 +179,8 @@ static async Task<Nav> RunRestAsync(HttpClient http, string conversationId)
 
             if (content is not null)
             {
-                AnsiConsole.MarkupLine($"[green]Assistant[/]");
+                AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
+                AnsiConsole.MarkupLine("[green]Assistant[/]");
                 AnsiConsole.WriteLine(content);
                 AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
             }
@@ -269,6 +271,7 @@ static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId)
     var nav = Nav.Exit;
     while (ws.State == WebSocketState.Open)
     {
+        AnsiConsole.MarkupLine("[dodgerblue1]You[/]");
         var input = AnsiConsole.Prompt(
             new TextPrompt<string>("[dodgerblue1]>[/]").AllowEmpty());
 
@@ -282,6 +285,7 @@ static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId)
         await ws.SendAsync(payload, WebSocketMessageType.Text, true, CancellationToken.None);
 
         // Show assistant label and wait for streaming response
+        AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
         AnsiConsole.MarkupLine("[green]Assistant[/]");
         done = new TaskCompletionSource();
 
