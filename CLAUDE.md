@@ -25,12 +25,12 @@ src/agent/
   OpenAgent.ConversationStore.Sqlite/     SQLite persistent store (conversations.db) with schema migration
   OpenAgent.LlmText.OpenAIAzure/         Azure OpenAI Chat Completions provider
   OpenAgent.LlmVoice.OpenAIAzure/        Azure OpenAI Realtime voice provider
-  OpenAgent.Tools.FileSystem/             File tools (read, write, append, edit) — workspace-scoped, UTF-8 no BOM
+  OpenAgent.Tools.FileSystem/             File tools (read, write, append, edit) — scoped to dataPath, UTF-8 no BOM
   OpenAgent.Security.ApiKey/              API key authentication — AddApiKeyAuth() extension
   OpenAgent.Tools.Shell/                  Shell exec tool — timeout, process tree kill, merged stdout/stderr
   OpenAgent.Tests/                        Integration tests
 src/chat-cli/
-  OpenAgent.ChatCli/                      Spectre.Console interactive CLI
+  OpenAgent.ChatCli/                      Spectre.Console interactive CLI — uses .env for API key, dev key for localhost
 docs/plans/                               Design docs and implementation plans
 ```
 
@@ -69,7 +69,7 @@ All endpoints live in `OpenAgent.Api/Endpoints/`. They are ASP.NET Core extensio
 - WebSocket endpoints: `WebSocketVoiceEndpoints`, `WebSocketTextEndpoints`
 
 ### Authentication
-Pluggable auth via extension methods on `IServiceCollection`. Currently `AddApiKeyAuth()` validates `X-Api-Key` header against a configured key. Swap for `AddEntraIdAuth()` when migrating to Entra ID — same shape, different implementation. `/health` is anonymous, all other endpoints require authorization.
+Pluggable auth via extension methods on `IServiceCollection`. Currently `AddApiKeyAuth()` validates `X-Api-Key` header against a configured key. Swap for `AddEntraIdAuth()` when migrating to Entra ID — same shape, different implementation. `/health` is anonymous, all other endpoints require authorization. Dev key in `appsettings.Development.json`, production key via `Authentication__ApiKey` environment variable on Azure.
 
 ### Interface segregation for cross-project dependencies
 When `OpenAgent.Api` needs a type from the host project, extract an interface into `OpenAgent.Contracts`. Example: `IVoiceSessionManager` lives in Contracts, concrete `VoiceSessionManager` lives in the host, DI wires them.
@@ -108,6 +108,8 @@ cd src/agent && dotnet test
 - SQLite conversation store (conversations.db in dataPath) — persistent across restarts, with schema migration via TryAddColumn
 - File tools use UTF-8 without BOM, controlled from a single constant in FileSystemToolHandler
 - All tools scoped to `{dataPath}` — no access outside data directory
+- Data directory has standard folders: `projects/` (one per project), `repos/` (git clones), `memory/` (agent notes) — created on startup by FileSystemToolHandler
+- System prompt composed from markdown files in dataPath: AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md — loaded once at startup, filtered by ConversationType
 - BuildChatMessages validates tool call rounds — skips orphaned tool calls to avoid API 400 errors
 
 ## Memory
@@ -121,6 +123,8 @@ Session-to-session notes. Update this section as decisions are made — don't us
 - Prefers concise responses — don't over-explain
 
 ### Upcoming Work
-- Entra ID authentication — replace API key auth with Azure AD JWT bearer tokens
+- Entra ID authentication — replace API key auth with Azure AD JWT bearer tokens for interactive clients (CLI, MAUI, web app)
 - Telegram channel adapter (IChannelProvider) — designed but not yet built
+- Webhook API key auth — separate scheme for inbound webhooks
 - Debug logging is on by default — revert to Information for production
+- CI workflow only triggers on src/agent/** changes
