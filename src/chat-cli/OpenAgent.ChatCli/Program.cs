@@ -6,6 +6,14 @@ using Spectre.Console;
 
 Console.OutputEncoding = Encoding.UTF8;
 
+// API key from environment — required for authenticated endpoints
+var apiKey = Environment.GetEnvironmentVariable("OPENAGENT_API_KEY");
+if (string.IsNullOrWhiteSpace(apiKey))
+{
+    AnsiConsole.MarkupLine("[red]OPENAGENT_API_KEY environment variable is not set.[/]");
+    return 1;
+}
+
 // Known servers
 var servers = new Dictionary<string, string>
 {
@@ -36,6 +44,7 @@ while (true)
     var (mode, transport) = modeResult.Value;
 
     using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+    http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
 
     // Conversation loop — /back returns here to pick another conversation
     while (true)
@@ -51,7 +60,7 @@ while (true)
         var nav = mode == "voice"
             ? Nav.Exit // voice not yet implemented in CLI
             : transport == "websocket"
-                ? await RunWebSocketAsync(baseUrl, conversationId)
+                ? await RunWebSocketAsync(baseUrl, conversationId, apiKey)
                 : await RunRestAsync(http, conversationId);
 
         if (nav == Nav.Exit) return 0;
@@ -211,12 +220,13 @@ static async Task<Nav> RunRestAsync(HttpClient http, string conversationId)
 
 // --- WebSocket streaming chat loop ---
 
-static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId)
+static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId, string apiKey)
 {
     var wsUrl = baseUrl.Replace("http://", "ws://").Replace("https://", "wss://");
     var uri = new Uri($"{wsUrl}/ws/conversations/{conversationId}/text");
 
     using var ws = new ClientWebSocket();
+    ws.Options.SetRequestHeader("X-Api-Key", apiKey);
 
     // Connect with spinner
     try
