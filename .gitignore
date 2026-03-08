@@ -10,6 +10,9 @@
 src/agent/OpenAgent/config/
 src/agent/OpenAgent/data/
 
+# Development settings (may contain secrets)
+**/appsettings.Development.json
+
 # User-specific files
 *.rsuser
 *.suo
