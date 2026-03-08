@@ -171,7 +171,6 @@ static async Task<Nav> RunRestAsync(HttpClient http, string conversationId)
 {
     while (true)
     {
-        AnsiConsole.MarkupLine("[dodgerblue1]You[/]");
         var input = AnsiConsole.Prompt(
             new TextPrompt<string>("[dodgerblue1]>[/]").AllowEmpty());
 
@@ -325,7 +324,6 @@ static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId, 
     var nav = Nav.Exit;
     while (ws.State == WebSocketState.Open)
     {
-        AnsiConsole.MarkupLine("[dodgerblue1]You[/]");
         var input = AnsiConsole.Prompt(
             new TextPrompt<string>("[dodgerblue1]>[/]").AllowEmpty());
 
