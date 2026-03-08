@@ -80,7 +80,7 @@ public static class WebSocketTextEndpoints
             if (request?.Content is null)
                 continue;
 
-            await foreach (var evt in textProvider.StreamAsync(conversation, request.Content, ct))
+            await foreach (var evt in textProvider.CompleteAsync(conversation, request.Content, ct))
             {
                 switch (evt)
                 {

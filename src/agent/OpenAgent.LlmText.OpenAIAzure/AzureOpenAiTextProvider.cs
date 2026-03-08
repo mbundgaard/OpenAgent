@@ -7,7 +7,6 @@ using OpenAgent.LlmText.OpenAIAzure.Models;
 using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
-using OpenAgent.Models.Text;
 
 namespace OpenAgent.LlmText.OpenAIAzure;
 
@@ -53,123 +52,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
     public void Dispose() => _httpClient?.Dispose();
 
-    public async Task<TextResponse> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default)
-    {
-        if (_config is null || _httpClient is null)
-            throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
-
-        var conversationId = conversation.Id;
-        logger.LogDebug("CompleteAsync called for conversation {ConversationId}", conversationId);
-
-        // Store user message
-        agentLogic.AddMessage(conversationId, new Message
-        {
-            Id = Guid.NewGuid().ToString(),
-            ConversationId = conversationId,
-            Role = "user",
-            Content = userInput
-        });
-
-        // Build request once — messages and tools are mutated across tool call rounds
-        var request = new ChatCompletionRequest
-        {
-            Messages = BuildChatMessages(conversation),
-            Tools = BuildTools(),
-            ToolChoice = agentLogic.Tools.Count > 0 ? "auto" : null
-        };
-
-        var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
-
-        // Completion loop (handles tool calls)
-        const int maxToolRounds = 10;
-        for (var round = 0; round < maxToolRounds; round++)
-        {
-            var httpResponse = await _httpClient.PostAsJsonAsync(url, request, ct);
-            if (!httpResponse.IsSuccessStatusCode)
-            {
-                var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
-                logger.LogError("Azure OpenAI returned {StatusCode} for conversation {ConversationId}: {ErrorBody}",
-                    (int)httpResponse.StatusCode, conversationId, errorBody);
-                throw new HttpRequestException(
-                    $"Azure OpenAI returned {(int)httpResponse.StatusCode}: {errorBody}");
-            }
-
-            var response = await httpResponse.Content.ReadFromJsonAsync<ChatCompletionResponse>(ct)
-                ?? throw new InvalidOperationException("Empty response from Azure OpenAI.");
-
-            var choice = response.Choices?.FirstOrDefault()
-                ?? throw new InvalidOperationException("No choices in response.");
-
-            var message = choice.Message
-                ?? throw new InvalidOperationException("No message in choice.");
-
-            // If the model wants to call tools
-            if (message.ToolCalls is { Count: > 0 })
-            {
-                logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
-                    conversationId, string.Join(", ", message.ToolCalls.Select(t => t.Function!.Name)));
-
-                // Persist assistant message with tool calls
-                agentLogic.AddMessage(conversationId, new Message
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    ConversationId = conversationId,
-                    Role = "assistant",
-                    Content = message.Content,
-                    ToolCalls = JsonSerializer.Serialize(message.ToolCalls)
-                });
-                request.Messages.Add(message);
-
-                // Execute each tool call, persist results
-                foreach (var toolCall in message.ToolCalls)
-                {
-                    logger.LogDebug("Executing tool {ToolName} for conversation {ConversationId}",
-                        toolCall.Function!.Name, conversationId);
-                    var result = await agentLogic.ExecuteToolAsync(
-                        conversationId, toolCall.Function.Name!, toolCall.Function.Arguments!, ct);
-
-                    // Persist tool result
-                    agentLogic.AddMessage(conversationId, new Message
-                    {
-                        Id = Guid.NewGuid().ToString(),
-                        ConversationId = conversationId,
-                        Role = "tool",
-                        Content = result,
-                        ToolCallId = toolCall.Id
-                    });
-                    request.Messages.Add(new ChatMessage
-                    {
-                        Role = "tool",
-                        Content = result,
-                        ToolCallId = toolCall.Id
-                    });
-                }
-
-                continue; // Re-call the LLM with tool results
-            }
-
-            // Final text response
-            var content = message.Content ?? "";
-
-            agentLogic.AddMessage(conversationId, new Message
-            {
-                Id = Guid.NewGuid().ToString(),
-                ConversationId = conversationId,
-                Role = "assistant",
-                Content = content
-            });
-
-            logger.LogDebug("Completion finished for conversation {ConversationId}, {ContentLength} chars",
-                conversationId, content.Length);
-            return new TextResponse { Content = content, Role = "assistant" };
-        }
-
-        logger.LogError("Tool call loop exceeded {MaxRounds} rounds for conversation {ConversationId}",
-            maxToolRounds, conversationId);
-        throw new InvalidOperationException($"Tool call loop exceeded {maxToolRounds} rounds.");
-    }
-
-    public async IAsyncEnumerable<CompletionEvent> StreamAsync(
+    public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation, string userInput, [EnumeratorCancellation] CancellationToken ct = default)
     {
         if (_config is null || _httpClient is null)

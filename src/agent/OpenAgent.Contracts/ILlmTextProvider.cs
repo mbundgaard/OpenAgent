@@ -1,6 +1,5 @@
 using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
-using OpenAgent.Models.Text;
 
 namespace OpenAgent.Contracts;
 
@@ -10,7 +9,10 @@ namespace OpenAgent.Contracts;
 /// </summary>
 public interface ILlmTextProvider : IConfigurable
 {
-    Task<TextResponse> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default);
-
-    IAsyncEnumerable<CompletionEvent> StreamAsync(Conversation conversation, string userInput, CancellationToken ct = default);
+    /// <summary>
+    /// Runs a completion turn. Yields CompletionEvents as they occur — text deltas,
+    /// tool calls, and tool results. Works for both streaming (WebSocket) and
+    /// collected (REST) transports.
+    /// </summary>
+    IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default);
 }

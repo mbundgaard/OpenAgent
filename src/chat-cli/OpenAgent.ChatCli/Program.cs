@@ -156,7 +156,7 @@ static async Task<Nav> RunRestAsync(HttpClient http, string conversationId)
 
         try
         {
-            string? content = null;
+            var events = new List<JsonElement>();
 
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
@@ -169,19 +169,36 @@ static async Task<Nav> RunRestAsync(HttpClient http, string conversationId)
 
                     if (!response.IsSuccessStatusCode)
                     {
-                        content = $"[red]Error {(int)response.StatusCode}:[/] {await response.Content.ReadAsStringAsync()}";
+                        AnsiConsole.MarkupLine($"[red]Error {(int)response.StatusCode}:[/] {await response.Content.ReadAsStringAsync()}");
                         return;
                     }
 
-                    using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
-                    content = doc.RootElement.GetProperty("content").GetString();
+                    var array = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+                    if (array is not null) events.AddRange(array);
                 });
 
-            if (content is not null)
+            if (events.Count > 0)
             {
                 AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
                 AnsiConsole.MarkupLine("[green]Assistant[/]");
-                AnsiConsole.WriteLine(content);
+
+                foreach (var evt in events)
+                {
+                    var type = evt.GetProperty("type").GetString();
+                    if (type == "text")
+                    {
+                        var text = evt.GetProperty("content").GetString() ?? "";
+                        Console.Write(text);
+                    }
+                    else if (type == "tool_call")
+                    {
+                        var name = evt.GetProperty("name").GetString() ?? "";
+                        var arguments = evt.GetProperty("arguments").GetString() ?? "";
+                        AnsiConsole.MarkupLine($"[dim]> calling [yellow]{Markup.Escape(name)}[/]({Markup.Escape(TruncateArgs(arguments))})[/]");
+                    }
+                }
+
+                Console.WriteLine();
                 AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
             }
         }

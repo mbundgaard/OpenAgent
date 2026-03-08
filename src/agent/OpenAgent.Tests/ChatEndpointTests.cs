@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -7,7 +6,6 @@ using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
-using OpenAgent.Models.Text;
 
 namespace OpenAgent.Tests;
 
@@ -29,7 +27,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task SendMessage_NewConversation_CreatesAndReturnsResponse()
+    public async Task SendMessage_NewConversation_ReturnsCompletionEvents()
     {
         var client = _factory.CreateClient();
         var conversationId = Guid.NewGuid().ToString();
@@ -39,14 +37,18 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
             new { Content = "hello" });
 
         response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<ChatResponse>();
-        Assert.Equal(conversationId, body!.ConversationId);
-        Assert.Equal("assistant", body.Role);
-        Assert.Equal("fake response", body.Content);
+
+        var events = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        Assert.NotNull(events);
+        Assert.Equal(2, events.Length);
+        Assert.Equal("text", events[0].GetProperty("type").GetString());
+        Assert.Equal("fake ", events[0].GetProperty("content").GetString());
+        Assert.Equal("text", events[1].GetProperty("type").GetString());
+        Assert.Equal("response", events[1].GetProperty("content").GetString());
     }
 
     [Fact]
-    public async Task SendMessage_ExistingConversation_ReturnsResponse()
+    public async Task SendMessage_ExistingConversation_ReturnsCompletionEvents()
     {
         var client = _factory.CreateClient();
         var conversationId = Guid.NewGuid().ToString();
@@ -62,9 +64,11 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
             new { Content = "follow up" });
 
         response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<ChatResponse>();
-        Assert.Equal(conversationId, body!.ConversationId);
-        Assert.Equal("assistant", body.Role);
+
+        var events = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        Assert.NotNull(events);
+        Assert.True(events.Length > 0);
+        Assert.Equal("text", events[0].GetProperty("type").GetString());
     }
 
     private sealed class FakeTextProvider : ILlmTextProvider
@@ -73,12 +77,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         public IReadOnlyList<ProviderConfigField> ConfigFields => [];
         public void Configure(JsonElement configuration) { }
 
-        public Task<TextResponse> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default)
-        {
-            return Task.FromResult(new TextResponse { Role = "assistant", Content = "fake response" });
-        }
-
-        public async IAsyncEnumerable<CompletionEvent> StreamAsync(Conversation conversation, string userInput,
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, string userInput,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return new TextDelta("fake ");
