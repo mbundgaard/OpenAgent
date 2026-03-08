@@ -17,6 +17,11 @@ public sealed class FileSystemToolHandler : IToolHandler
     {
         var workspace = Path.GetFullPath(environment.DataPath);
         Directory.CreateDirectory(workspace);
+
+        // Ensure standard folders exist
+        Directory.CreateDirectory(Path.Combine(workspace, "documents"));
+        Directory.CreateDirectory(Path.Combine(workspace, "projects"));
+        Directory.CreateDirectory(Path.Combine(workspace, "memory"));
         Tools = [
             new FileReadTool(workspace, encoding: Utf8NoBom),
             new FileWriteTool(workspace, encoding: Utf8NoBom),
