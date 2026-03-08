@@ -22,19 +22,13 @@ if (File.Exists(envFile))
     }
 }
 
-// API key from environment or .env — required for authenticated endpoints
-var apiKey = Environment.GetEnvironmentVariable("OPENAGENT_API_KEY");
-if (string.IsNullOrWhiteSpace(apiKey))
+// Known servers — localhost uses a hardcoded dev key, remote servers use the env var
+const string devApiKey = "dev-api-key-change-me";
+var servers = new Dictionary<string, (string Url, string ApiKey)>
 {
-    AnsiConsole.MarkupLine("[red]OPENAGENT_API_KEY is not set. Add it to .env or set as environment variable.[/]");
-    return 1;
-}
-
-// Known servers
-var servers = new Dictionary<string, string>
-{
-    ["localhost"] = "http://localhost:5264",
-    ["openagent-test"] = "https://openagent-test.azurewebsites.net",
+    ["localhost"] = ("http://localhost:5264", devApiKey),
+    ["openagent-test"] = ("https://openagent-test.azurewebsites.net",
+        Environment.GetEnvironmentVariable("OPENAGENT_API_KEY") ?? ""),
 };
 
 // Header
@@ -52,7 +46,14 @@ while (true)
             .AddChoices(servers.Keys.Append("Exit")));
 
     if (serverName == "Exit") return 0;
-    var baseUrl = servers[serverName];
+    var (baseUrl, apiKey) = servers[serverName];
+
+    // Validate API key for remote servers
+    if (string.IsNullOrWhiteSpace(apiKey))
+    {
+        AnsiConsole.MarkupLine($"[red]No API key for {serverName}. Set OPENAGENT_API_KEY in .env or environment.[/]");
+        continue;
+    }
 
     // Select mode
     var modeResult = SelectMode();
