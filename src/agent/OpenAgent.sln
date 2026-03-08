@@ -25,6 +25,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.ConfigStore.File"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.ConversationStore.Sqlite", "OpenAgent.ConversationStore.Sqlite\OpenAgent.ConversationStore.Sqlite.csproj", "{A4F0FECE-2AE9-439C-8A6E-1AD2324F749B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Tools.FileSystem", "OpenAgent.Tools.FileSystem\OpenAgent.Tools.FileSystem.csproj", "{FB953EBD-3D61-485F-B49C-E323D95ADDCD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -143,6 +145,18 @@ Global
 		{A4F0FECE-2AE9-439C-8A6E-1AD2324F749B}.Release|x64.Build.0 = Release|Any CPU
 		{A4F0FECE-2AE9-439C-8A6E-1AD2324F749B}.Release|x86.ActiveCfg = Release|Any CPU
 		{A4F0FECE-2AE9-439C-8A6E-1AD2324F749B}.Release|x86.Build.0 = Release|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Debug|x64.Build.0 = Debug|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Debug|x86.Build.0 = Debug|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Release|x64.ActiveCfg = Release|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Release|x64.Build.0 = Release|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Release|x86.ActiveCfg = Release|Any CPU
+		{FB953EBD-3D61-485F-B49C-E323D95ADDCD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

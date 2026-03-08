@@ -5,6 +5,7 @@ using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.LlmText.OpenAIAzure;
 using OpenAgent.LlmVoice.OpenAIAzure;
+using OpenAgent.Tools.FileSystem;
 using Serilog;
 using Serilog.Formatting.Compact;
 
@@ -34,6 +35,8 @@ builder.Host.UseSerilog((context, serilog) =>
 
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddSingleton<IAgentLogic, AgentLogic>();
+
+builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>();
