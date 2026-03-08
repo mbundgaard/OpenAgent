@@ -12,7 +12,8 @@ public sealed class FileSystemToolHandler : IToolHandler
 
     public FileSystemToolHandler(AgentEnvironment environment)
     {
-        var basePath = Path.GetFullPath(environment.DataPath);
-        Tools = [new FileReadTool(basePath), new FileWriteTool(basePath), new FileAppendTool(basePath), new FileEditTool(basePath)];
+        var workspace = Path.GetFullPath(Path.Combine(environment.DataPath, "workspace"));
+        Directory.CreateDirectory(workspace);
+        Tools = [new FileReadTool(workspace), new FileWriteTool(workspace), new FileAppendTool(workspace), new FileEditTool(workspace)];
     }
 }
