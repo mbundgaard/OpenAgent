@@ -54,8 +54,8 @@ internal sealed class SystemPromptBuilder
             if (filePath == "MEMORY.md")
             {
                 var today = DateTime.UtcNow.Date;
-                TryAppendFile(sections, Path.Combine(_dataPath, "memory", $"{today.AddDays(-1):yyyy-MM-dd}.md"));
-                TryAppendFile(sections, Path.Combine(_dataPath, "memory", $"{today:yyyy-MM-dd}.md"));
+                TryAppendFile(sections, Path.Combine("memory", $"{today.AddDays(-1):yyyy-MM-dd}.md"));
+                TryAppendFile(sections, Path.Combine("memory", $"{today:yyyy-MM-dd}.md"));
             }
         }
 
@@ -79,10 +79,11 @@ internal sealed class SystemPromptBuilder
         }
     }
 
-    private static void TryAppendFile(List<string> sections, string path)
+    private void TryAppendFile(List<string> sections, string relativePath)
     {
-        if (!File.Exists(path)) return;
-        var content = File.ReadAllText(path).Trim();
+        var fullPath = Path.Combine(_dataPath, relativePath);
+        if (!File.Exists(fullPath)) return;
+        var content = File.ReadAllText(fullPath).Trim();
         if (content.Length > 0) sections.Add(content);
     }
 }
