@@ -26,6 +26,7 @@ src/agent/
   OpenAgent.LlmText.OpenAIAzure/         Azure OpenAI Chat Completions provider
   OpenAgent.LlmVoice.OpenAIAzure/        Azure OpenAI Realtime voice provider
   OpenAgent.Tools.FileSystem/             File tools (read, write, append, edit) — workspace-scoped, UTF-8 no BOM
+  OpenAgent.Security.ApiKey/              API key authentication — AddApiKeyAuth() extension
   OpenAgent.Tools.Shell/                  Shell exec tool — timeout, process tree kill, merged stdout/stderr
   OpenAgent.Tests/                        Integration tests
 src/chat-cli/
@@ -66,6 +67,9 @@ Endpoints validate the request and forward to the provider. No business logic in
 All endpoints live in `OpenAgent.Api/Endpoints/`. They are ASP.NET Core extension methods on `WebApplication`. Grouped by transport and domain:
 - REST endpoints: `ConversationEndpoints`, `ChatEndpoints`
 - WebSocket endpoints: `WebSocketVoiceEndpoints`, `WebSocketTextEndpoints`
+
+### Authentication
+Pluggable auth via extension methods on `IServiceCollection`. Currently `AddApiKeyAuth()` validates `X-Api-Key` header against a configured key. Swap for `AddEntraIdAuth()` when migrating to Entra ID — same shape, different implementation. `/health` is anonymous, all other endpoints require authorization.
 
 ### Interface segregation for cross-project dependencies
 When `OpenAgent.Api` needs a type from the host project, extract an interface into `OpenAgent.Contracts`. Example: `IVoiceSessionManager` lives in Contracts, concrete `VoiceSessionManager` lives in the host, DI wires them.
@@ -117,6 +121,6 @@ Session-to-session notes. Update this section as decisions are made — don't us
 - Prefers concise responses — don't over-explain
 
 ### Upcoming Work
-- API security — endpoints are currently open, needs auth
+- Entra ID authentication — replace API key auth with Azure AD JWT bearer tokens
 - Telegram channel adapter (IChannelProvider) — designed but not yet built
 - Debug logging is on by default — revert to Information for production
