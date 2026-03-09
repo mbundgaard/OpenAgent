@@ -2,6 +2,10 @@
 
 Multi-channel AI agent platform. Connects LLM providers (text, voice) to inbound channels (REST API, WebSocket, Telegram, webhooks) with a shared agent personality layer.
 
+## Project Board
+
+https://github.com/users/mbundgaard/projects/4 — managed via `gh project` and `gh issue` CLI commands. See [docs/project-api.md](docs/project-api.md) for API reference.
+
 ## Tech Stack
 
 - .NET 10, ASP.NET Core Minimal APIs, System.Text.Json
@@ -114,7 +118,7 @@ cd src/agent && dotnet test
 
 ## Memory
 
-Session-to-session notes. Update this section as decisions are made — don't use separate memory files.
+Session-to-session notes. Save memories here in CLAUDE.md — do NOT create separate memory files. Update this section as decisions are made.
 
 ### User Preferences
 - Prefers design discussions before implementation — brainstorm first, then plan, then build
@@ -122,9 +126,3 @@ Session-to-session notes. Update this section as decisions are made — don't us
 - Values small, frequent commits over accumulated batches
 - Prefers concise responses — don't over-explain
 
-### Upcoming Work
-- Entra ID authentication — replace API key auth with Azure AD JWT bearer tokens for interactive clients (CLI, MAUI, web app)
-- Telegram channel adapter (IChannelProvider) — designed but not yet built
-- Webhook API key auth — separate scheme for inbound webhooks
-- Debug logging is on by default — revert to Information for production
-- CI workflow only triggers on src/agent/** changes
