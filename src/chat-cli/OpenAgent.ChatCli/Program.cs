@@ -48,6 +48,8 @@ AnsiConsole.MarkupLine("""
   ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝[/]
 """);
+AnsiConsole.MarkupLine("[dim]  \U0001f916 something is thinking[/]");
+AnsiConsole.WriteLine();
 AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("grey")));
 
 // Main navigation loop
