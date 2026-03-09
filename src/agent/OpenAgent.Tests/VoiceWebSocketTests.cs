@@ -136,7 +136,7 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
 
     private sealed class FakeVoiceSession : IVoiceSession
     {
-        private readonly Channel<VoiceEvent> _events = Channel.CreateUnbounded<VoiceEvent>();
+        private readonly System.Threading.Channels.Channel<VoiceEvent> _events = System.Threading.Channels.Channel.CreateUnbounded<VoiceEvent>();
         private readonly TaskCompletionSource<byte[]> _firstAudio = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public string SessionId { get; } = Guid.NewGuid().ToString();
