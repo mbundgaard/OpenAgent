@@ -81,17 +81,20 @@ Via `appsettings.json` / environment variables:
 - On shutdown: calls `DeleteWebhookAsync()`
 - Webhook validates secret token header (not API key auth)
 
-**Graceful no-op:** If `BotToken` is not configured, `TelegramBotService.StartAsync` exits early. No crash, no error.
+**Missing token behavior:**
+- `Mode=Webhook` + no token: throw on startup — you explicitly asked for Telegram, this is a broken deploy
+- `Mode=Polling` + no token: log a warning and skip startup — may be intentional in dev environments where only some channels are active
 
-## Access Control
+## Update Filtering & Access Control
 
-- `TelegramAccessControl` checks `Update.Message.From.Id` against `TelegramOptions.AllowedUserIds`
-- Empty list = all users blocked (secure by default)
-- Unauthorized messages silently ignored
+Updates are filtered early and explicitly:
+
+1. **Update filter**: Only process updates where `Update.Message` is non-null, `Message.Text` is non-null, and `Chat.Type == ChatType.Private`. All other update types (edits, callbacks, group messages, media-only) are ignored in Phase 1.
+2. **Access control**: After filtering, `TelegramAccessControl` checks `Message.From.Id` against `TelegramOptions.AllowedUserIds`. Empty list = all users blocked (secure by default). Unauthorized messages silently ignored.
 
 ## Markdown to Telegram HTML
 
-Simple regex-based converter:
+Uses **Markdig** to parse markdown into an AST, then renders to Telegram's HTML subset via a custom renderer. No regex — Markdig handles nested markup, code fences, and edge cases correctly.
 
 | Markdown | Telegram HTML |
 |----------|--------------|
@@ -102,17 +105,16 @@ Simple regex-based converter:
 | `[text](url)` | `<a href="url">text</a>` |
 | `~~strike~~` | `<s>strike</s>` |
 
-Escapes `<`, `>`, `&` before applying tags. Falls back to plain text on Telegram parse errors.
+Text content is HTML-escaped (`<`, `>`, `&`) during rendering. URLs in links are sanitized (only `http`/`https` schemes). Falls back to plain text on Telegram parse errors.
 
-Messages exceeding 4096 chars are chunked into multiple messages.
+**Chunking**: Split the markdown at natural boundaries (paragraph breaks) *before* converting to HTML. Each chunk is converted independently, ensuring self-contained HTML. Max 4096 chars per chunk after conversion.
 
 ## Error Handling
 
 - **LLM failure**: Reply with short error message
-- **Telegram API failure**: Log and swallow (don't crash polling loop)
-- **HTML parse failure**: Retry with plain text
-- **Message too long**: Chunk at 4096 chars
-- No retry/backoff in Phase 1
+- **HTML parse failure**: Retry with plain text (strip tags)
+- **Message too long**: Chunked before conversion (see Markdown section)
+- **Telegram send failure**: Bounded retry — 3 attempts, exponential backoff (1s, 2s, 4s), only on transient failures (network errors, 429, 5xx). Give up after 3 attempts and log. Never crash the polling loop.
 
 ## Host Integration
 
@@ -132,6 +134,7 @@ app.MapTelegramWebhookEndpoints();
 ## Dependencies
 
 - `Telegram.Bot` NuGet package
+- `Markdig` NuGet package (markdown parsing)
 
 ## Future Phases
 
