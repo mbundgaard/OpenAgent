@@ -8,6 +8,7 @@ using OpenAgent.LlmVoice.OpenAIAzure;
 using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Tools.Shell;
+using OpenAgent.Tools.WebFetch;
 using Serilog;
 using Serilog.Formatting.Compact;
 
@@ -40,6 +41,7 @@ builder.Services.AddSingleton<IAgentLogic, AgentLogic>();
 
 builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
+builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>();

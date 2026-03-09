@@ -12,6 +12,8 @@
     <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="ReverseMarkdown" Version="4.6.0" />
+    <PackageVersion Include="SmartReader" Version="0.9.4" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
 </Project>
