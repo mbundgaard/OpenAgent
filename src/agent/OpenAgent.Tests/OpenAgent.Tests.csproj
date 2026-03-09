@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenAgent\OpenAgent.csproj" />
+    <ProjectReference Include="..\OpenAgent.Channel.Telegram\OpenAgent.Channel.Telegram.csproj" />
   </ItemGroup>
 
 </Project>

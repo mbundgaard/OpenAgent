@@ -26,6 +26,7 @@
     <ProjectReference Include="..\OpenAgent.Tools.Shell\OpenAgent.Tools.Shell.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.WebFetch\OpenAgent.Tools.WebFetch.csproj" />
     <ProjectReference Include="..\OpenAgent.Security.ApiKey\OpenAgent.Security.ApiKey.csproj" />
+    <ProjectReference Include="..\OpenAgent.Channel.Telegram\OpenAgent.Channel.Telegram.csproj" />
   </ItemGroup>
 
   <ItemGroup>
