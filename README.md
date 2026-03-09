@@ -15,4 +15,4 @@ https://github.com/users/mbundgaard/projects/4
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) — Architecture and coding conventions
-- [docs/project-api.md](https://github.com/mbundgaard/OpenAgent/blob/main/docs/project-api.md) — Project board API reference
+- [docs/project-api.md](https://github.com/mbundgaard/OpenAgent/blob/master/docs/project-api.md) — Project board API reference
