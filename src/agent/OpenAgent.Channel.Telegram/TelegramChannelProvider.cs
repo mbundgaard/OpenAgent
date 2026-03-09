@@ -73,12 +73,16 @@ public sealed class TelegramChannelProvider : IChannelProvider
 
         if (isWebhook)
         {
+            if (string.IsNullOrEmpty(_options.WebhookUrl))
+                throw new InvalidOperationException(
+                    "Telegram WebhookUrl is required when Mode is 'Webhook'. Set Telegram__WebhookUrl.");
+
             // Generate webhook secret if not configured
             _webhookSecret = _options.WebhookSecret ?? Guid.NewGuid().ToString("N");
 
             // Register webhook with Telegram
             await _botClient.SetWebhook(
-                _options.WebhookUrl!,
+                _options.WebhookUrl,
                 secretToken: _webhookSecret,
                 cancellationToken: ct);
 

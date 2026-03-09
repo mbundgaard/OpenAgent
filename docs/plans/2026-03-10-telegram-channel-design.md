@@ -11,12 +11,14 @@ Phase 1 scope: DM text messages, allowlist access control, polling + webhook mod
 Lives in `OpenAgent.Contracts`:
 
 ```csharp
-public interface IChannelProvider : IConfigurable
+public interface IChannelProvider
 {
     Task StartAsync(CancellationToken ct);
     Task StopAsync(CancellationToken ct);
 }
 ```
+
+Does not extend `IConfigurable` — channel config uses `IOptions<T>` via the standard ASP.NET config pipeline (appsettings/env vars), not the runtime admin-endpoint pattern used by LLM providers.
 
 A channel starts, listens for inbound messages, creates conversations via `IConversationStore.GetOrCreate()`, calls `ILlmTextProvider.CompleteAsync()`, and sends responses back through its platform API.
 
@@ -107,7 +109,7 @@ Uses **Markdig** to parse markdown into an AST, then renders to Telegram's HTML 
 
 Text content is HTML-escaped (`<`, `>`, `&`) during rendering. URLs in links are sanitized (only `http`/`https` schemes). Falls back to plain text on Telegram parse errors.
 
-**Chunking**: Split the markdown at natural boundaries (paragraph breaks) *before* converting to HTML. Each chunk is converted independently, ensuring self-contained HTML. Max 4096 chars per chunk after conversion.
+**Chunking**: Split the markdown at natural boundaries (paragraph breaks) *before* converting to HTML. Each chunk is converted independently, ensuring self-contained HTML. Max 4096 chars per markdown chunk. Note: HTML conversion adds tags so the final HTML may exceed 4096 — in practice LLM responses rarely hit this limit, and Telegram is lenient. Phase 2 can add post-conversion length validation if needed.
 
 ## Error Handling
 
