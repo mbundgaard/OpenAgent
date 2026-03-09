@@ -32,8 +32,23 @@ var servers = new Dictionary<string, (string Url, string ApiKey)>
 };
 
 // Header
-AnsiConsole.Write(new FigletText("OpenAgent").Color(Color.DodgerBlue1));
-AnsiConsole.WriteLine();
+AnsiConsole.MarkupLine("""
+[dodgerblue1]
+   ██████╗ ██████╗ ███████╗███╗   ██╗
+  ██╔═══██╗██╔══██╗██╔════╝████╗  ██║
+  ██║   ██║██████╔╝█████╗  ██╔██╗ ██║
+  ██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║
+  ╚██████╔╝██║     ███████╗██║ ╚████║
+   ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝
+
+   █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+  ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+  ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
+  ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
+  ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
+  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝[/]
+""");
+AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("grey")));
 
 // Main navigation loop
 while (true)
@@ -69,10 +84,6 @@ while (true)
         var conversationId = await SelectConversationAsync(http);
         if (conversationId is null) break; // /back to mode select
 
-        // Show chat header
-        var label = mode == "voice" ? "voice" : transport;
-        AnsiConsole.Write(new Rule($"[dodgerblue1]{serverName}[/] · [green]{label}[/]").LeftJustified());
-        AnsiConsole.WriteLine();
 
         var nav = mode == "voice"
             ? Nav.Exit // voice not yet implemented in CLI
@@ -219,10 +230,17 @@ static async Task<Nav> RunRestAsync(HttpClient http, string conversationId)
                     {
                         var name = evt.GetProperty("name").GetString() ?? "";
                         var arguments = evt.GetProperty("arguments").GetString() ?? "";
-                        AnsiConsole.MarkupLine($"[dim]> calling [yellow]{Markup.Escape(name)}[/]({Markup.Escape(TruncateArgs(arguments))})[/]");
+                        ToolRenderer.RenderToolCall(name, arguments);
+                    }
+                    else if (type == "tool_result")
+                    {
+                        var name = evt.GetProperty("name").GetString() ?? "";
+                        var result = evt.GetProperty("result").GetString() ?? "";
+                        ToolRenderer.RenderToolResult(name, result);
                     }
                 }
 
+                ToolRenderer.Flush();
                 Console.WriteLine();
                 AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
             }
@@ -299,15 +317,17 @@ static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId, 
                 {
                     var name = root.GetProperty("name").GetString() ?? "";
                     var arguments = root.GetProperty("arguments").GetString() ?? "";
-                    AnsiConsole.MarkupLine($"[dim]> calling [yellow]{Markup.Escape(name)}[/]({Markup.Escape(TruncateArgs(arguments))})[/]");
+                    ToolRenderer.RenderToolCall(name, arguments);
                 }
                 else if (type == "tool_result")
                 {
-                    // Tool results are available but not shown in the UI
+                    var toolName = root.GetProperty("name").GetString() ?? "";
+                    var toolResult = root.GetProperty("result").GetString() ?? "";
+                    ToolRenderer.RenderToolResult(toolName, toolResult);
                 }
                 else if (type == "done")
                 {
-                    // Print the response separator
+                    ToolRenderer.Flush();
                     Console.WriteLine();
                     AnsiConsole.Write(new Rule().RuleStyle(Style.Parse("dim")));
                     done.TrySetResult();
@@ -352,17 +372,269 @@ static async Task<Nav> RunWebSocketAsync(string baseUrl, string conversationId, 
     return nav;
 }
 
-// --- Helpers ---
-
-static string TruncateArgs(string args, int max = 80)
-{
-    if (args.Length <= max) return args;
-    return args[..max] + "...";
-}
-
 // --- Navigation signal ---
 
 enum Nav { Back, Menu, Exit }
+
+// --- Tool rendering ---
+
+enum ToolStyle
+{
+    Panel,            // 1: Tool calls in panels, results hidden
+    PanelWithResult,  // 2: Panels for calls + truncated result panels
+    Spinner,          // 3: Panel for call, spinner while waiting, then result
+    Tree,             // 4: Tree view grouping consecutive tool rounds
+    ColorCoded        // 5: Color-coded panels by tool handler domain
+}
+
+/// <summary>
+/// Renders tool calls and results in the CLI. Switch style to change appearance.
+/// </summary>
+static class ToolRenderer
+{
+    public static ToolStyle Style { get; set; } = ToolStyle.ColorCoded;
+
+    // State for Spinner style — tracks whether we're waiting for a result
+    static CancellationTokenSource? _spinnerCts;
+    static Task? _spinnerTask;
+
+    // State for Tree style — collects tool rounds for batch rendering
+    static readonly List<(string Name, string Arguments, string? Result)> _treeRounds = [];
+    static string? _pendingTreeToolName;
+    static string? _pendingTreeToolArgs;
+
+    /// <summary>
+    /// Renders a tool call event.
+    /// </summary>
+    public static void RenderToolCall(string name, string arguments)
+    {
+        switch (Style)
+        {
+            case ToolStyle.Panel:
+            case ToolStyle.PanelWithResult:
+                AnsiConsole.Write(BuildToolCallPanel(name, arguments));
+                break;
+
+            case ToolStyle.Spinner:
+                AnsiConsole.Write(BuildToolCallPanel(name, arguments));
+                StartSpinner(name);
+                break;
+
+            case ToolStyle.Tree:
+                // Store pending call — will be paired with result or flushed on text/done
+                FlushPendingTreeCall();
+                _pendingTreeToolName = name;
+                _pendingTreeToolArgs = arguments;
+                break;
+
+            case ToolStyle.ColorCoded:
+                AnsiConsole.Write(BuildColorCodedPanel(name, arguments));
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Renders a tool result event.
+    /// </summary>
+    public static void RenderToolResult(string name, string result)
+    {
+        switch (Style)
+        {
+            case ToolStyle.PanelWithResult:
+                AnsiConsole.Write(BuildToolResultPanel(name, result));
+                break;
+
+            case ToolStyle.Spinner:
+                StopSpinner();
+                AnsiConsole.Write(BuildToolResultPanel(name, result));
+                break;
+
+            case ToolStyle.Tree:
+                // Pair result with pending call
+                var callName = _pendingTreeToolName ?? name;
+                var callArgs = _pendingTreeToolArgs ?? "";
+                _treeRounds.Add((callName, callArgs, result));
+                _pendingTreeToolName = null;
+                _pendingTreeToolArgs = null;
+                break;
+
+            case ToolStyle.ColorCoded:
+                AnsiConsole.Write(BuildToolResultPanel(name, result));
+                break;
+
+            // Panel style: tool results hidden
+        }
+    }
+
+    /// <summary>
+    /// Called when a response is complete — flushes any buffered state.
+    /// </summary>
+    public static void Flush()
+    {
+        if (Style == ToolStyle.Spinner)
+            StopSpinner();
+
+        if (Style == ToolStyle.Tree)
+        {
+            FlushPendingTreeCall();
+            if (_treeRounds.Count > 0)
+            {
+                RenderTree();
+                _treeRounds.Clear();
+            }
+        }
+    }
+
+    // --- Panel builders ---
+
+    static Panel BuildToolCallPanel(string name, string arguments)
+    {
+        var body = PrettyPrintJson(arguments);
+        return new Panel(Markup.Escape(body))
+            .Header($"[yellow]{Markup.Escape(name)}[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderStyle(Spectre.Console.Style.Parse("dim"));
+    }
+
+    static Panel BuildToolResultPanel(string name, string result)
+    {
+        var body = Truncate(PrettyPrintJson(result), maxLines: 10);
+        return new Panel($"[dim]{Markup.Escape(body)}[/]")
+            .Header($"[green]{Markup.Escape(name)}[/] [dim]result[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderStyle(Spectre.Console.Style.Parse("dim"));
+    }
+
+    static Panel BuildColorCodedPanel(string name, string arguments)
+    {
+        var color = GetToolColor(name);
+        var body = PrettyPrintJson(arguments);
+        return new Panel(Markup.Escape(body))
+            .Header($"[{color}]{Markup.Escape(name)}[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderStyle(Spectre.Console.Style.Parse(color));
+    }
+
+    // --- Spinner helpers ---
+
+    static void StartSpinner(string name)
+    {
+        _spinnerCts = new CancellationTokenSource();
+        var ct = _spinnerCts.Token;
+        _spinnerTask = Task.Run(async () =>
+        {
+            var frames = new[] { "|", "/", "-", "\\" };
+            var i = 0;
+            while (!ct.IsCancellationRequested)
+            {
+                Console.Write($"\r  [dim]{frames[i++ % frames.Length]} executing {name}...[/] ");
+                try { await Task.Delay(100, ct); } catch (OperationCanceledException) { break; }
+            }
+            Console.Write("\r" + new string(' ', 60) + "\r");
+        });
+    }
+
+    static void StopSpinner()
+    {
+        if (_spinnerCts is null) return;
+        _spinnerCts.Cancel();
+        _spinnerTask?.Wait();
+        _spinnerCts.Dispose();
+        _spinnerCts = null;
+        _spinnerTask = null;
+    }
+
+    // --- Tree helpers ---
+
+    static void FlushPendingTreeCall()
+    {
+        if (_pendingTreeToolName is not null)
+        {
+            _treeRounds.Add((_pendingTreeToolName, _pendingTreeToolArgs ?? "", null));
+            _pendingTreeToolName = null;
+            _pendingTreeToolArgs = null;
+        }
+    }
+
+    static void RenderTree()
+    {
+        var tree = new Tree("[yellow]Tool calls[/]")
+            .Style(Spectre.Console.Style.Parse("dim"));
+
+        foreach (var (name, arguments, result) in _treeRounds)
+        {
+            var color = GetToolColor(name);
+            var node = tree.AddNode($"[{color}]{Markup.Escape(name)}[/]");
+
+            // Show arguments as child
+            var args = PrettyPrintJson(arguments);
+            node.AddNode($"[dim]{Markup.Escape(Truncate(args, maxLines: 5))}[/]");
+
+            // Show result if available
+            if (result is not null)
+            {
+                var res = Truncate(PrettyPrintJson(result), maxLines: 5);
+                node.AddNode($"[green]result:[/] [dim]{Markup.Escape(res)}[/]");
+            }
+        }
+
+        AnsiConsole.Write(tree);
+    }
+
+    // --- Color mapping by tool handler domain ---
+
+    static string GetToolColor(string toolName)
+    {
+        // Match tool name prefix to a color
+        if (toolName.StartsWith("file_", StringComparison.OrdinalIgnoreCase) ||
+            toolName.StartsWith("fs_", StringComparison.OrdinalIgnoreCase))
+            return "dodgerblue1";
+
+        if (toolName.StartsWith("shell_", StringComparison.OrdinalIgnoreCase) ||
+            toolName.StartsWith("exec_", StringComparison.OrdinalIgnoreCase) ||
+            toolName.Equals("shell_exec", StringComparison.OrdinalIgnoreCase))
+            return "red";
+
+        if (toolName.StartsWith("memory_", StringComparison.OrdinalIgnoreCase))
+            return "mediumpurple1";
+
+        if (toolName.StartsWith("web_", StringComparison.OrdinalIgnoreCase) ||
+            toolName.StartsWith("http_", StringComparison.OrdinalIgnoreCase))
+            return "darkorange";
+
+        return "yellow"; // default
+    }
+
+    // --- Shared helpers ---
+
+    static string PrettyPrintJson(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var pretty = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+
+            // Strip outer { } and re-trim
+            if (pretty.StartsWith('{') && pretty.EndsWith('}'))
+            {
+                pretty = pretty[1..^1].Trim();
+            }
+
+            return pretty;
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    static string Truncate(string text, int maxLines)
+    {
+        var lines = text.Split('\n');
+        if (lines.Length <= maxLines) return text;
+        return string.Join('\n', lines[..maxLines]) + "\n...";
+    }
+}
 
 // --- DTOs ---
 
