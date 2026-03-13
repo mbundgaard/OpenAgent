@@ -21,18 +21,26 @@ internal sealed class LoggingConfig : IConfigurable
         "OpenAgent.LlmText",
         "OpenAgent.LlmVoice",
         "Microsoft.AspNetCore",
-        "Microsoft.AspNetCore.Mvc"
+        "Microsoft.AspNetCore.Mvc",
+        "Microsoft.Hosting",
+        "Microsoft.Extensions",
+        "OpenAgent.Security",
+        "System.Net.Http"
     ];
 
     public string Key => "logging";
 
-    public LoggingLevelSwitch DefaultLevel { get; } = new(LogEventLevel.Debug);
+    public LoggingLevelSwitch DefaultLevel { get; } = new(LogEventLevel.Information);
 
     public Dictionary<string, LoggingLevelSwitch> Overrides { get; } = Modules
         .ToDictionary(m => m, m => new LoggingLevelSwitch(m switch
         {
             "Microsoft.AspNetCore.Mvc" => LogEventLevel.Error,
-            "Microsoft.AspNetCore" => LogEventLevel.Information,
+            "Microsoft.AspNetCore" => LogEventLevel.Warning,
+            "Microsoft.Hosting" => LogEventLevel.Warning,
+            "Microsoft.Extensions" => LogEventLevel.Warning,
+            "OpenAgent.Security" => LogEventLevel.Warning,
+            "System.Net.Http" => LogEventLevel.Warning,
             _ => LogEventLevel.Debug
         }));
 

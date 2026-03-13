@@ -21,8 +21,9 @@ public sealed class ApiKeyAuthenticationHandler(
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // Check for the API key header
+        // No header present — let anonymous endpoints through without logging a failure
         if (!Request.Headers.TryGetValue(HeaderName, out var headerValue))
-            return Task.FromResult(AuthenticateResult.Fail("Missing X-Api-Key header."));
+            return Task.FromResult(AuthenticateResult.NoResult());
 
         var providedKey = headerValue.ToString();
 

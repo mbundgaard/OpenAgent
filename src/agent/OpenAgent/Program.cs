@@ -72,7 +72,7 @@ app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok()).AllowAnonymous();
+app.MapGet("/health", () => Results.Ok("ok")).AllowAnonymous();
 app.MapConversationEndpoints();
 app.MapChatEndpoints();
 app.MapWebSocketVoiceEndpoints();
