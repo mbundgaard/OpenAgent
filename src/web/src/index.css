@@ -1,0 +1,33 @@
+:root {
+  --taskbar-height: 48px;
+  --window-title-height: 32px;
+  --color-bg: #0f0f1a;
+  --color-surface: #1a1a2e;
+  --color-primary: #0f3460;
+  --color-accent: #e94560;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-text: #e8e8e8;
+  --color-text-muted: #888;
+  --border-radius: 8px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}

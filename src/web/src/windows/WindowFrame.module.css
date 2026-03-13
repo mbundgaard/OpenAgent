@@ -1,0 +1,67 @@
+.window {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.titleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--window-title-height);
+  padding: 0 8px 0 12px;
+  background: var(--color-primary);
+  cursor: default;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.titleText {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titleButtons {
+  display: flex;
+  gap: 4px;
+}
+
+.titleBtn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.titleBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
+}
+
+.closeBtn:hover {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  color: var(--color-text);
+}
