@@ -5,6 +5,7 @@ using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.LlmText.OpenAIAzure;
 using OpenAgent.LlmVoice.OpenAIAzure;
+using OpenAgent.Channel.Telegram;
 using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Tools.Shell;
@@ -56,6 +57,7 @@ builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<ILlmVoi
 
 // Authentication — swap AddApiKeyAuth for AddEntraIdAuth when migrating to Entra ID
 builder.Services.AddApiKeyAuth(builder.Configuration);
+builder.Services.AddTelegramChannel(builder.Configuration);
 
 var app = builder.Build();
 
@@ -78,6 +80,7 @@ app.MapChatEndpoints();
 app.MapWebSocketVoiceEndpoints();
 app.MapWebSocketTextEndpoints();
 app.MapAdminEndpoints();
+app.MapTelegramWebhookEndpoints();
 
 app.Run();
 

@@ -15,5 +15,7 @@
     <PackageVersion Include="ReverseMarkdown" Version="4.6.0" />
     <PackageVersion Include="SmartReader" Version="0.9.4" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageVersion Include="Telegram.Bot" Version="22.5.1" />
+    <PackageVersion Include="Markdig" Version="1.1.0" />
   </ItemGroup>
 </Project>
