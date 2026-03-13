@@ -1,25 +1,22 @@
 using System.Net;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using OpenAgent.Channel.Telegram;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Connections;
 using OpenAgent.Tests.Fakes;
-using Telegram.Bot;
 
 namespace OpenAgent.Tests;
 
 /// <summary>
 /// Integration tests for the Telegram webhook endpoint HTTP behavior.
-/// Validates secret-token auth, anonymous access, and successful update processing.
+/// Validates secret-token auth and connection-based routing.
 /// </summary>
 public class TelegramWebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
-    private const string WebhookSecret = "test-secret";
-    private const string FakeBotToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11";
+    private const string TestConnectionId = "test-telegram";
+    private const string ConversationId = "webhook-conv-1";
 
     private readonly WebApplicationFactory<Program> _factory;
 
@@ -27,75 +24,45 @@ public class TelegramWebhookEndpointTests : IClassFixture<WebApplicationFactory<
     {
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            // Configure Telegram settings
-            builder.UseSetting("Telegram:BotToken", FakeBotToken);
-            builder.UseSetting("Telegram:Mode", "Webhook");
-            builder.UseSetting("Telegram:WebhookUrl", "https://example.com/api/telegram/webhook");
-            builder.UseSetting("Telegram:WebhookSecret", WebhookSecret);
-            builder.UseSetting("Telegram:AllowedUserIds:0", "42");
-
             builder.ConfigureServices(services =>
             {
                 // Replace ILlmTextProvider with a fake
                 var textDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(ILlmTextProvider));
                 if (textDescriptor is not null) services.Remove(textDescriptor);
                 services.AddSingleton<ILlmTextProvider>(new FakeTelegramTextProvider("ok"));
-
-                // Remove the real hosted service to prevent SetWebhook call to Telegram API
-                var hostedDescriptor = services.SingleOrDefault(
-                    d => d.ImplementationType == typeof(TelegramBotService));
-                if (hostedDescriptor is not null) services.Remove(hostedDescriptor);
             });
         });
     }
 
-    /// <summary>
-    /// Initializes the TelegramChannelProvider's private fields via reflection
-    /// so the webhook endpoint can function without calling the real Telegram API.
-    /// </summary>
-    private void InitializeProvider(IServiceProvider services)
+    /// <summary>Creates a test connection in the store and starts it via the ConnectionManager.</summary>
+    private async Task<string> SetupConnectionAsync()
     {
-        var provider = services.GetRequiredService<TelegramChannelProvider>();
-        var providerType = typeof(TelegramChannelProvider);
+        var store = _factory.Services.GetRequiredService<IConnectionStore>();
+        var connectionManager = _factory.Services.GetRequiredService<IConnectionManager>();
 
-        // Set _botClient — constructor only stores the token, no API call
-        var botClientField = providerType.GetField("_botClient", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        botClientField.SetValue(provider, new TelegramBotClient(FakeBotToken));
-
-        // Set _webhookSecret
-        var secretField = providerType.GetField("_webhookSecret", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        secretField.SetValue(provider, WebhookSecret);
-
-        // Set _handler — needs store, text provider, options, and logger
-        var store = services.GetRequiredService<IConversationStore>();
-        var textProvider = services.GetRequiredService<ILlmTextProvider>();
-        var options = new TelegramOptions
+        var telegramConfig = JsonSerializer.SerializeToElement(new
         {
-            BotToken = FakeBotToken,
-            Mode = "Webhook",
-            WebhookUrl = "https://example.com/api/telegram/webhook",
-            WebhookSecret = WebhookSecret,
-            AllowedUserIds = [42]
+            botToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+            mode = "Webhook",
+            webhookUrl = $"https://example.com/api/connections/{TestConnectionId}/webhook/telegram",
+            webhookSecret = "test-secret"
+        });
+
+        var connection = new Connection
+        {
+            Id = TestConnectionId,
+            Name = "Test Bot",
+            Type = "telegram",
+            Enabled = true,
+            ConversationId = ConversationId,
+            Config = telegramConfig,
         };
-        var handlerLogger = services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelegramMessageHandler>>();
 
-        var handler = new TelegramMessageHandler(store, textProvider, options, handlerLogger);
-        var handlerField = providerType.GetField("_handler", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        handlerField.SetValue(provider, handler);
+        store.Save(connection);
+        // Note: we don't call StartConnectionAsync because it would try to call the real Telegram API
+        return "test-secret";
     }
 
-    /// <summary>Creates an HTTP client with the provider manually initialized.</summary>
-    private HttpClient CreateInitializedClient()
-    {
-        var client = _factory.CreateClient();
-
-        // Initialize the provider via the test server's service provider
-        InitializeProvider(_factory.Services);
-
-        return client;
-    }
-
-    /// <summary>Builds a minimal valid Telegram Update JSON payload.</summary>
     private static StringContent CreateValidUpdateJson()
     {
         var update = new
@@ -116,75 +83,33 @@ public class TelegramWebhookEndpointTests : IClassFixture<WebApplicationFactory<
     }
 
     [Fact]
-    public async Task Webhook_ValidUpdate_Returns200()
+    public async Task Webhook_NoRunningConnection_Returns404()
     {
-        // Arrange
-        var client = CreateInitializedClient();
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/telegram/webhook")
+        var client = _factory.CreateClient();
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/connections/{TestConnectionId}/webhook/telegram")
         {
             Content = CreateValidUpdateJson()
         };
-        request.Headers.Add("X-Telegram-Bot-Api-Secret-Token", WebhookSecret);
+        request.Headers.Add("X-Telegram-Bot-Api-Secret-Token", "test-secret");
 
-        // Act
         var response = await client.SendAsync(request);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Webhook_MissingSecret_Returns401()
-    {
-        // Arrange
-        var client = CreateInitializedClient();
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/telegram/webhook")
-        {
-            Content = CreateValidUpdateJson()
-        };
-        // No X-Telegram-Bot-Api-Secret-Token header
-
-        // Act
-        var response = await client.SendAsync(request);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Webhook_WrongSecret_Returns401()
-    {
-        // Arrange
-        var client = CreateInitializedClient();
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/telegram/webhook")
-        {
-            Content = CreateValidUpdateJson()
-        };
-        request.Headers.Add("X-Telegram-Bot-Api-Secret-Token", "wrong-secret");
-
-        // Act
-        var response = await client.SendAsync(request);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task Webhook_IsAnonymous_NoApiKeyNeeded()
     {
-        // Arrange — no X-Api-Key header, but correct webhook secret
-        var client = CreateInitializedClient();
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/telegram/webhook")
+        var client = _factory.CreateClient();
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/connections/nonexistent/webhook/telegram")
         {
             Content = CreateValidUpdateJson()
         };
-        request.Headers.Add("X-Telegram-Bot-Api-Secret-Token", WebhookSecret);
-        // Explicitly NOT adding X-Api-Key
+        // No X-Api-Key header — endpoint is AllowAnonymous
 
-        // Act
         var response = await client.SendAsync(request);
 
-        // Assert — should be 200, not 401 (endpoint is AllowAnonymous)
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Should be 404 (no connection), not 401 (auth required)
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }

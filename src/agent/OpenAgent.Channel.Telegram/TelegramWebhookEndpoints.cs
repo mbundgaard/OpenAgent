@@ -4,33 +4,37 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using OpenAgent.Contracts;
 using Telegram.Bot.Types;
 
 namespace OpenAgent.Channel.Telegram;
 
 /// <summary>
 /// Maps the Telegram webhook endpoint that receives updates from the Telegram Bot API.
+/// Routes by connection ID so multiple Telegram bots can each receive webhooks.
 /// </summary>
 public static class TelegramWebhookEndpoints
 {
     /// <summary>
-    /// Maps POST /api/telegram/webhook — receives updates from Telegram,
+    /// Maps POST /api/connections/{connectionId}/webhook/telegram — receives updates from Telegram,
     /// validates the secret token, and processes the update asynchronously.
     /// </summary>
     public static void MapTelegramWebhookEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/telegram/webhook", async (
+        app.MapPost("/api/connections/{connectionId}/webhook/telegram", async (
+            string connectionId,
             HttpRequest request,
-            TelegramChannelProvider channelProvider,
+            IConnectionManager connectionManager,
             ILogger<TelegramChannelProvider> logger) =>
         {
-            // Channel not started — nothing to do
-            if (channelProvider.BotClient is null || channelProvider.Handler is null)
+            // Look up the running provider for this connection
+            var provider = connectionManager.GetProvider(connectionId) as TelegramChannelProvider;
+            if (provider?.BotClient is null || provider.Handler is null)
                 return Results.NotFound();
 
             // Validate secret token header (constant-time comparison)
             var secretHeader = request.Headers["X-Telegram-Bot-Api-Secret-Token"].ToString();
-            var expectedSecret = channelProvider.WebhookSecret ?? string.Empty;
+            var expectedSecret = provider.WebhookSecret ?? string.Empty;
             if (!CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(secretHeader),
                     Encoding.UTF8.GetBytes(expectedSecret)))
@@ -44,8 +48,8 @@ public static class TelegramWebhookEndpoints
                 return Results.BadRequest();
 
             // Process asynchronously — don't block Telegram
-            var sender = channelProvider.CreateSender();
-            var handler = channelProvider.Handler;
+            var sender = provider.CreateSender();
+            var handler = provider.Handler;
             _ = Task.Run(async () =>
             {
                 try
@@ -54,7 +58,8 @@ public static class TelegramWebhookEndpoints
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Telegram webhook handler failed for update {UpdateId}", update.Id);
+                    logger.LogError(ex, "Telegram webhook handler failed for update {UpdateId} on connection {ConnectionId}",
+                        update.Id, connectionId);
                 }
             });
 

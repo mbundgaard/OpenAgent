@@ -26,17 +26,20 @@ public sealed class TelegramMessageHandler
 
     private readonly IConversationStore _store;
     private readonly ILlmTextProvider _textProvider;
+    private readonly string _conversationId;
     private readonly TelegramAccessControl _accessControl;
     private readonly ILogger<TelegramMessageHandler>? _logger;
 
     public TelegramMessageHandler(
         IConversationStore store,
         ILlmTextProvider textProvider,
+        string conversationId,
         TelegramOptions options,
         ILogger<TelegramMessageHandler>? logger = null)
     {
         _store = store;
         _textProvider = textProvider;
+        _conversationId = conversationId;
         _accessControl = new TelegramAccessControl(options.AllowedUserIds);
         _logger = logger;
     }
@@ -55,7 +58,7 @@ public sealed class TelegramMessageHandler
         var userId = message.From!.Id;
         var userText = message.Text!;
 
-        // Access control check
+        // Access control check — silently ignore unauthorized users
         if (!_accessControl.IsAllowed(userId))
         {
             _logger?.LogWarning("Blocked message from unauthorized user {UserId}", userId);
@@ -72,9 +75,8 @@ public sealed class TelegramMessageHandler
             _logger?.LogWarning(ex, "Failed to send typing indicator to chat {ChatId}", chatId);
         }
 
-        // Get or create conversation
-        var conversationId = $"telegram-{chatId}";
-        var conversation = _store.GetOrCreate(conversationId, "telegram", ConversationType.Text);
+        // Get or create conversation using the connection's configured ID
+        var conversation = _store.GetOrCreate(_conversationId, "telegram", ConversationType.Text);
 
         // Run LLM completion and collect text
         string replyText;
@@ -89,10 +91,15 @@ public sealed class TelegramMessageHandler
 
             replyText = sb.ToString();
         }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("not been configured"))
+        {
+            _logger?.LogError(ex, "LLM provider not configured for chat {ChatId}", chatId);
+            replyText = "LLM provider is not configured. Please configure it via the admin app in the AgentOS.";
+        }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "LLM completion failed for chat {ChatId}", chatId);
-            replyText = "Sorry, I couldn't process that. Please try again.";
+            replyText = $"Something went wrong: {ex.Message}";
         }
 
         // Chunk the response and send each chunk

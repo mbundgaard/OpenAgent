@@ -1,7 +1,7 @@
 namespace OpenAgent.Channel.Telegram;
 
 /// <summary>
-/// Configuration for the Telegram channel, bound from the "Telegram" config section.
+/// Configuration for the Telegram channel, deserialized from a connection's config blob.
 /// </summary>
 public sealed class TelegramOptions
 {
@@ -9,7 +9,8 @@ public sealed class TelegramOptions
     public string? BotToken { get; set; }
 
     /// <summary>
-    /// Telegram user IDs allowed to interact with the bot. Empty = all users blocked.
+    /// Telegram user IDs allowed to interact with the bot.
+    /// Empty or missing = all users blocked (secure by default).
     /// </summary>
     public List<long> AllowedUserIds { get; set; } = [];
 

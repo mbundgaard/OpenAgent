@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using OpenAgent.Contracts;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -15,6 +14,7 @@ namespace OpenAgent.Channel.Telegram;
 public sealed class TelegramChannelProvider : IChannelProvider
 {
     private readonly TelegramOptions _options;
+    private readonly string _conversationId;
     private readonly IConversationStore _store;
     private readonly ILlmTextProvider _textProvider;
     private readonly ILogger<TelegramChannelProvider> _logger;
@@ -35,13 +35,15 @@ public sealed class TelegramChannelProvider : IChannelProvider
     public string? WebhookSecret => _webhookSecret;
 
     public TelegramChannelProvider(
-        IOptions<TelegramOptions> options,
+        TelegramOptions options,
+        string conversationId,
         IConversationStore store,
         ILlmTextProvider textProvider,
         ILogger<TelegramChannelProvider> logger,
         ILogger<TelegramMessageHandler> handlerLogger)
     {
-        _options = options.Value;
+        _options = options;
+        _conversationId = conversationId;
         _store = store;
         _textProvider = textProvider;
         _logger = logger;
@@ -50,7 +52,6 @@ public sealed class TelegramChannelProvider : IChannelProvider
 
     /// <summary>
     /// Starts the Telegram channel in polling or webhook mode based on configuration.
-    /// If BotToken is not configured: webhook mode throws, polling mode logs a warning and returns.
     /// </summary>
     public async Task StartAsync(CancellationToken ct)
     {
@@ -58,24 +59,17 @@ public sealed class TelegramChannelProvider : IChannelProvider
 
         // Validate bot token
         if (string.IsNullOrEmpty(_options.BotToken))
-        {
-            if (isWebhook)
-                throw new InvalidOperationException(
-                    "Telegram BotToken is required when Mode is 'Webhook'. Set Telegram__BotToken.");
-
-            _logger.LogWarning("Telegram: BotToken not configured — channel disabled");
-            return;
-        }
+            throw new InvalidOperationException("Telegram BotToken is required.");
 
         // Initialize bot client and handler
         _botClient = new TelegramBotClient(_options.BotToken);
-        _handler = new TelegramMessageHandler(_store, _textProvider, _options, _handlerLogger);
+        _handler = new TelegramMessageHandler(_store, _textProvider, _conversationId, _options, _handlerLogger);
 
         if (isWebhook)
         {
             if (string.IsNullOrEmpty(_options.WebhookUrl))
                 throw new InvalidOperationException(
-                    "Telegram WebhookUrl is required when Mode is 'Webhook'. Set Telegram__WebhookUrl.");
+                    "Telegram WebhookUrl is required when Mode is 'Webhook'.");
 
             // Generate webhook secret if not configured
             _webhookSecret = _options.WebhookSecret ?? Guid.NewGuid().ToString("N");
