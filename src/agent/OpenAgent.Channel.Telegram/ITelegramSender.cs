@@ -18,7 +18,7 @@ public interface ITelegramSender
     Task SendTextAsync(ChatId chatId, string text, CancellationToken ct);
 
     /// <summary>Sends a message draft that updates in-place (Bot API 9.3+).</summary>
-    Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, CancellationToken ct);
+    Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, string? parseMode, CancellationToken ct);
 }
 
 /// <summary>

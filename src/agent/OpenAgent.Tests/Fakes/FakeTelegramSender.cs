@@ -43,7 +43,7 @@ public sealed class FakeTelegramSender : ITelegramSender
         return Task.CompletedTask;
     }
 
-    public Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, CancellationToken ct)
+    public Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, string? parseMode, CancellationToken ct)
     {
         if (FailAll || FailDraft)
             return Task.FromResult(new DraftResult { Ok = false, StatusCode = 429, RetryAfterSeconds = 1, Description = "Too Many Requests" });

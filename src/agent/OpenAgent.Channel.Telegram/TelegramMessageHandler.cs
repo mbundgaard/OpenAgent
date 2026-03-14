@@ -31,6 +31,7 @@ public sealed class TelegramMessageHandler
     private readonly string _conversationId;
     private readonly TelegramAccessControl _accessControl;
     private readonly bool _streamResponses;
+    private readonly bool _showThinking;
     private readonly ILogger<TelegramMessageHandler>? _logger;
 
     public TelegramMessageHandler(
@@ -45,6 +46,7 @@ public sealed class TelegramMessageHandler
         _conversationId = conversationId;
         _accessControl = new TelegramAccessControl(options.AllowedUserIds);
         _streamResponses = options.StreamResponses;
+        _showThinking = options.ShowThinking;
         _logger = logger;
     }
 
@@ -112,6 +114,11 @@ public sealed class TelegramMessageHandler
         var draftsSent = 0;
         var lastSentLength = 0;
 
+        // Collect tool call info — sent as one message when the response starts
+        var toolLines = new List<string>();
+        var pendingToolArgs = new Dictionary<string, string>(); // toolCallId -> short args summary
+        var thinkingSent = false;
+
         _logger?.LogInformation("Stream started for chat {ChatId}, draftId={DraftId}, interval={IntervalMs}ms",
             chatId, draftId, DraftIntervalMs);
 
@@ -150,7 +157,7 @@ public sealed class TelegramMessageHandler
                 }
 
                 // Send draft
-                var result = await sender.SendDraftAsync(chatId, draftId, snapshot, ct);
+                var result = await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
 
                 if (result.Ok)
                 {
@@ -172,15 +179,55 @@ public sealed class TelegramMessageHandler
             }
         }, ct);
 
-        // Producer: consume LLM tokens and append to buffer
+        // Producer: consume LLM events, collect tool lines, buffer response text
         try
         {
             await foreach (var evt in events.WithCancellation(ct))
             {
-                if (evt is not TextDelta delta) continue;
-                lock (bufferLock)
+                switch (evt)
                 {
-                    buffer.Append(delta.Content);
+                    case ToolCallEvent toolCall:
+                        if (_showThinking)
+                            pendingToolArgs[toolCall.ToolCallId] = FormatToolArgs(toolCall.Arguments);
+                        _logger?.LogDebug("Tool call: {Name}({Args})", toolCall.Name, toolCall.Arguments);
+                        break;
+
+                    case ToolResultEvent toolResult:
+                        if (_showThinking)
+                        {
+                            var ok = IsToolSuccess(toolResult.Result);
+                            var mark = ok ? "\u2713" : "\u2717";
+                            pendingToolArgs.TryGetValue(toolResult.ToolCallId, out var args);
+                            var line = string.IsNullOrEmpty(args)
+                                ? $"{mark} {toolResult.Name}"
+                                : $"{mark} {toolResult.Name}  <i>{System.Net.WebUtility.HtmlEncode(args)}</i>";
+                            toolLines.Add(line);
+                        }
+                        _logger?.LogDebug("Tool result: {Name} -> {Length} chars", toolResult.Name, toolResult.Result.Length);
+                        break;
+
+                    case TextDelta delta:
+                        // Send collected tool lines as one HTML message before the first text
+                        if (!thinkingSent && toolLines.Count > 0)
+                        {
+                            thinkingSent = true;
+                            var toolCount = toolLines.Count;
+                            var label = toolCount == 1 ? "1 tool call" : $"{toolCount} tool calls";
+                            var html = $"<blockquote><b>\u2699\ufe0f {label}</b>\n{string.Join("\n", toolLines)}</blockquote>";
+                            try
+                            {
+                                await sender.SendHtmlAsync(chatId, html, ct);
+                                _logger?.LogDebug("Thinking message sent for chat {ChatId}: {LineCount} tool(s)",
+                                    chatId, toolCount);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogWarning(ex, "Failed to send thinking message for chat {ChatId}", chatId);
+                            }
+                        }
+                        thinkingSent = true;
+                        lock (bufferLock) { buffer.Append(delta.Content); }
+                        break;
                 }
             }
         }
@@ -309,4 +356,56 @@ public sealed class TelegramMessageHandler
 
     /// <summary>Generates a non-zero draft ID using a random int64.</summary>
     private static long GenerateDraftId() => Random.Shared.NextInt64(1, long.MaxValue);
+
+    /// <summary>
+    /// Extracts the primary argument from a tool call — the one that identifies
+    /// what the tool is operating on (path, command, url, query, etc.).
+    /// </summary>
+    private static string FormatToolArgs(string argumentsJson)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(argumentsJson);
+            var root = doc.RootElement;
+
+            // Try common primary argument names in priority order
+            foreach (var key in new[] { "path", "command", "url", "query", "name", "file" })
+            {
+                if (root.TryGetProperty(key, out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    var value = prop.GetString() ?? "";
+                    if (value.Length > 50) value = value[..47] + "...";
+                    return value;
+                }
+            }
+
+            // Fallback: first string property
+            foreach (var prop in root.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    var value = prop.Value.GetString() ?? "";
+                    if (value.Length > 50) value = value[..47] + "...";
+                    return value;
+                }
+            }
+        }
+        catch { /* not JSON */ }
+
+        return "";
+    }
+
+    /// <summary>Checks whether a tool result indicates success.</summary>
+    private static bool IsToolSuccess(string result)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(result);
+            if (doc.RootElement.TryGetProperty("success", out var success))
+                return success.GetBoolean();
+        }
+        catch { /* not JSON */ }
+
+        return true;
+    }
 }

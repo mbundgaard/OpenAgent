@@ -42,10 +42,13 @@ public sealed class TelegramBotClientSender : ITelegramSender
     }
 
     /// <inheritdoc />
-    public async Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, CancellationToken ct)
+    public async Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, string? parseMode, CancellationToken ct)
     {
         // Raw HTTP — sendMessageDraft is not yet in Telegram.Bot NuGet
-        var payload = new { chat_id = chatId.Identifier, draft_id = draftId, text };
+        // Build payload with optional parse_mode
+        object payload = parseMode is not null
+            ? new { chat_id = chatId.Identifier, draft_id = draftId, text, parse_mode = parseMode }
+            : new { chat_id = chatId.Identifier, draft_id = draftId, text };
         var response = await _httpClient.PostAsJsonAsync("sendMessageDraft", payload, ct);
 
         var statusCode = (int)response.StatusCode;

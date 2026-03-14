@@ -36,4 +36,9 @@ public sealed class TelegramOptions
     /// </summary>
     public bool StreamResponses { get; set; } = true;
 
+    /// <summary>
+    /// When true, shows tool calls and results in the draft while the LLM is thinking.
+    /// </summary>
+    public bool ShowThinking { get; set; }
+
 }
