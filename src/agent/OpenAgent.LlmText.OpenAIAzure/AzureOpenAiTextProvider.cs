@@ -206,10 +206,11 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 continue; // Re-call the LLM with tool results
             }
 
-            // Final text response — store and return
+            // Final text response — store and notify caller
+            var assistantMessageId = Guid.NewGuid().ToString();
             agentLogic.AddMessage(conversationId, new Message
             {
-                Id = Guid.NewGuid().ToString(),
+                Id = assistantMessageId,
                 ConversationId = conversationId,
                 Role = "assistant",
                 Content = fullContent.ToString()
@@ -217,6 +218,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
             logger.LogDebug("Stream finished for conversation {ConversationId}, {ContentLength} chars",
                 conversationId, fullContent.Length);
+            yield return new AssistantMessageSaved(assistantMessageId);
             yield break;
         }
 

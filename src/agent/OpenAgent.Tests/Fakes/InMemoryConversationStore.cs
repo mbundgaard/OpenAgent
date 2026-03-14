@@ -53,6 +53,30 @@ public sealed class InMemoryConversationStore : IConversationStore
         _messages[conversationId].Add(message);
     }
 
+    public void UpdateChannelMessageId(string messageId, string channelMessageId)
+    {
+        foreach (var messages in _messages.Values)
+        {
+            var idx = messages.FindIndex(m => m.Id == messageId);
+            if (idx < 0) continue;
+
+            // Message is immutable (init properties), so replace with a copy
+            var old = messages[idx];
+            messages[idx] = new Message
+            {
+                Id = old.Id,
+                ConversationId = old.ConversationId,
+                Role = old.Role,
+                Content = old.Content,
+                CreatedAt = old.CreatedAt,
+                ToolCalls = old.ToolCalls,
+                ToolCallId = old.ToolCallId,
+                ChannelMessageId = channelMessageId
+            };
+            return;
+        }
+    }
+
     public IReadOnlyList<Message> GetMessages(string conversationId) =>
         _messages.GetValueOrDefault(conversationId)?.AsReadOnly()
         ?? (IReadOnlyList<Message>)Array.Empty<Message>();

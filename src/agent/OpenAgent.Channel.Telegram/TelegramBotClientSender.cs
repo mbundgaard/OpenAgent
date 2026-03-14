@@ -30,15 +30,17 @@ public sealed class TelegramBotClientSender : ITelegramSender
     }
 
     /// <inheritdoc />
-    public async Task SendHtmlAsync(ChatId chatId, string html, CancellationToken ct)
+    public async Task<int> SendHtmlAsync(ChatId chatId, string html, CancellationToken ct)
     {
-        await _botClient.SendMessage(chatId, html, parseMode: ParseMode.Html, cancellationToken: ct);
+        var msg = await _botClient.SendMessage(chatId, html, parseMode: ParseMode.Html, cancellationToken: ct);
+        return msg.MessageId;
     }
 
     /// <inheritdoc />
-    public async Task SendTextAsync(ChatId chatId, string text, CancellationToken ct)
+    public async Task<int> SendTextAsync(ChatId chatId, string text, CancellationToken ct)
     {
-        await _botClient.SendMessage(chatId, text, cancellationToken: ct);
+        var msg = await _botClient.SendMessage(chatId, text, cancellationToken: ct);
+        return msg.MessageId;
     }
 
     /// <inheritdoc />

@@ -128,6 +128,7 @@ public sealed class TelegramMessageHandler
         var toolLines = new List<string>();
         var pendingToolArgs = new Dictionary<string, string>(); // toolCallId -> short args summary
         var thinkingSent = false;
+        string? assistantMessageId = null;
 
         _logger?.LogInformation("Stream started for chat {ChatId}, draftId={DraftId}, interval={IntervalMs}ms",
             chatId, draftId, DraftIntervalMs);
@@ -238,6 +239,10 @@ public sealed class TelegramMessageHandler
                         thinkingSent = true;
                         lock (bufferLock) { buffer.Append(delta.Content); }
                         break;
+
+                    case AssistantMessageSaved saved:
+                        assistantMessageId = saved.MessageId;
+                        break;
                 }
             }
         }
@@ -274,10 +279,19 @@ public sealed class TelegramMessageHandler
 
         var chunks = TelegramMarkdownConverter.ChunkMarkdown(replyText, TelegramMaxMessageLength);
 
+        int? telegramMessageId = null;
         foreach (var chunk in chunks)
         {
             var html = TelegramMarkdownConverter.ToTelegramHtml(chunk);
-            await SendWithRetryAsync(sender, chatId, html, chunk, ct);
+            telegramMessageId = await SendWithRetryAsync(sender, chatId, html, chunk, ct);
+        }
+
+        // Update the assistant message with the Telegram message ID (last chunk's ID)
+        if (assistantMessageId is not null && telegramMessageId is not null)
+        {
+            _store.UpdateChannelMessageId(assistantMessageId, telegramMessageId.Value.ToString());
+            _logger?.LogDebug("Updated assistant message {MessageId} with Telegram message ID {TelegramMessageId}",
+                assistantMessageId, telegramMessageId);
         }
 
         _logger?.LogInformation("Final message sent for chat {ChatId}, {ChunkCount} chunk(s)", chatId, chunks.Count);
@@ -290,6 +304,7 @@ public sealed class TelegramMessageHandler
         ITelegramSender sender, long chatId, IAsyncEnumerable<CompletionEvent> events, CancellationToken ct)
     {
         string replyText;
+        string? assistantMessageId = null;
         try
         {
             var sb = new StringBuilder();
@@ -297,6 +312,8 @@ public sealed class TelegramMessageHandler
             {
                 if (evt is TextDelta delta)
                     sb.Append(delta.Content);
+                else if (evt is AssistantMessageSaved saved)
+                    assistantMessageId = saved.MessageId;
             }
 
             replyText = sb.ToString();
@@ -317,10 +334,19 @@ public sealed class TelegramMessageHandler
 
         var chunks = TelegramMarkdownConverter.ChunkMarkdown(replyText, TelegramMaxMessageLength);
 
+        int? telegramMessageId = null;
         foreach (var chunk in chunks)
         {
             var html = TelegramMarkdownConverter.ToTelegramHtml(chunk);
-            await SendWithRetryAsync(sender, chatId, html, chunk, ct);
+            telegramMessageId = await SendWithRetryAsync(sender, chatId, html, chunk, ct);
+        }
+
+        // Update the assistant message with the Telegram message ID (last chunk's ID)
+        if (assistantMessageId is not null && telegramMessageId is not null)
+        {
+            _store.UpdateChannelMessageId(assistantMessageId, telegramMessageId.Value.ToString());
+            _logger?.LogDebug("Updated assistant message {MessageId} with Telegram message ID {TelegramMessageId}",
+                assistantMessageId, telegramMessageId);
         }
 
         _logger?.LogInformation("Final message sent for chat {ChatId}, {ChunkCount} chunk(s)", chatId, chunks.Count);
@@ -329,15 +355,15 @@ public sealed class TelegramMessageHandler
     /// <summary>
     /// Sends a message with retry logic. Tries HTML first, falls back to plain text on failure.
     /// Retries up to <see cref="MaxSendRetries"/> times with exponential backoff.
+    /// Returns the Telegram message ID, or null if all attempts failed.
     /// </summary>
-    private async Task SendWithRetryAsync(
+    private async Task<int?> SendWithRetryAsync(
         ITelegramSender sender, long chatId, string html, string plainText, CancellationToken ct)
     {
         // Try sending as HTML first
         try
         {
-            await sender.SendHtmlAsync(chatId, html, ct);
-            return;
+            return await sender.SendHtmlAsync(chatId, html, ct);
         }
         catch (Exception ex)
         {
@@ -349,8 +375,7 @@ public sealed class TelegramMessageHandler
         {
             try
             {
-                await sender.SendTextAsync(chatId, plainText, ct);
-                return;
+                return await sender.SendTextAsync(chatId, plainText, ct);
             }
             catch (Exception ex)
             {
@@ -362,6 +387,7 @@ public sealed class TelegramMessageHandler
         }
 
         _logger?.LogError("All send attempts exhausted for chat {ChatId}", chatId);
+        return null;
     }
 
     /// <summary>Generates a non-zero draft ID using a random int64.</summary>

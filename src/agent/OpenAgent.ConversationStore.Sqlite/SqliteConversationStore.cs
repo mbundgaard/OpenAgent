@@ -183,6 +183,16 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    public void UpdateChannelMessageId(string messageId, string channelMessageId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE Messages SET ChannelMessageId = @channelMessageId WHERE Id = @id";
+        cmd.Parameters.AddWithValue("@id", messageId);
+        cmd.Parameters.AddWithValue("@channelMessageId", channelMessageId);
+        cmd.ExecuteNonQuery();
+    }
+
     public IReadOnlyList<Message> GetMessages(string conversationId)
     {
         using var connection = Open();

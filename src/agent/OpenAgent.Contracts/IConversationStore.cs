@@ -25,6 +25,9 @@ public interface IConversationStore : IConfigurable
     /// <summary>Persists a message in the given conversation.</summary>
     void AddMessage(string conversationId, Message message);
 
+    /// <summary>Updates the channel message ID on an existing message.</summary>
+    void UpdateChannelMessageId(string messageId, string channelMessageId);
+
     /// <summary>Returns all messages for the given conversation, in order.</summary>
     IReadOnlyList<Message> GetMessages(string conversationId);
 }

@@ -29,18 +29,21 @@ public sealed class FakeTelegramSender : ITelegramSender
         return Task.CompletedTask;
     }
 
-    public Task SendHtmlAsync(ChatId chatId, string html, CancellationToken ct)
+    /// <summary>Counter for generating fake Telegram message IDs.</summary>
+    private int _nextMessageId = 1000;
+
+    public Task<int> SendHtmlAsync(ChatId chatId, string html, CancellationToken ct)
     {
         if (FailAll || FailHtml) throw new Exception("HTML send failed");
         HtmlCalls.Add((chatId.Identifier!.Value, html));
-        return Task.CompletedTask;
+        return Task.FromResult(_nextMessageId++);
     }
 
-    public Task SendTextAsync(ChatId chatId, string text, CancellationToken ct)
+    public Task<int> SendTextAsync(ChatId chatId, string text, CancellationToken ct)
     {
         if (FailAll) throw new Exception("Text send failed");
         TextCalls.Add((chatId.Identifier!.Value, text));
-        return Task.CompletedTask;
+        return Task.FromResult(_nextMessageId++);
     }
 
     public Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, string? parseMode, CancellationToken ct)

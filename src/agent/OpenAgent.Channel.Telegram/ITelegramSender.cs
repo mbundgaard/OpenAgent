@@ -11,11 +11,11 @@ public interface ITelegramSender
     /// <summary>Sends a typing indicator to the specified chat.</summary>
     Task SendTypingAsync(ChatId chatId, CancellationToken ct);
 
-    /// <summary>Sends a text message with HTML parse mode.</summary>
-    Task SendHtmlAsync(ChatId chatId, string html, CancellationToken ct);
+    /// <summary>Sends a text message with HTML parse mode. Returns the Telegram message ID.</summary>
+    Task<int> SendHtmlAsync(ChatId chatId, string html, CancellationToken ct);
 
-    /// <summary>Sends a plain text message (no parse mode).</summary>
-    Task SendTextAsync(ChatId chatId, string text, CancellationToken ct);
+    /// <summary>Sends a plain text message (no parse mode). Returns the Telegram message ID.</summary>
+    Task<int> SendTextAsync(ChatId chatId, string text, CancellationToken ct);
 
     /// <summary>Sends a message draft that updates in-place (Bot API 9.3+).</summary>
     Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, string? parseMode, CancellationToken ct);
