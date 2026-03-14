@@ -58,11 +58,17 @@ public sealed class TelegramMessageHandler
     {
         // Filter: only handle text messages in private chats from known users
         if (update.Message is not { Text: not null, Chat.Type: ChatType.Private, From: not null } message)
+        {
+            _logger?.LogDebug("Update {UpdateId} filtered out: not a private text message (Type={Type}, HasText={HasText})",
+                update.Id, update.Message?.Chat?.Type, update.Message?.Text is not null);
             return;
+        }
 
         var chatId = message.Chat.Id;
         var userId = message.From!.Id;
         var userText = message.Text!;
+
+        _logger?.LogDebug("Handler received message from user {UserId} in chat {ChatId}", userId, chatId);
 
         // Access control check — silently ignore unauthorized users
         if (!_accessControl.IsAllowed(userId))
