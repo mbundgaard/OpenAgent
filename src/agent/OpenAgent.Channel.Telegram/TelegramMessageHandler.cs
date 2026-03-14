@@ -283,24 +283,7 @@ public sealed class TelegramMessageHandler
         _logger?.LogInformation("Stream complete for chat {ChatId}: {DraftsSent} drafts sent, {ReplyLength} chars",
             chatId, draftsSent, replyText.Length);
 
-        var chunks = TelegramMarkdownConverter.ChunkMarkdown(replyText, TelegramMaxMessageLength);
-
-        int? telegramMessageId = null;
-        foreach (var chunk in chunks)
-        {
-            var html = TelegramMarkdownConverter.ToTelegramHtml(chunk);
-            telegramMessageId = await SendWithRetryAsync(sender, chatId, html, chunk, ct);
-        }
-
-        // Update the assistant message with the Telegram message ID (last chunk's ID)
-        if (assistantMessageId is not null && telegramMessageId is not null)
-        {
-            _store.UpdateChannelMessageId(assistantMessageId, telegramMessageId.Value.ToString());
-            _logger?.LogDebug("Updated assistant message {MessageId} with Telegram message ID {TelegramMessageId}",
-                assistantMessageId, telegramMessageId);
-        }
-
-        _logger?.LogInformation("Final message sent for chat {ChatId}, {ChunkCount} chunk(s)", chatId, chunks.Count);
+        await SendFinalResponseAsync(sender, chatId, replyText, assistantMessageId, ct);
     }
 
     /// <summary>
@@ -335,9 +318,17 @@ public sealed class TelegramMessageHandler
             replyText = $"Something went wrong: {ex.Message}";
         }
 
-        // Chunk the response and send each chunk
         _logger?.LogInformation("Batch complete for chat {ChatId}: {ReplyLength} chars", chatId, replyText.Length);
+        await SendFinalResponseAsync(sender, chatId, replyText, assistantMessageId, ct);
+    }
 
+    /// <summary>
+    /// Chunks the response text, sends each chunk to Telegram, and updates the
+    /// assistant message with the Telegram message ID for reply-to tracking.
+    /// </summary>
+    private async Task SendFinalResponseAsync(
+        ITelegramSender sender, long chatId, string replyText, string? assistantMessageId, CancellationToken ct)
+    {
         var chunks = TelegramMarkdownConverter.ChunkMarkdown(replyText, TelegramMaxMessageLength);
 
         int? telegramMessageId = null;
