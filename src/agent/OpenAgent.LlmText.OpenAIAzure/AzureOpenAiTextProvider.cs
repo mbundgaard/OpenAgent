@@ -273,7 +273,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     }
 
                     // Complete round — add assistant message with tool calls
-                    chatMessages.Add(new ChatMessage { Role = "assistant", Content = msg.Content, ToolCalls = toolCalls });
+                    chatMessages.Add(new ChatMessage { Role = "assistant", Content = PrependChannelId(msg), ToolCalls = toolCalls });
 
                     // Add the matching tool result messages
                     foreach (var id in expectedIds)
@@ -291,7 +291,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             }
 
             // Regular message (user, assistant text, or tool with id)
-            var chatMsg = new ChatMessage { Role = msg.Role, Content = msg.Content };
+            var chatMsg = new ChatMessage { Role = msg.Role, Content = PrependChannelId(msg) };
             if (msg.ToolCallId is not null)
                 chatMsg.ToolCallId = msg.ToolCallId;
             chatMessages.Add(chatMsg);
@@ -313,5 +313,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 }
             }).ToList()
             : null;
+    }
+
+    /// <summary>
+    /// Prepends [Msg: xx] to the message content if it has a channel message ID.
+    /// </summary>
+    private static string? PrependChannelId(Message msg)
+    {
+        if (msg.ChannelMessageId is null || msg.Content is null)
+            return msg.Content;
+
+        return $"[Msg: {msg.ChannelMessageId}] {msg.Content}";
     }
 }
