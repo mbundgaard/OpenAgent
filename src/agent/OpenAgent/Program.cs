@@ -80,7 +80,15 @@ app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok("ok")).AllowAnonymous();
+app.MapGet("/health", () =>
+{
+    var assembly = typeof(Program).Assembly;
+    var version = assembly.GetName().Version?.ToString() ?? "unknown";
+    var informational = (System.Reflection.AssemblyInformationalVersionAttribute?)
+        System.Reflection.CustomAttributeExtensions.GetCustomAttribute(
+            assembly, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+    return Results.Ok(new { status = "ok", version = informational?.InformationalVersion ?? version });
+}).AllowAnonymous();
 app.MapConversationEndpoints();
 app.MapChatEndpoints();
 app.MapWebSocketVoiceEndpoints();
