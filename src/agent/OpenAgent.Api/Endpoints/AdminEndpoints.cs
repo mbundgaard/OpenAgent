@@ -31,6 +31,39 @@ public static class AdminEndpoints
             return Results.Ok(configurable.ConfigFields);
         });
 
+        /// <summary>
+        /// Returns the current saved configuration values for a provider.
+        /// Secret fields are masked with "***".
+        /// </summary>
+        group.MapGet("/{key}/values", (string key, IEnumerable<IConfigurable> configurables, IConfigStore configStore) =>
+        {
+            var configurable = configurables.FirstOrDefault(c => c.Key == key);
+            if (configurable is null)
+                return Results.NotFound();
+
+            var saved = configStore.Load(key);
+            if (saved is null)
+                return Results.Ok(new { configured = false });
+
+            // Mask secret fields
+            var secretKeys = configurable.ConfigFields
+                .Where(f => f.Type == "Secret")
+                .Select(f => f.Key)
+                .ToHashSet();
+
+            var masked = new Dictionary<string, object?> { ["configured"] = true };
+            foreach (var prop in saved.Value.EnumerateObject())
+            {
+                masked[prop.Name] = secretKeys.Contains(prop.Name)
+                    ? "***"
+                    : prop.Value.ValueKind == JsonValueKind.String
+                        ? prop.Value.GetString()
+                        : prop.Value.ToString();
+            }
+
+            return Results.Ok(masked);
+        });
+
         group.MapPost("/{key}/config", (string key, JsonElement config,
             IEnumerable<IConfigurable> configurables, IConfigStore configStore) =>
         {
