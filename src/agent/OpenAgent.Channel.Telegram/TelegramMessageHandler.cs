@@ -132,7 +132,6 @@ public sealed class TelegramMessageHandler
         // Thinking state — tool lines collected per round, sent as blockquote before response text
         var toolLines = new List<string>();
         var pendingToolArgs = new Dictionary<string, string>();
-        var thinkingSent = false;
 
         var draftId = GenerateDraftId();
         _logger?.LogInformation("Stream started for chat {ChatId}, draftId={DraftId}, interval={IntervalMs}ms",
@@ -162,12 +161,13 @@ public sealed class TelegramMessageHandler
                         break;
 
                     case TextDelta delta:
-                        if (!thinkingSent && toolLines.Count > 0)
+                        // Send any accumulated tool lines as a thinking message before text
+                        if (toolLines.Count > 0)
                         {
-                            thinkingSent = true;
                             await SendThinkingMessageAsync(sender, chatId, toolLines, ct);
+                            toolLines.Clear();
+                            pendingToolArgs.Clear();
                         }
-                        thinkingSent = true;
                         lock (bufferLock) { buffer.Append(delta.Content); }
                         break;
 

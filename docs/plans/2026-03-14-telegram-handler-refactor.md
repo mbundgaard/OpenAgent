@@ -36,7 +36,7 @@
 
 **Recommendation:** Yes — send a new blockquote for each tool call round. Reset `toolLines` and `thinkingSent` after sending, or accumulate per-round.
 
-**Status:** [ ] Not started — awaiting decision
+**Status:** [x] Done — clear toolLines/pendingToolArgs after each send, removed thinkingSent flag
 
 ## 5. Chunked message IDs
 
