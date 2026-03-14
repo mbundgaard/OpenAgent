@@ -329,15 +329,37 @@ public sealed class TelegramMessageHandler
     {
         string replyText;
         string? assistantMessageId = null;
+        var toolLines = new List<string>();
+        var pendingToolArgs = new Dictionary<string, string>();
         try
         {
             var sb = new StringBuilder();
             await foreach (var evt in events.WithCancellation(ct))
             {
-                if (evt is TextDelta delta)
-                    sb.Append(delta.Content);
-                else if (evt is AssistantMessageSaved saved)
-                    assistantMessageId = saved.MessageId;
+                switch (evt)
+                {
+                    case ToolCallEvent toolCall:
+                        if (_showThinking)
+                            pendingToolArgs[toolCall.ToolCallId] = FormatToolArgs(toolCall.Arguments);
+                        break;
+                    case ToolResultEvent toolResult:
+                        if (_showThinking)
+                            toolLines.Add(FormatToolLine(toolResult, pendingToolArgs));
+                        break;
+                    case TextDelta delta:
+                        // Send any accumulated tool lines before text starts
+                        if (toolLines.Count > 0)
+                        {
+                            await SendThinkingMessageAsync(sender, chatId, toolLines, ct);
+                            toolLines.Clear();
+                            pendingToolArgs.Clear();
+                        }
+                        sb.Append(delta.Content);
+                        break;
+                    case AssistantMessageSaved saved:
+                        assistantMessageId = saved.MessageId;
+                        break;
+                }
             }
 
             replyText = sb.ToString();

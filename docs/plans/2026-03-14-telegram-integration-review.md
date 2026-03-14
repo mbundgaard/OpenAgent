@@ -33,7 +33,7 @@ The endpoint is `AllowAnonymous` because Telegram can't send auth headers. Prote
 
 **Decision needed:** Should batch mode also support thinking output?
 
-**Status:** [ ] Not started
+**Status:** [x] Done — batch mode now sends thinking messages when showThinking is enabled
 
 ### 4. Fire-and-forget in webhook
 
