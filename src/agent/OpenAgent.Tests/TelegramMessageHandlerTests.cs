@@ -18,6 +18,20 @@ public class TelegramMessageHandlerTests
         AllowedUserIds = [..allowedUserIds]
     };
 
+    private static TelegramOptions CreateBatchOptions(params long[] allowedUserIds) => new()
+    {
+        BotToken = "fake-token",
+        AllowedUserIds = [..allowedUserIds],
+        StreamResponses = false
+    };
+
+    private static TelegramOptions CreateStreamingOptions(params long[] allowedUserIds) => new()
+    {
+        BotToken = "fake-token",
+        AllowedUserIds = [..allowedUserIds],
+        StreamResponses = true
+    };
+
     private static Update CreatePrivateTextUpdate(long userId, long chatId, string text) => new()
     {
         Message = new Message
@@ -183,5 +197,77 @@ public class TelegramMessageHandlerTests
 
         Assert.Empty(sender.TypingCalls);
         Assert.Empty(sender.HtmlCalls);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_BatchMode_SendsFinalMessageOnly()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new StreamingTextProvider("Hello", " ", "world");
+        var handler = new TelegramMessageHandler(store, provider, ConversationId, CreateBatchOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        Assert.Empty(sender.DraftCalls);
+        Assert.Single(sender.HtmlCalls);
+        Assert.Contains("Hello world", sender.HtmlCalls[0].Html);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_StreamMode_SendsDraftsAndFinalMessage()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new StreamingTextProvider("Hello", " ", "world");
+        // Zero throttle so drafts fire on every token
+        var handler = new TelegramMessageHandler(store, provider, ConversationId, CreateStreamingOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Drafts were sent (at least one)
+        Assert.NotEmpty(sender.DraftCalls);
+        // All drafts target the same chat
+        Assert.All(sender.DraftCalls, d => Assert.Equal(ChatId, d.ChatId));
+        // All drafts share the same draft ID
+        var draftId = sender.DraftCalls[0].DraftId;
+        Assert.All(sender.DraftCalls, d => Assert.Equal(draftId, d.DraftId));
+        // Final message sent via HTML
+        Assert.Single(sender.HtmlCalls);
+        Assert.Contains("Hello world", sender.HtmlCalls[0].Html);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_StreamMode_DraftFailure_StillSendsFinalMessage()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new StreamingTextProvider("Hello", " ", "world");
+        var handler = new TelegramMessageHandler(store, provider, ConversationId, CreateStreamingOptions(AllowedUserId));
+        var sender = new FakeTelegramSender { FailDraft = true };
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Drafts all failed, but final message still sent
+        Assert.Empty(sender.DraftCalls);
+        Assert.Single(sender.HtmlCalls);
+        Assert.Contains("Hello world", sender.HtmlCalls[0].Html);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_StreamMode_LlmThrows_SendsErrorMessage()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new ThrowingTextProvider();
+        var handler = new TelegramMessageHandler(store, provider, ConversationId, CreateStreamingOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        Assert.Single(sender.HtmlCalls);
+        Assert.Contains("went wrong", sender.HtmlCalls[0].Html);
     }
 }

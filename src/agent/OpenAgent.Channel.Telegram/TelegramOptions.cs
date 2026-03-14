@@ -28,4 +28,12 @@ public sealed class TelegramOptions
     /// Secret token for webhook validation. Auto-generated if not set.
     /// </summary>
     public string? WebhookSecret { get; set; }
+
+    /// <summary>
+    /// When true, streams partial responses to the user via sendMessageDraft
+    /// as the LLM generates tokens. When false, sends the complete response at once.
+    /// Requires Bot API 9.3+. Defaults to true.
+    /// </summary>
+    public bool StreamResponses { get; set; } = true;
+
 }

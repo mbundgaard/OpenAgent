@@ -16,4 +16,20 @@ public interface ITelegramSender
 
     /// <summary>Sends a plain text message (no parse mode).</summary>
     Task SendTextAsync(ChatId chatId, string text, CancellationToken ct);
+
+    /// <summary>Sends a message draft that updates in-place (Bot API 9.3+).</summary>
+    Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, CancellationToken ct);
+}
+
+/// <summary>
+/// Result of a sendMessageDraft call. Contains success/failure info and rate limit details.
+/// </summary>
+public sealed class DraftResult
+{
+    public bool Ok { get; init; }
+    public int StatusCode { get; init; }
+    public int? RetryAfterSeconds { get; init; }
+    public string? Description { get; init; }
+
+    public static DraftResult Success() => new() { Ok = true, StatusCode = 200 };
 }

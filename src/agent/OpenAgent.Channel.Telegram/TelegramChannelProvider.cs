@@ -132,14 +132,14 @@ public sealed class TelegramChannelProvider : IChannelProvider
         if (_botClient is null)
             throw new InvalidOperationException("Telegram channel is not started.");
 
-        return new TelegramBotClientSender(_botClient);
+        return new TelegramBotClientSender(_botClient, _options.BotToken!);
     }
 
     /// <summary>Polling update handler — wraps the bot client in a sender and forwards to the message handler.</summary>
     private async Task HandlePollingUpdateAsync(
         ITelegramBotClient botClient, Update update, CancellationToken ct)
     {
-        var sender = new TelegramBotClientSender(botClient);
+        var sender = new TelegramBotClientSender(botClient, _options.BotToken!);
         await _handler!.HandleUpdateAsync(sender, update, ct);
     }
 
