@@ -26,7 +26,7 @@
 
 **Fix:** Wrap the `SendDraftAsync` call in a try/catch inside the consumer loop. Log the exception and continue (or break with error state).
 
-**Status:** [ ] Not started
+**Status:** [x] Done — try/catch around SendDraftAsync, log and continue on failure
 
 ## 4. Multi-round thinking output
 

@@ -256,8 +256,19 @@ public sealed class TelegramMessageHandler
                     continue;
                 }
 
-                // Send draft
-                var result = await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
+                // Send draft — catch unexpected exceptions so the consumer stays alive
+                DraftResult result;
+                try
+                {
+                    result = await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Draft send threw for chat {ChatId}, will retry next interval", chatId);
+                    if (done) break;
+                    continue;
+                }
 
                 if (result.Ok)
                 {
