@@ -86,13 +86,19 @@ public sealed class TelegramMessageHandler
         // Get or create conversation using the connection's configured ID
         var conversation = _store.GetOrCreate(_conversationId, "telegram", ConversationType.Text);
 
+        // Prepend reply-to reference if the user replied to a specific message
+        var replyToId = message.ReplyToMessage?.MessageId;
+        var content = replyToId is not null
+            ? $"[Reply to Msg: {replyToId}] {userText}"
+            : userText;
+
         // Build user message with Telegram message ID
         var userMessage = new Models.Conversations.Message
         {
             Id = Guid.NewGuid().ToString(),
             ConversationId = _conversationId,
             Role = "user",
-            Content = userText,
+            Content = content,
             ChannelMessageId = message.MessageId.ToString()
         };
 
