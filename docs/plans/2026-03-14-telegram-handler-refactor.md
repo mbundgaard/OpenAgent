@@ -18,7 +18,7 @@
 
 **Fix:** After #1 removes the tail, extract thinking/tool-line logic (the `ToolCallEvent`/`ToolResultEvent` handling + blockquote send) into a helper. Keep the producer loop focused on dispatching events.
 
-**Status:** [ ] Not started
+**Status:** [x] Done — extracted `RunDraftConsumerAsync`, `SendThinkingMessageAsync`, `FormatToolLine`
 
 ## 3. Consumer task exception handling
 

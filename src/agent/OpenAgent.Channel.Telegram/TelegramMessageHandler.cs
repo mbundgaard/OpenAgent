@@ -125,76 +125,22 @@ public sealed class TelegramMessageHandler
     {
         var buffer = new StringBuilder();
         var bufferLock = new object();
-        var draftId = GenerateDraftId();
         var producerDone = false;
         var draftsSent = 0;
-        var lastSentLength = 0;
-
-        // Collect tool call info — sent as one message when the response starts
-        var toolLines = new List<string>();
-        var pendingToolArgs = new Dictionary<string, string>(); // toolCallId -> short args summary
-        var thinkingSent = false;
         string? assistantMessageId = null;
 
+        // Thinking state — tool lines collected per round, sent as blockquote before response text
+        var toolLines = new List<string>();
+        var pendingToolArgs = new Dictionary<string, string>();
+        var thinkingSent = false;
+
+        var draftId = GenerateDraftId();
         _logger?.LogInformation("Stream started for chat {ChatId}, draftId={DraftId}, interval={IntervalMs}ms",
             chatId, draftId, DraftIntervalMs);
 
         // Consumer: background task that sends drafts at a fixed interval
-        var consumerTask = Task.Run(async () =>
-        {
-            var backoffUntil = DateTime.MinValue;
-
-            while (true)
-            {
-                await Task.Delay(DraftIntervalMs, ct);
-
-                // Snapshot the buffer
-                string snapshot;
-                bool done;
-                lock (bufferLock)
-                {
-                    snapshot = buffer.ToString();
-                    done = producerDone;
-                }
-
-                // Skip if nothing new to send
-                if (snapshot.Length == lastSentLength)
-                {
-                    if (done) break;
-                    continue;
-                }
-
-                // Respect rate limit backoff
-                if (DateTime.UtcNow < backoffUntil)
-                {
-                    _logger?.LogDebug("Draft skipped for chat {ChatId}, in backoff until {BackoffUntil:HH:mm:ss}",
-                        chatId, backoffUntil);
-                    if (done) break;
-                    continue;
-                }
-
-                // Send draft
-                var result = await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
-
-                if (result.Ok)
-                {
-                    draftsSent++;
-                    lastSentLength = snapshot.Length;
-                    _logger?.LogDebug("Draft #{DraftNum} sent for chat {ChatId}, {Length} chars",
-                        draftsSent, chatId, snapshot.Length);
-                }
-                else
-                {
-                    var backoffSeconds = result.RetryAfterSeconds ?? 1;
-                    backoffUntil = DateTime.UtcNow.AddSeconds(backoffSeconds);
-                    _logger?.LogWarning(
-                        "Draft failed for chat {ChatId}: HTTP {StatusCode}, \"{Description}\", retry_after={RetryAfter}s",
-                        chatId, result.StatusCode, result.Description, result.RetryAfterSeconds);
-                }
-
-                if (done) break;
-            }
-        }, ct);
+        var consumerTask = RunDraftConsumerAsync(sender, chatId, draftId, buffer, bufferLock,
+            () => producerDone, d => draftsSent = d, ct);
 
         // Producer: consume LLM events, collect tool lines, buffer response text
         try
@@ -211,36 +157,15 @@ public sealed class TelegramMessageHandler
 
                     case ToolResultEvent toolResult:
                         if (_showThinking)
-                        {
-                            var ok = IsToolSuccess(toolResult.Result);
-                            var mark = ok ? "\u2713" : "\u2717";
-                            pendingToolArgs.TryGetValue(toolResult.ToolCallId, out var args);
-                            var line = string.IsNullOrEmpty(args)
-                                ? $"{mark} {toolResult.Name}"
-                                : $"{mark} {toolResult.Name}  <i>{System.Net.WebUtility.HtmlEncode(args)}</i>";
-                            toolLines.Add(line);
-                        }
+                            toolLines.Add(FormatToolLine(toolResult, pendingToolArgs));
                         _logger?.LogDebug("Tool result: {Name} -> {Length} chars", toolResult.Name, toolResult.Result.Length);
                         break;
 
                     case TextDelta delta:
-                        // Send collected tool lines as one HTML message before the first text
                         if (!thinkingSent && toolLines.Count > 0)
                         {
                             thinkingSent = true;
-                            var toolCount = toolLines.Count;
-                            var label = toolCount == 1 ? "1 tool call" : $"{toolCount} tool calls";
-                            var html = $"<blockquote><b>\u2699\ufe0f {label}</b>\n{string.Join("\n", toolLines)}</blockquote>";
-                            try
-                            {
-                                await sender.SendHtmlAsync(chatId, html, ct);
-                                _logger?.LogDebug("Thinking message sent for chat {ChatId}: {LineCount} tool(s)",
-                                    chatId, toolCount);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger?.LogWarning(ex, "Failed to send thinking message for chat {ChatId}", chatId);
-                            }
+                            await SendThinkingMessageAsync(sender, chatId, toolLines, ct);
                         }
                         thinkingSent = true;
                         lock (bufferLock) { buffer.Append(delta.Content); }
@@ -284,6 +209,110 @@ public sealed class TelegramMessageHandler
             chatId, draftsSent, replyText.Length);
 
         await SendFinalResponseAsync(sender, chatId, replyText, assistantMessageId, ct);
+    }
+
+    /// <summary>
+    /// Background task that sends draft updates at a fixed interval.
+    /// Snapshots the shared buffer and sends when new content is available.
+    /// </summary>
+    private async Task RunDraftConsumerAsync(
+        ITelegramSender sender, long chatId, long draftId,
+        StringBuilder buffer, object bufferLock,
+        Func<bool> isProducerDone, Action<int> setDraftsSent,
+        CancellationToken ct)
+    {
+        var backoffUntil = DateTime.MinValue;
+        var lastSentLength = 0;
+        var draftsSent = 0;
+
+        await Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(DraftIntervalMs, ct);
+
+                // Snapshot the buffer
+                string snapshot;
+                bool done;
+                lock (bufferLock)
+                {
+                    snapshot = buffer.ToString();
+                    done = isProducerDone();
+                }
+
+                // Skip if nothing new to send
+                if (snapshot.Length == lastSentLength)
+                {
+                    if (done) break;
+                    continue;
+                }
+
+                // Respect rate limit backoff
+                if (DateTime.UtcNow < backoffUntil)
+                {
+                    _logger?.LogDebug("Draft skipped for chat {ChatId}, in backoff until {BackoffUntil:HH:mm:ss}",
+                        chatId, backoffUntil);
+                    if (done) break;
+                    continue;
+                }
+
+                // Send draft
+                var result = await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
+
+                if (result.Ok)
+                {
+                    draftsSent++;
+                    lastSentLength = snapshot.Length;
+                    _logger?.LogDebug("Draft #{DraftNum} sent for chat {ChatId}, {Length} chars",
+                        draftsSent, chatId, snapshot.Length);
+                }
+                else
+                {
+                    var backoffSeconds = result.RetryAfterSeconds ?? 1;
+                    backoffUntil = DateTime.UtcNow.AddSeconds(backoffSeconds);
+                    _logger?.LogWarning(
+                        "Draft failed for chat {ChatId}: HTTP {StatusCode}, \"{Description}\", retry_after={RetryAfter}s",
+                        chatId, result.StatusCode, result.Description, result.RetryAfterSeconds);
+                }
+
+                if (done) break;
+            }
+
+            setDraftsSent(draftsSent);
+        }, ct);
+    }
+
+    /// <summary>
+    /// Sends collected tool call lines as an HTML blockquote message.
+    /// </summary>
+    private async Task SendThinkingMessageAsync(
+        ITelegramSender sender, long chatId, List<string> toolLines, CancellationToken ct)
+    {
+        var toolCount = toolLines.Count;
+        var label = toolCount == 1 ? "1 tool call" : $"{toolCount} tool calls";
+        var html = $"<blockquote><b>\u2699\ufe0f {label}</b>\n{string.Join("\n", toolLines)}</blockquote>";
+        try
+        {
+            await sender.SendHtmlAsync(chatId, html, ct);
+            _logger?.LogDebug("Thinking message sent for chat {ChatId}: {LineCount} tool(s)", chatId, toolCount);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to send thinking message for chat {ChatId}", chatId);
+        }
+    }
+
+    /// <summary>
+    /// Formats a tool result into a single HTML line with checkmark/cross and primary argument.
+    /// </summary>
+    private static string FormatToolLine(ToolResultEvent toolResult, Dictionary<string, string> pendingToolArgs)
+    {
+        var ok = IsToolSuccess(toolResult.Result);
+        var mark = ok ? "\u2713" : "\u2717";
+        pendingToolArgs.TryGetValue(toolResult.ToolCallId, out var args);
+        return string.IsNullOrEmpty(args)
+            ? $"{mark} {toolResult.Name}"
+            : $"{mark} {toolResult.Name}  <i>{System.Net.WebUtility.HtmlEncode(args)}</i>";
     }
 
     /// <summary>
