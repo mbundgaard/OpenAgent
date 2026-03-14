@@ -273,7 +273,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     }
 
                     // Complete round — add assistant message with tool calls
-                    chatMessages.Add(new ChatMessage { Role = "assistant", Content = PrependChannelId(msg), ToolCalls = toolCalls });
+                    chatMessages.Add(new ChatMessage { Role = "assistant", Content = msg.Content, Name = ChannelMessageName(msg), ToolCalls = toolCalls });
 
                     // Add the matching tool result messages
                     foreach (var id in expectedIds)
@@ -291,11 +291,19 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             }
 
             // Regular message (user, assistant text, or tool with id)
-            var chatMsg = new ChatMessage { Role = msg.Role, Content = PrependChannelId(msg) };
+            var content = msg.ReplyToChannelMessageId is not null
+                ? $"[Reply to Msg: {msg.ReplyToChannelMessageId}] {msg.Content}"
+                : msg.Content;
+            var chatMsg = new ChatMessage { Role = msg.Role, Content = content, Name = ChannelMessageName(msg) };
             if (msg.ToolCallId is not null)
                 chatMsg.ToolCallId = msg.ToolCallId;
             chatMessages.Add(chatMsg);
         }
+
+        // Log the full context being sent to the LLM
+        foreach (var cm in chatMessages)
+            logger.LogDebug("LLM context [{Role}] {Name}: {Content}", cm.Role, cm.Name ?? "-",
+                cm.Content?.Length > 200 ? cm.Content[..200] + "..." : cm.Content);
 
         return chatMessages;
     }
@@ -316,20 +324,11 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
     }
 
     /// <summary>
-    /// Prepends channel metadata to the message content for LLM context.
-    /// Adds [Msg: xx] for the message's own ID and [Reply to Msg: xx] for reply references.
+    /// Returns a name field for the ChatMessage using the channel message ID (e.g. "msg_123").
+    /// The OpenAI API name field is metadata — the LLM sees it but won't echo it in responses.
     /// </summary>
-    private static string? PrependChannelId(Message msg)
+    private static string? ChannelMessageName(Message msg)
     {
-        if (msg.Content is null)
-            return null;
-
-        var prefix = "";
-        if (msg.ChannelMessageId is not null)
-            prefix += $"[Msg: {msg.ChannelMessageId}] ";
-        if (msg.ReplyToChannelMessageId is not null)
-            prefix += $"[Reply to Msg: {msg.ReplyToChannelMessageId}] ";
-
-        return prefix.Length > 0 ? prefix + msg.Content : msg.Content;
+        return msg.ChannelMessageId is not null ? $"msg_{msg.ChannelMessageId}" : null;
     }
 }
