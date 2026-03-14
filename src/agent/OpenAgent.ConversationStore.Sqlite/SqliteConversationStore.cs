@@ -68,6 +68,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         // Migrate existing databases — add columns that may not exist yet
         TryAddColumn(connection, "Messages", "ToolCalls", "TEXT");
         TryAddColumn(connection, "Messages", "ToolCallId", "TEXT");
+        TryAddColumn(connection, "Messages", "ChannelMessageId", "TEXT");
+        TryAddColumn(connection, "Messages", "ReplyToChannelMessageId", "TEXT");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
