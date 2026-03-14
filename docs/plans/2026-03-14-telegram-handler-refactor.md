@@ -51,4 +51,4 @@
 
 **Recommendation:** (a) Store first chunk's ID — simple and covers the most common case.
 
-**Status:** [ ] Not started — awaiting decision
+**Status:** [x] Done — store first chunk's ID via null-coalescing assignment

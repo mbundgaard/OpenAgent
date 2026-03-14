@@ -375,10 +375,11 @@ public sealed class TelegramMessageHandler
         foreach (var chunk in chunks)
         {
             var html = TelegramMarkdownConverter.ToTelegramHtml(chunk);
-            telegramMessageId = await SendWithRetryAsync(sender, chatId, html, chunk, ct);
+            var sentId = await SendWithRetryAsync(sender, chatId, html, chunk, ct);
+            telegramMessageId ??= sentId; // Keep the first chunk's ID
         }
 
-        // Update the assistant message with the Telegram message ID (last chunk's ID)
+        // Update the assistant message with the Telegram message ID (first chunk's ID)
         if (assistantMessageId is not null && telegramMessageId is not null)
         {
             _store.UpdateChannelMessageId(assistantMessageId, telegramMessageId.Value.ToString());
