@@ -27,10 +27,15 @@ public static class TelegramWebhookEndpoints
             IConnectionManager connectionManager,
             ILogger<TelegramChannelProvider> logger) =>
         {
+            logger.LogInformation("Webhook received for connection {ConnectionId}", connectionId);
+
             // Look up the running provider for this connection
             var provider = connectionManager.GetProvider(connectionId) as TelegramChannelProvider;
             if (provider?.BotClient is null || provider.Handler is null)
+            {
+                logger.LogWarning("Webhook: no running provider for connection {ConnectionId}", connectionId);
                 return Results.NotFound();
+            }
 
             // Validate secret token header (constant-time comparison)
             var secretHeader = request.Headers["X-Telegram-Bot-Api-Secret-Token"].ToString();
@@ -38,14 +43,22 @@ public static class TelegramWebhookEndpoints
             if (!CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(secretHeader),
                     Encoding.UTF8.GetBytes(expectedSecret)))
+            {
+                logger.LogWarning("Webhook: secret token mismatch for connection {ConnectionId}", connectionId);
                 return Results.Unauthorized();
+            }
 
             // Deserialize the Telegram update
             var update = await JsonSerializer.DeserializeAsync<Update>(
                 request.Body, cancellationToken: request.HttpContext.RequestAborted);
 
             if (update is null)
+            {
+                logger.LogWarning("Webhook: failed to deserialize update for connection {ConnectionId}", connectionId);
                 return Results.BadRequest();
+            }
+
+            logger.LogInformation("Webhook: processing update {UpdateId} for connection {ConnectionId}", update.Id, connectionId);
 
             // Process asynchronously — don't block Telegram
             var sender = provider.CreateSender();
