@@ -21,6 +21,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
     private readonly ILogger<TelegramMessageHandler> _handlerLogger;
 
     private TelegramBotClient? _botClient;
+    private TelegramBotClientSender? _sender;
     private TelegramMessageHandler? _handler;
     private CancellationTokenSource? _pollingCts;
     private string? _webhookSecret;
@@ -61,8 +62,9 @@ public sealed class TelegramChannelProvider : IChannelProvider
         if (string.IsNullOrEmpty(_options.BotToken))
             throw new InvalidOperationException("Telegram BotToken is required.");
 
-        // Initialize bot client and handler
+        // Initialize bot client, sender, and handler
         _botClient = new TelegramBotClient(_options.BotToken);
+        _sender = new TelegramBotClientSender(_botClient, _options.BotToken);
         _handler = new TelegramMessageHandler(_store, _textProvider, _conversationId, _options, _handlerLogger);
 
         if (isWebhook)
@@ -126,21 +128,20 @@ public sealed class TelegramChannelProvider : IChannelProvider
         }
     }
 
-    /// <summary>Creates an <see cref="ITelegramSender"/> backed by the current bot client.</summary>
+    /// <summary>Returns the cached <see cref="ITelegramSender"/> backed by the current bot client.</summary>
     public ITelegramSender CreateSender()
     {
-        if (_botClient is null)
+        if (_sender is null)
             throw new InvalidOperationException("Telegram channel is not started.");
 
-        return new TelegramBotClientSender(_botClient, _options.BotToken!);
+        return _sender;
     }
 
-    /// <summary>Polling update handler — wraps the bot client in a sender and forwards to the message handler.</summary>
+    /// <summary>Polling update handler — forwards to the message handler using the cached sender.</summary>
     private async Task HandlePollingUpdateAsync(
         ITelegramBotClient botClient, Update update, CancellationToken ct)
     {
-        var sender = new TelegramBotClientSender(botClient, _options.BotToken!);
-        await _handler!.HandleUpdateAsync(sender, update, ct);
+        await _handler!.HandleUpdateAsync(_sender!, update, ct);
     }
 
     /// <summary>Polling error handler — logs and continues.</summary>

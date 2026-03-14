@@ -64,6 +64,6 @@ public static class TelegramWebhookEndpoints
             });
 
             return Results.Ok();
-        }).AllowAnonymous();
+        }).AllowAnonymous(); // Telegram can't send auth headers — secret token validation above provides protection
     }
 }
