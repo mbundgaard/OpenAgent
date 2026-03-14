@@ -71,7 +71,8 @@ public sealed class InMemoryConversationStore : IConversationStore
                 CreatedAt = old.CreatedAt,
                 ToolCalls = old.ToolCalls,
                 ToolCallId = old.ToolCallId,
-                ChannelMessageId = channelMessageId
+                ChannelMessageId = channelMessageId,
+                ReplyToChannelMessageId = old.ReplyToChannelMessageId
             };
             return;
         }

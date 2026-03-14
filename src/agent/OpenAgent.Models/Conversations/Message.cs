@@ -39,4 +39,12 @@ public sealed class Message
     [JsonPropertyName("channel_message_id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ChannelMessageId { get; init; }
+
+    /// <summary>
+    /// The channel message ID this message is replying to (e.g. Telegram reply_to_message ID).
+    /// Null when the message is not a reply to a specific message.
+    /// </summary>
+    [JsonPropertyName("reply_to_channel_message_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReplyToChannelMessageId { get; init; }
 }

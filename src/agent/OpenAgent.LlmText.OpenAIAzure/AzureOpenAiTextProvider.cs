@@ -316,13 +316,20 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
     }
 
     /// <summary>
-    /// Prepends [Msg: xx] to the message content if it has a channel message ID.
+    /// Prepends channel metadata to the message content for LLM context.
+    /// Adds [Msg: xx] for the message's own ID and [Reply to Msg: xx] for reply references.
     /// </summary>
     private static string? PrependChannelId(Message msg)
     {
-        if (msg.ChannelMessageId is null || msg.Content is null)
-            return msg.Content;
+        if (msg.Content is null)
+            return null;
 
-        return $"[Msg: {msg.ChannelMessageId}] {msg.Content}";
+        var prefix = "";
+        if (msg.ChannelMessageId is not null)
+            prefix += $"[Msg: {msg.ChannelMessageId}] ";
+        if (msg.ReplyToChannelMessageId is not null)
+            prefix += $"[Reply to Msg: {msg.ReplyToChannelMessageId}] ";
+
+        return prefix.Length > 0 ? prefix + msg.Content : msg.Content;
     }
 }
