@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using Telegram.Bot;
 using Telegram.Bot.Types;
 
 namespace OpenAgent.Channel.Telegram;
@@ -48,9 +48,9 @@ public static class TelegramWebhookEndpoints
                 return Results.Unauthorized();
             }
 
-            // Deserialize the Telegram update
-            var update = await JsonSerializer.DeserializeAsync<Update>(
-                request.Body, cancellationToken: request.HttpContext.RequestAborted);
+            // Deserialize the Telegram update using Telegram.Bot's serializer options
+            var update = await System.Text.Json.JsonSerializer.DeserializeAsync<Update>(
+                request.Body, JsonBotAPI.Options, cancellationToken: request.HttpContext.RequestAborted);
 
             if (update is null)
             {
