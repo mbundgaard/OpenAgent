@@ -79,7 +79,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         public IReadOnlyList<ProviderConfigField> ConfigFields => [];
         public void Configure(JsonElement configuration) { }
 
-        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, string userInput,
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return new TextDelta("fake ");

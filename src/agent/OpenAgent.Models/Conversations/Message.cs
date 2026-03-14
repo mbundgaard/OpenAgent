@@ -31,4 +31,12 @@ public sealed class Message
     [JsonPropertyName("tool_call_id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ToolCallId { get; init; }
+
+    /// <summary>
+    /// The message ID from the originating channel (e.g. Telegram message ID).
+    /// Null for messages that don't originate from a channel.
+    /// </summary>
+    [JsonPropertyName("channel_message_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChannelMessageId { get; init; }
 }

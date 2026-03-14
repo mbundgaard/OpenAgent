@@ -56,6 +56,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 CreatedAt TEXT NOT NULL,
                 ToolCalls TEXT,
                 ToolCallId TEXT,
+                ChannelMessageId TEXT,
                 FOREIGN KEY (ConversationId) REFERENCES Conversations(Id) ON DELETE CASCADE
             );
 
@@ -168,8 +169,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO Messages (Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId)
-            VALUES (@id, @conversationId, @role, @content, @createdAt, @toolCalls, @toolCallId)
+            INSERT INTO Messages (Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId)
+            VALUES (@id, @conversationId, @role, @content, @createdAt, @toolCalls, @toolCallId, @channelMessageId)
             """;
         cmd.Parameters.AddWithValue("@id", message.Id);
         cmd.Parameters.AddWithValue("@conversationId", message.ConversationId);
@@ -178,6 +179,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@createdAt", message.CreatedAt.ToString("O"));
         cmd.Parameters.AddWithValue("@toolCalls", (object?)message.ToolCalls ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@toolCallId", (object?)message.ToolCallId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@channelMessageId", (object?)message.ChannelMessageId ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
@@ -185,7 +187,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId FROM Messages WHERE ConversationId = @id ORDER BY CreatedAt";
+        cmd.CommandText = "SELECT Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId FROM Messages WHERE ConversationId = @id ORDER BY CreatedAt";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -200,7 +202,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 Content = reader.IsDBNull(3) ? null : reader.GetString(3),
                 CreatedAt = DateTimeOffset.Parse(reader.GetString(4)),
                 ToolCalls = reader.IsDBNull(5) ? null : reader.GetString(5),
-                ToolCallId = reader.IsDBNull(6) ? null : reader.GetString(6)
+                ToolCallId = reader.IsDBNull(6) ? null : reader.GetString(6),
+                ChannelMessageId = reader.IsDBNull(7) ? null : reader.GetString(7)
             });
         }
 

@@ -86,8 +86,18 @@ public sealed class TelegramMessageHandler
         // Get or create conversation using the connection's configured ID
         var conversation = _store.GetOrCreate(_conversationId, "telegram", ConversationType.Text);
 
+        // Build user message with Telegram message ID
+        var userMessage = new Models.Conversations.Message
+        {
+            Id = Guid.NewGuid().ToString(),
+            ConversationId = _conversationId,
+            Role = "user",
+            Content = userText,
+            ChannelMessageId = message.MessageId.ToString()
+        };
+
         // Get LLM completion events
-        var events = _textProvider.CompleteAsync(conversation, userText, ct);
+        var events = _textProvider.CompleteAsync(conversation, userMessage, ct);
 
         // Route to streaming or batch based on config
         var mode = _streamResponses ? "streaming" : "batch";

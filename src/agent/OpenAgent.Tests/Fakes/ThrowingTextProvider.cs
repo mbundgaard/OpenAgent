@@ -19,7 +19,7 @@ public sealed class ThrowingTextProvider : ILlmTextProvider
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,
-        string userInput,
+        Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         throw new InvalidOperationException("LLM provider failed");

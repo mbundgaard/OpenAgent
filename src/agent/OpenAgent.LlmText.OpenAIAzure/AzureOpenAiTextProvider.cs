@@ -53,7 +53,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
     public void Dispose() => _httpClient?.Dispose();
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, string userInput, [EnumeratorCancellation] CancellationToken ct = default)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
@@ -61,14 +61,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         var conversationId = conversation.Id;
         logger.LogDebug("StreamAsync called for conversation {ConversationId}", conversationId);
 
-        // Store user message
-        agentLogic.AddMessage(conversationId, new Message
-        {
-            Id = Guid.NewGuid().ToString(),
-            ConversationId = conversationId,
-            Role = "user",
-            Content = userInput
-        });
+        // Persist the caller-supplied user message
+        agentLogic.AddMessage(conversationId, userMessage);
 
         // Build request once — messages are mutated across tool call rounds
         var request = new ChatCompletionRequest

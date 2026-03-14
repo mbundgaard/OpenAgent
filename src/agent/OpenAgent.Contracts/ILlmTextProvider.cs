@@ -14,5 +14,5 @@ public interface ILlmTextProvider : IConfigurable
     /// tool calls, and tool results. Works for both streaming (WebSocket) and
     /// collected (REST) transports.
     /// </summary>
-    IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, string userInput, CancellationToken ct = default);
+    IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage, CancellationToken ct = default);
 }

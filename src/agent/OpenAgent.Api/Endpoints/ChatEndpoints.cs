@@ -35,9 +35,17 @@ public static class ChatEndpoints
         {
             var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text);
 
+            var userMessage = new Message
+            {
+                Id = Guid.NewGuid().ToString(),
+                ConversationId = conversationId,
+                Role = "user",
+                Content = request.Content
+            };
+
             // Collect all completion events
             var events = new List<object>();
-            await foreach (var evt in textProvider.CompleteAsync(conversation, request.Content, ct))
+            await foreach (var evt in textProvider.CompleteAsync(conversation, userMessage, ct))
             {
                 events.Add(evt switch
                 {
