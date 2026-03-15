@@ -47,4 +47,12 @@ public sealed class Message
     [JsonPropertyName("reply_to_channel_message_id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ReplyToChannelMessageId { get; init; }
+
+    /// <summary>
+    /// SQLite rowid — populated by the store, not persisted via INSERT.
+    /// Used for compaction boundary tracking.
+    /// </summary>
+    [JsonPropertyName("row_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long RowId { get; init; }
 }
