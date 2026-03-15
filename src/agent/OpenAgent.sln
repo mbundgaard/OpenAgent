@@ -43,6 +43,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Channels", "Channels", "{53
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Channel.Telegram", "OpenAgent.Channel.Telegram\OpenAgent.Channel.Telegram.csproj", "{F815F637-8753-4FEA-895D-D492C6F6233A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Tools.Expand", "OpenAgent.Tools.Expand\OpenAgent.Tools.Expand.csproj", "{2DC8152C-982D-4726-BD6C-591F6A0A6530}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -221,6 +223,18 @@ Global
 		{F815F637-8753-4FEA-895D-D492C6F6233A}.Release|x64.Build.0 = Release|Any CPU
 		{F815F637-8753-4FEA-895D-D492C6F6233A}.Release|x86.ActiveCfg = Release|Any CPU
 		{F815F637-8753-4FEA-895D-D492C6F6233A}.Release|x86.Build.0 = Release|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Debug|x64.Build.0 = Debug|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Debug|x86.Build.0 = Debug|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|x64.ActiveCfg = Release|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|x64.Build.0 = Release|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|x86.ActiveCfg = Release|Any CPU
+		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

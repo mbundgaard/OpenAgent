@@ -10,6 +10,7 @@ using OpenAgent.Models.Conversations;
 using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Tools.Shell;
+using OpenAgent.Tools.Expand;
 using OpenAgent.Tools.WebFetch;
 using Serilog;
 using Serilog.Formatting.Compact;
@@ -44,6 +45,7 @@ builder.Services.AddSingleton<IAgentLogic, AgentLogic>();
 builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
+builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
 
 builder.Services.AddSingleton(new CompactionConfig());
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
