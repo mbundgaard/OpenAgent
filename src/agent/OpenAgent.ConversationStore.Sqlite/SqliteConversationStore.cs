@@ -211,13 +211,37 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
     public IReadOnlyList<Message> GetMessages(string conversationId)
     {
+        var conversation = Get(conversationId);
+        var list = new List<Message>();
+
+        // Prepend compaction summary as a system message if present
+        if (conversation?.Context is not null)
+        {
+            list.Add(new Message
+            {
+                Id = "context",
+                ConversationId = conversationId,
+                Role = "system",
+                Content = conversation.Context
+            });
+        }
+
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id ORDER BY rowid";
+
+        // Filter out compacted messages if a cutoff exists
+        if (conversation?.CompactedUpToRowId is not null)
+        {
+            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id AND rowid > @cutoff ORDER BY rowid";
+            cmd.Parameters.AddWithValue("@cutoff", conversation.CompactedUpToRowId.Value);
+        }
+        else
+        {
+            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id ORDER BY rowid";
+        }
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
-        var list = new List<Message>();
         while (reader.Read())
         {
             list.Add(new Message
