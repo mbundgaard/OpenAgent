@@ -12,6 +12,7 @@ public sealed class InMemoryConversationStore : IConversationStore
 {
     private readonly Dictionary<string, Conversation> _conversations = new();
     private readonly Dictionary<string, List<Message>> _messages = new();
+    private long _nextRowId = 1;
 
     // IConfigurable — no-op for tests
     public string Key => "";
@@ -50,7 +51,21 @@ public sealed class InMemoryConversationStore : IConversationStore
     {
         if (!_messages.ContainsKey(conversationId))
             _messages[conversationId] = [];
-        _messages[conversationId].Add(message);
+
+        var withRowId = new Message
+        {
+            RowId = _nextRowId++,
+            Id = message.Id,
+            ConversationId = message.ConversationId,
+            Role = message.Role,
+            Content = message.Content,
+            CreatedAt = message.CreatedAt,
+            ToolCalls = message.ToolCalls,
+            ToolCallId = message.ToolCallId,
+            ChannelMessageId = message.ChannelMessageId,
+            ReplyToChannelMessageId = message.ReplyToChannelMessageId
+        };
+        _messages[conversationId].Add(withRowId);
     }
 
     public void UpdateChannelMessageId(string messageId, string channelMessageId)
@@ -64,6 +79,7 @@ public sealed class InMemoryConversationStore : IConversationStore
             var old = messages[idx];
             messages[idx] = new Message
             {
+                RowId = old.RowId,
                 Id = old.Id,
                 ConversationId = old.ConversationId,
                 Role = old.Role,
@@ -78,9 +94,31 @@ public sealed class InMemoryConversationStore : IConversationStore
         }
     }
 
-    public IReadOnlyList<Message> GetMessages(string conversationId) =>
-        _messages.GetValueOrDefault(conversationId)?.AsReadOnly()
-        ?? (IReadOnlyList<Message>)Array.Empty<Message>();
+    public IReadOnlyList<Message> GetMessages(string conversationId)
+    {
+        var conversation = Get(conversationId);
+        var list = new List<Message>();
+
+        if (conversation?.Context is not null)
+        {
+            list.Add(new Message
+            {
+                Id = "context",
+                ConversationId = conversationId,
+                Role = "system",
+                Content = conversation.Context
+            });
+        }
+
+        var allMessages = _messages.GetValueOrDefault(conversationId) ?? [];
+
+        var messages = conversation?.CompactedUpToRowId is not null
+            ? allMessages.Where(m => m.RowId > conversation.CompactedUpToRowId.Value).ToList()
+            : allMessages;
+
+        list.AddRange(messages);
+        return list.AsReadOnly();
+    }
 
     public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds)
     {
