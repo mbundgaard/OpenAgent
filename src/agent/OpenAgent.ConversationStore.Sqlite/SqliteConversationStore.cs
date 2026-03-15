@@ -204,7 +204,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id ORDER BY CreatedAt";
+        cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id ORDER BY rowid";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -213,15 +213,16 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         {
             list.Add(new Message
             {
-                Id = reader.GetString(0),
-                ConversationId = reader.GetString(1),
-                Role = reader.GetString(2),
-                Content = reader.IsDBNull(3) ? null : reader.GetString(3),
-                CreatedAt = DateTimeOffset.Parse(reader.GetString(4)),
-                ToolCalls = reader.IsDBNull(5) ? null : reader.GetString(5),
-                ToolCallId = reader.IsDBNull(6) ? null : reader.GetString(6),
-                ChannelMessageId = reader.IsDBNull(7) ? null : reader.GetString(7),
-                ReplyToChannelMessageId = reader.IsDBNull(8) ? null : reader.GetString(8)
+                RowId = reader.GetInt64(0),
+                Id = reader.GetString(1),
+                ConversationId = reader.GetString(2),
+                Role = reader.GetString(3),
+                Content = reader.IsDBNull(4) ? null : reader.GetString(4),
+                CreatedAt = DateTimeOffset.Parse(reader.GetString(5)),
+                ToolCalls = reader.IsDBNull(6) ? null : reader.GetString(6),
+                ToolCallId = reader.IsDBNull(7) ? null : reader.GetString(7),
+                ChannelMessageId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                ReplyToChannelMessageId = reader.IsDBNull(9) ? null : reader.GetString(9)
             });
         }
 

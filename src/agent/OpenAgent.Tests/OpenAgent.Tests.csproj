@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenAgent\OpenAgent.csproj" />
     <ProjectReference Include="..\OpenAgent.Channel.Telegram\OpenAgent.Channel.Telegram.csproj" />
+    <ProjectReference Include="..\OpenAgent.ConversationStore.Sqlite\OpenAgent.ConversationStore.Sqlite.csproj" />
   </ItemGroup>
 
 </Project>
