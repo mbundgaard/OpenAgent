@@ -30,4 +30,7 @@ public interface IConversationStore : IConfigurable
 
     /// <summary>Returns all messages for the given conversation, in order.</summary>
     IReadOnlyList<Message> GetMessages(string conversationId);
+
+    /// <summary>Returns messages by their IDs, regardless of compaction state. Used by the expand tool.</summary>
+    IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds);
 }

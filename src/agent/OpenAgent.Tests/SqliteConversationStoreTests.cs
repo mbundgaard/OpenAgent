@@ -73,6 +73,29 @@ public class SqliteConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public void GetMessagesByIds_returns_compacted_messages()
+    {
+        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text);
+
+        _store.AddMessage("conv1", new Message { Id = "msg1", ConversationId = "conv1", Role = "user", Content = "old" });
+        _store.AddMessage("conv1", new Message { Id = "msg2", ConversationId = "conv1", Role = "assistant", Content = "old reply" });
+        _store.AddMessage("conv1", new Message { Id = "msg3", ConversationId = "conv1", Role = "user", Content = "new" });
+
+        // Compact first two messages
+        var allMessages = _store.GetMessages("conv1");
+        conv.CompactedUpToRowId = allMessages[1].RowId;
+        conv.Context = "Summary";
+        _store.Update(conv);
+
+        // GetMessagesByIds should still return compacted messages
+        var result = _store.GetMessagesByIds(["msg1", "msg2"]);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("old", result[0].Content);
+        Assert.Equal("old reply", result[1].Content);
+    }
+
+    [Fact]
     public void GetMessages_returns_all_when_no_compaction()
     {
         _store.GetOrCreate("conv1", "test", ConversationType.Text);

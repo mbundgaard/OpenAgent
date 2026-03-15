@@ -81,4 +81,13 @@ public sealed class InMemoryConversationStore : IConversationStore
     public IReadOnlyList<Message> GetMessages(string conversationId) =>
         _messages.GetValueOrDefault(conversationId)?.AsReadOnly()
         ?? (IReadOnlyList<Message>)Array.Empty<Message>();
+
+    public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds)
+    {
+        var idSet = messageIds.ToHashSet();
+        return _messages.Values
+            .SelectMany(msgs => msgs)
+            .Where(m => idSet.Contains(m.Id))
+            .ToList();
+    }
 }

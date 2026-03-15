@@ -262,6 +262,41 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         return list;
     }
 
+    public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds)
+    {
+        if (messageIds.Count == 0) return [];
+
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+
+        var paramNames = messageIds.Select((_, i) => $"@id{i}").ToList();
+        cmd.CommandText = $"SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE Id IN ({string.Join(", ", paramNames)}) ORDER BY rowid";
+
+        for (var i = 0; i < messageIds.Count; i++)
+            cmd.Parameters.AddWithValue(paramNames[i], messageIds[i]);
+
+        using var reader = cmd.ExecuteReader();
+        var list = new List<Message>();
+        while (reader.Read())
+        {
+            list.Add(new Message
+            {
+                RowId = reader.GetInt64(0),
+                Id = reader.GetString(1),
+                ConversationId = reader.GetString(2),
+                Role = reader.GetString(3),
+                Content = reader.IsDBNull(4) ? null : reader.GetString(4),
+                CreatedAt = DateTimeOffset.Parse(reader.GetString(5)),
+                ToolCalls = reader.IsDBNull(6) ? null : reader.GetString(6),
+                ToolCallId = reader.IsDBNull(7) ? null : reader.GetString(7),
+                ChannelMessageId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                ReplyToChannelMessageId = reader.IsDBNull(9) ? null : reader.GetString(9)
+            });
+        }
+
+        return list;
+    }
+
     public void Dispose()
     {
         // No persistent connection to dispose — each operation opens/closes its own
