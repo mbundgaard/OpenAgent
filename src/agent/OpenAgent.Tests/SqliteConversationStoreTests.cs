@@ -15,7 +15,7 @@ public class SqliteConversationStoreTests : IDisposable
         _dbDir = Path.Combine(Path.GetTempPath(), $"openagent-test-{Guid.NewGuid()}");
         Directory.CreateDirectory(_dbDir);
         var env = new AgentEnvironment { DataPath = _dbDir };
-        _store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance);
+        _store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, new CompactionConfig());
     }
 
     public void Dispose()
@@ -108,5 +108,61 @@ public class SqliteConversationStoreTests : IDisposable
         Assert.Equal(2, messages.Count);
         Assert.Equal("msg1", messages[0].Id);
         Assert.Equal("msg2", messages[1].Id);
+    }
+
+    [Fact]
+    public async Task Compaction_summarizes_old_messages_and_updates_cutoff()
+    {
+        var config = new CompactionConfig
+        {
+            MaxContextTokens = 100,
+            CompactionTriggerPercent = 50,
+            KeepLatestMessagePairs = 1
+        };
+        var summarizer = new FakeCompactionSummarizer("## Summary\nTest summary.\n[ref: msg1, msg2, msg3, msg4]");
+        var env = new AgentEnvironment { DataPath = _dbDir };
+        using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
+
+        var conv = store.GetOrCreate("conv1", "test", ConversationType.Text);
+
+        for (var i = 1; i <= 6; i++)
+        {
+            store.AddMessage("conv1", new Message
+            {
+                Id = $"msg{i}", ConversationId = "conv1",
+                Role = i % 2 == 1 ? "user" : "assistant",
+                Content = $"message {i}"
+            });
+        }
+
+        conv.LastPromptTokens = 60;
+        store.Update(conv);
+
+        // Wait for background compaction
+        await Task.Delay(500);
+
+        var messages = store.GetMessages("conv1");
+
+        Assert.Equal("system", messages[0].Role);
+        Assert.Contains("Test summary", messages[0].Content);
+        Assert.Equal("msg5", messages[1].Id);
+        Assert.Equal("msg6", messages[2].Id);
+        Assert.Equal(3, messages.Count);
+
+        Assert.Equal(4, summarizer.LastMessages!.Count);
+        Assert.Equal("msg1", summarizer.LastMessages[0].Id);
+    }
+
+    private sealed class FakeCompactionSummarizer(string context) : ICompactionSummarizer
+    {
+        public IReadOnlyList<Message>? LastMessages { get; private set; }
+        public string? LastExistingContext { get; private set; }
+
+        public Task<CompactionResult> SummarizeAsync(string? existingContext, IReadOnlyList<Message> messages, CancellationToken ct = default)
+        {
+            LastExistingContext = existingContext;
+            LastMessages = messages;
+            return Task.FromResult(new CompactionResult { Context = context });
+        }
     }
 }

@@ -6,6 +6,7 @@ using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.LlmText.OpenAIAzure;
 using OpenAgent.LlmVoice.OpenAIAzure;
 using OpenAgent.Channel.Telegram;
+using OpenAgent.Models.Conversations;
 using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Tools.Shell;
@@ -44,6 +45,7 @@ builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 
+builder.Services.AddSingleton(new CompactionConfig());
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>();
 builder.Services.AddSingleton<ILlmTextProvider, AzureOpenAiTextProvider>();

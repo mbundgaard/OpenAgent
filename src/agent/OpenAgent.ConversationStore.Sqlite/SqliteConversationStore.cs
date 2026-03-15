@@ -14,10 +14,18 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 {
     private readonly ILogger<SqliteConversationStore> _logger;
     private readonly string _connectionString;
+    private readonly CompactionConfig _compactionConfig;
+    private readonly ICompactionSummarizer? _compactionSummarizer;
 
-    public SqliteConversationStore(AgentEnvironment environment, ILogger<SqliteConversationStore> logger)
+    public SqliteConversationStore(
+        AgentEnvironment environment,
+        ILogger<SqliteConversationStore> logger,
+        CompactionConfig compactionConfig,
+        ICompactionSummarizer? compactionSummarizer = null)
     {
         _logger = logger;
+        _compactionConfig = compactionConfig;
+        _compactionSummarizer = compactionSummarizer;
         var dbPath = Path.Combine(environment.DataPath, "conversations.db");
         _connectionString = $"Data Source={dbPath}";
 
@@ -160,6 +168,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@compactedUpToRowId", (object?)conversation.CompactedUpToRowId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@compactionRunning", conversation.CompactionRunning ? 1 : 0);
         cmd.ExecuteNonQuery();
+
+        TryStartCompaction(conversation);
     }
 
     public bool Delete(string conversationId)
@@ -268,6 +278,89 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     public void Dispose()
     {
         // No persistent connection to dispose — each operation opens/closes its own
+    }
+
+    /// <summary>
+    /// Checks if compaction should run and starts it in the background if so.
+    /// Called from Update() when LastPromptTokens is set.
+    /// </summary>
+    private void TryStartCompaction(Conversation conversation)
+    {
+        if (_compactionSummarizer is null) return;
+        if (conversation.CompactionRunning) return;
+        if (conversation.LastPromptTokens is null) return;
+        if (conversation.LastPromptTokens.Value < _compactionConfig.TriggerThreshold) return;
+
+        // Set lock
+        conversation.CompactionRunning = true;
+        UpdateCompactionState(conversation.Id, compactionRunning: true, context: null, compactedUpToRowId: null);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await RunCompactionAsync(conversation);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Compaction failed for conversation {ConversationId}", conversation.Id);
+            }
+            finally
+            {
+                UpdateCompactionState(conversation.Id, compactionRunning: false, context: null, compactedUpToRowId: null);
+            }
+        });
+    }
+
+    private async Task RunCompactionAsync(Conversation conversation)
+    {
+        var liveMessages = ReadMessagesFromDb(conversation.Id, conversation.CompactedUpToRowId);
+
+        var keepCount = _compactionConfig.KeepLatestMessagePairs * 2;
+        if (liveMessages.Count <= keepCount)
+        {
+            _logger.LogDebug("Not enough messages to compact for conversation {ConversationId}", conversation.Id);
+            return;
+        }
+
+        var toCompact = liveMessages.GetRange(0, liveMessages.Count - keepCount);
+        var newCutoffRowId = toCompact[^1].RowId;
+
+        _logger.LogInformation("Compacting {Count} messages for conversation {ConversationId}, cutoff rowid {RowId}",
+            toCompact.Count, conversation.Id, newCutoffRowId);
+
+        var result = await _compactionSummarizer!.SummarizeAsync(conversation.Context, toCompact);
+
+        UpdateCompactionState(conversation.Id, compactionRunning: false, context: result.Context, compactedUpToRowId: newCutoffRowId);
+
+        _logger.LogInformation("Compaction complete for conversation {ConversationId}, context length {Length} chars",
+            conversation.Id, result.Context.Length);
+    }
+
+    /// <summary>Updates compaction-related fields on a conversation. Null values mean "don't change".</summary>
+    private void UpdateCompactionState(string conversationId, bool compactionRunning, string? context, long? compactedUpToRowId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+
+        var setClauses = new List<string> { "CompactionRunning = @running" };
+        cmd.Parameters.AddWithValue("@running", compactionRunning ? 1 : 0);
+
+        if (context is not null)
+        {
+            setClauses.Add("Context = @context");
+            cmd.Parameters.AddWithValue("@context", context);
+        }
+
+        if (compactedUpToRowId is not null)
+        {
+            setClauses.Add("CompactedUpToRowId = @cutoff");
+            cmd.Parameters.AddWithValue("@cutoff", compactedUpToRowId.Value);
+        }
+
+        cmd.CommandText = $"UPDATE Conversations SET {string.Join(", ", setClauses)} WHERE Id = @id";
+        cmd.Parameters.AddWithValue("@id", conversationId);
+        cmd.ExecuteNonQuery();
     }
 
     /// <summary>Reads messages from the database, optionally filtering by rowid cutoff.</summary>
