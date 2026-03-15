@@ -43,4 +43,7 @@ internal sealed class AgentLogic(
 
     public IReadOnlyList<Message> GetMessages(string conversationId)
         => store.GetMessages(conversationId);
+
+    public void UpdateConversation(Conversation conversation)
+        => store.Update(conversation);
 }

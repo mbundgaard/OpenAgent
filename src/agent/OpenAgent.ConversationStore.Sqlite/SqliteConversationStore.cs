@@ -45,7 +45,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 Type INTEGER NOT NULL,
                 CreatedAt TEXT NOT NULL,
                 VoiceSessionId TEXT,
-                VoiceSessionOpen INTEGER NOT NULL DEFAULT 0
+                VoiceSessionOpen INTEGER NOT NULL DEFAULT 0,
+                LastPromptTokens INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS Messages (
@@ -70,6 +71,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Messages", "ToolCallId", "TEXT");
         TryAddColumn(connection, "Messages", "ChannelMessageId", "TEXT");
         TryAddColumn(connection, "Messages", "ReplyToChannelMessageId", "TEXT");
+        TryAddColumn(connection, "Conversations", "LastPromptTokens", "INTEGER");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
@@ -112,7 +114,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen FROM Conversations ORDER BY CreatedAt DESC";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens FROM Conversations ORDER BY CreatedAt DESC";
 
         using var reader = cmd.ExecuteReader();
         var list = new List<Conversation>();
@@ -126,7 +128,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen FROM Conversations WHERE Id = @id";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -139,7 +141,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             UPDATE Conversations
-            SET Source = @source, Type = @type, VoiceSessionId = @voiceSessionId, VoiceSessionOpen = @voiceSessionOpen
+            SET Source = @source, Type = @type, VoiceSessionId = @voiceSessionId, VoiceSessionOpen = @voiceSessionOpen, LastPromptTokens = @lastPromptTokens
             WHERE Id = @id
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
@@ -147,6 +149,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@type", (int)conversation.Type);
         cmd.Parameters.AddWithValue("@voiceSessionId", (object?)conversation.VoiceSessionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@voiceSessionOpen", conversation.VoiceSessionOpen ? 1 : 0);
+        cmd.Parameters.AddWithValue("@lastPromptTokens", (object?)conversation.LastPromptTokens ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
@@ -267,7 +270,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             Type = (ConversationType)reader.GetInt32(2),
             CreatedAt = DateTimeOffset.Parse(reader.GetString(3)),
             VoiceSessionId = reader.IsDBNull(4) ? null : reader.GetString(4),
-            VoiceSessionOpen = reader.GetInt32(5) != 0
+            VoiceSessionOpen = reader.GetInt32(5) != 0,
+            LastPromptTokens = reader.IsDBNull(6) ? null : reader.GetInt32(6)
         };
     }
 }

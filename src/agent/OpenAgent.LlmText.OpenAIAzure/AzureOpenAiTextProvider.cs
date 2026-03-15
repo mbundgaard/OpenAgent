@@ -70,7 +70,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             Messages = BuildChatMessages(conversation),
             Tools = BuildTools(),
             ToolChoice = agentLogic.Tools.Count > 0 ? "auto" : null,
-            Stream = true
+            Stream = true,
+            StreamOptions = new StreamOptions { IncludeUsage = true }
         };
 
         var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
@@ -99,6 +100,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             var fullContent = new System.Text.StringBuilder();
             var toolCallAccumulator = new Dictionary<int, (string Id, string Name, System.Text.StringBuilder Args)>();
             string? finishReason = null;
+            int? promptTokens = null;
 
             using var stream = await httpResponse.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream);
@@ -111,6 +113,11 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 if (data == "[DONE]") break;
 
                 var chunk = JsonSerializer.Deserialize<ChatCompletionResponse>(data);
+
+                // Capture usage from the final chunk (sent when stream_options.include_usage is true)
+                if (chunk?.Usage is not null)
+                    promptTokens = chunk.Usage.PromptTokens;
+
                 var choice = chunk?.Choices?.FirstOrDefault();
                 if (choice is null) continue;
 
@@ -215,6 +222,15 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 Role = "assistant",
                 Content = fullContent.ToString()
             });
+
+            // Update conversation with token usage from the last LLM call
+            if (promptTokens is not null)
+            {
+                conversation.LastPromptTokens = promptTokens;
+                agentLogic.UpdateConversation(conversation);
+                logger.LogDebug("Conversation {ConversationId}: {PromptTokens} prompt tokens",
+                    conversationId, promptTokens);
+            }
 
             logger.LogDebug("Stream finished for conversation {ConversationId}, {ContentLength} chars",
                 conversationId, fullContent.Length);

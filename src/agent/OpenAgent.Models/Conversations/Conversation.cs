@@ -28,4 +28,11 @@ public sealed class Conversation
     public string? VoiceSessionId { get; set; }
     [JsonPropertyName("voice_session_open")]
     public bool VoiceSessionOpen { get; set; }
+
+    /// <summary>
+    /// Token count from the most recent LLM prompt. Used to determine when compaction is needed.
+    /// </summary>
+    [JsonPropertyName("last_prompt_tokens")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LastPromptTokens { get; set; }
 }

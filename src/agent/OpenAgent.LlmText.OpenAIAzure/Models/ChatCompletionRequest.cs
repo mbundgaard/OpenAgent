@@ -18,6 +18,16 @@ internal sealed class ChatCompletionRequest
     [JsonPropertyName("stream")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Stream { get; set; }
+
+    [JsonPropertyName("stream_options")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StreamOptions? StreamOptions { get; set; }
+}
+
+internal sealed class StreamOptions
+{
+    [JsonPropertyName("include_usage")]
+    public bool IncludeUsage { get; set; }
 }
 
 internal sealed class ChatMessage

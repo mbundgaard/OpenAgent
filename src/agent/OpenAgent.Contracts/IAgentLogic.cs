@@ -22,6 +22,9 @@ public interface IAgentLogic
 
     /// <summary>Returns the full message history for a conversation.</summary>
     IReadOnlyList<Message> GetMessages(string conversationId);
+
+    /// <summary>Persists changes to the conversation (e.g. token counts).</summary>
+    void UpdateConversation(Conversation conversation);
 }
 
 /// <summary>
