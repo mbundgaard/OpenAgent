@@ -226,39 +226,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             });
         }
 
-        using var connection = Open();
-        using var cmd = connection.CreateCommand();
-
-        // Filter out compacted messages if a cutoff exists
-        if (conversation?.CompactedUpToRowId is not null)
-        {
-            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id AND rowid > @cutoff ORDER BY rowid";
-            cmd.Parameters.AddWithValue("@cutoff", conversation.CompactedUpToRowId.Value);
-        }
-        else
-        {
-            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id ORDER BY rowid";
-        }
-        cmd.Parameters.AddWithValue("@id", conversationId);
-
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-        {
-            list.Add(new Message
-            {
-                RowId = reader.GetInt64(0),
-                Id = reader.GetString(1),
-                ConversationId = reader.GetString(2),
-                Role = reader.GetString(3),
-                Content = reader.IsDBNull(4) ? null : reader.GetString(4),
-                CreatedAt = DateTimeOffset.Parse(reader.GetString(5)),
-                ToolCalls = reader.IsDBNull(6) ? null : reader.GetString(6),
-                ToolCallId = reader.IsDBNull(7) ? null : reader.GetString(7),
-                ChannelMessageId = reader.IsDBNull(8) ? null : reader.GetString(8),
-                ReplyToChannelMessageId = reader.IsDBNull(9) ? null : reader.GetString(9)
-            });
-        }
-
+        list.AddRange(ReadMessagesFromDb(conversationId, conversation?.CompactedUpToRowId));
         return list;
     }
 
@@ -300,6 +268,45 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     public void Dispose()
     {
         // No persistent connection to dispose — each operation opens/closes its own
+    }
+
+    /// <summary>Reads messages from the database, optionally filtering by rowid cutoff.</summary>
+    private List<Message> ReadMessagesFromDb(string conversationId, long? afterRowId = null)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+
+        if (afterRowId is not null)
+        {
+            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id AND rowid > @cutoff ORDER BY rowid";
+            cmd.Parameters.AddWithValue("@cutoff", afterRowId.Value);
+        }
+        else
+        {
+            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId FROM Messages WHERE ConversationId = @id ORDER BY rowid";
+        }
+        cmd.Parameters.AddWithValue("@id", conversationId);
+
+        using var reader = cmd.ExecuteReader();
+        var list = new List<Message>();
+        while (reader.Read())
+        {
+            list.Add(new Message
+            {
+                RowId = reader.GetInt64(0),
+                Id = reader.GetString(1),
+                ConversationId = reader.GetString(2),
+                Role = reader.GetString(3),
+                Content = reader.IsDBNull(4) ? null : reader.GetString(4),
+                CreatedAt = DateTimeOffset.Parse(reader.GetString(5)),
+                ToolCalls = reader.IsDBNull(6) ? null : reader.GetString(6),
+                ToolCallId = reader.IsDBNull(7) ? null : reader.GetString(7),
+                ChannelMessageId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                ReplyToChannelMessageId = reader.IsDBNull(9) ? null : reader.GetString(9)
+            });
+        }
+
+        return list;
     }
 
     private SqliteConnection Open()
