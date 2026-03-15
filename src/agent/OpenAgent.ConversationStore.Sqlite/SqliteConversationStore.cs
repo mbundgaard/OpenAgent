@@ -72,6 +72,9 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Messages", "ChannelMessageId", "TEXT");
         TryAddColumn(connection, "Messages", "ReplyToChannelMessageId", "TEXT");
         TryAddColumn(connection, "Conversations", "LastPromptTokens", "INTEGER");
+        TryAddColumn(connection, "Conversations", "Context", "TEXT");
+        TryAddColumn(connection, "Conversations", "CompactedUpToRowId", "INTEGER");
+        TryAddColumn(connection, "Conversations", "CompactionRunning", "INTEGER NOT NULL DEFAULT 0");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
@@ -114,7 +117,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens FROM Conversations ORDER BY CreatedAt DESC";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning FROM Conversations ORDER BY CreatedAt DESC";
 
         using var reader = cmd.ExecuteReader();
         var list = new List<Conversation>();
@@ -128,7 +131,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens FROM Conversations WHERE Id = @id";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -141,7 +144,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             UPDATE Conversations
-            SET Source = @source, Type = @type, VoiceSessionId = @voiceSessionId, VoiceSessionOpen = @voiceSessionOpen, LastPromptTokens = @lastPromptTokens
+            SET Source = @source, Type = @type, VoiceSessionId = @voiceSessionId,
+                VoiceSessionOpen = @voiceSessionOpen, LastPromptTokens = @lastPromptTokens,
+                Context = @context, CompactedUpToRowId = @compactedUpToRowId,
+                CompactionRunning = @compactionRunning
             WHERE Id = @id
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
@@ -150,6 +156,9 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@voiceSessionId", (object?)conversation.VoiceSessionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@voiceSessionOpen", conversation.VoiceSessionOpen ? 1 : 0);
         cmd.Parameters.AddWithValue("@lastPromptTokens", (object?)conversation.LastPromptTokens ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@context", (object?)conversation.Context ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@compactedUpToRowId", (object?)conversation.CompactedUpToRowId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@compactionRunning", conversation.CompactionRunning ? 1 : 0);
         cmd.ExecuteNonQuery();
     }
 
@@ -272,7 +281,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             CreatedAt = DateTimeOffset.Parse(reader.GetString(3)),
             VoiceSessionId = reader.IsDBNull(4) ? null : reader.GetString(4),
             VoiceSessionOpen = reader.GetInt32(5) != 0,
-            LastPromptTokens = reader.IsDBNull(6) ? null : reader.GetInt32(6)
+            LastPromptTokens = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+            Context = reader.IsDBNull(7) ? null : reader.GetString(7),
+            CompactedUpToRowId = reader.IsDBNull(8) ? null : reader.GetInt64(8),
+            CompactionRunning = !reader.IsDBNull(9) && reader.GetInt32(9) != 0
         };
     }
 }

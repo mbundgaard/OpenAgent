@@ -35,4 +35,28 @@ public sealed class Conversation
     [JsonPropertyName("last_prompt_tokens")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? LastPromptTokens { get; set; }
+
+    /// <summary>
+    /// Structured summary of compacted messages — topic-grouped with timestamps and message references.
+    /// Null until the first compaction runs.
+    /// </summary>
+    [JsonPropertyName("context")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Context { get; set; }
+
+    /// <summary>
+    /// SQLite rowid of the last message included in the compaction summary.
+    /// Messages with rowid > this value are live; messages up to and including it are compacted.
+    /// Null means no compaction has occurred.
+    /// </summary>
+    [JsonPropertyName("compacted_up_to_row_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? CompactedUpToRowId { get; set; }
+
+    /// <summary>
+    /// True while a compaction thread is running — prevents concurrent compaction.
+    /// </summary>
+    [JsonPropertyName("compaction_running")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CompactionRunning { get; set; }
 }
