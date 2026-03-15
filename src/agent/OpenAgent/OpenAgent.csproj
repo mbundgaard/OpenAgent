@@ -28,6 +28,7 @@
     <ProjectReference Include="..\OpenAgent.Security.ApiKey\OpenAgent.Security.ApiKey.csproj" />
     <ProjectReference Include="..\OpenAgent.Channel.Telegram\OpenAgent.Channel.Telegram.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.Expand\OpenAgent.Tools.Expand.csproj" />
+    <ProjectReference Include="..\OpenAgent.Compaction\OpenAgent.Compaction.csproj" />
   </ItemGroup>
 
   <ItemGroup>

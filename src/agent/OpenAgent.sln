@@ -45,6 +45,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Channel.Telegram"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Tools.Expand", "OpenAgent.Tools.Expand\OpenAgent.Tools.Expand.csproj", "{2DC8152C-982D-4726-BD6C-591F6A0A6530}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Compaction", "OpenAgent.Compaction\OpenAgent.Compaction.csproj", "{B39C0460-F94F-415C-BCEA-0DD94638868D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -235,6 +237,18 @@ Global
 		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|x64.Build.0 = Release|Any CPU
 		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|x86.ActiveCfg = Release|Any CPU
 		{2DC8152C-982D-4726-BD6C-591F6A0A6530}.Release|x86.Build.0 = Release|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Debug|x64.Build.0 = Debug|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Debug|x86.Build.0 = Debug|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Release|x64.ActiveCfg = Release|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Release|x64.Build.0 = Release|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Release|x86.ActiveCfg = Release|Any CPU
+		{B39C0460-F94F-415C-BCEA-0DD94638868D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
