@@ -20,7 +20,7 @@ const apps: AppDefinition[] = [
   },
   {
     id: 'admin',
-    title: 'Admin',
+    title: 'Settings',
     icon: 'admin-icon',
     component: AdminApp,
     defaultSize: { width: 650, height: 500 },

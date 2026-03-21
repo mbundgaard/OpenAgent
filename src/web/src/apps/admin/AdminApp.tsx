@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listProviders } from './api';
+import { ConnectionsForm } from './ConnectionsForm';
 import { ProviderForm } from './ProviderForm';
 import { SystemPromptForm } from './SystemPromptForm';
 import styles from './AdminApp.module.css';
@@ -7,7 +8,7 @@ import styles from './AdminApp.module.css';
 export function AdminApp() {
   const [providers, setProviders] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'providers' | 'prompt'>('providers');
+  const [activeTab, setActiveTab] = useState<'providers' | 'prompt' | 'connections'>('providers');
 
   useEffect(() => {
     listProviders().then(setProviders).catch(() => {});
@@ -31,6 +32,12 @@ export function AdminApp() {
           onClick={() => setActiveTab('prompt')}
         >
           System Prompt
+        </button>
+        <button
+          className={`${styles.mainTab} ${activeTab === 'connections' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('connections')}
+        >
+          Connections
         </button>
       </div>
 
@@ -58,6 +65,12 @@ export function AdminApp() {
       {activeTab === 'prompt' && (
         <div className={styles.promptSection}>
           <SystemPromptForm />
+        </div>
+      )}
+
+      {activeTab === 'connections' && (
+        <div className={styles.providers}>
+          <ConnectionsForm />
         </div>
       )}
     </div>

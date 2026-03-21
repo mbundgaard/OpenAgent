@@ -50,3 +50,55 @@ export async function saveSystemPrompt(data: Record<string, string>): Promise<vo
     body: JSON.stringify(data),
   });
 }
+
+// --- Connections ---
+
+export interface ConnectionInfo {
+  id: string;
+  name: string;
+  type: string;
+  enabled: boolean;
+  conversationId: string;
+  config: Record<string, unknown>;
+  status: string;
+}
+
+export async function listConnections(): Promise<ConnectionInfo[]> {
+  const res = await apiFetch('/api/connections');
+  return res.json();
+}
+
+export async function createConnection(data: {
+  name: string;
+  type: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+}): Promise<ConnectionInfo> {
+  const res = await apiFetch('/api/connections', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function updateConnection(id: string, data: Record<string, unknown>): Promise<ConnectionInfo> {
+  const res = await apiFetch(`/api/connections/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function deleteConnection(id: string): Promise<void> {
+  await apiFetch(`/api/connections/${id}`, { method: 'DELETE' });
+}
+
+export async function startConnection(id: string): Promise<void> {
+  await apiFetch(`/api/connections/${id}/start`, { method: 'POST' });
+}
+
+export async function stopConnection(id: string): Promise<void> {
+  await apiFetch(`/api/connections/${id}/stop`, { method: 'POST' });
+}
