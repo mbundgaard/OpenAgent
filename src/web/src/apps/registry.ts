@@ -1,5 +1,5 @@
 import type { AppDefinition } from './types';
-import { AdminApp } from './settings/AdminApp';
+import { SettingsApp } from './settings/SettingsApp';
 import { ChatApp } from './chat/ChatApp';
 import { ConversationsApp } from './conversations/ConversationsApp';
 
@@ -22,7 +22,7 @@ const apps: AppDefinition[] = [
     id: 'admin',
     title: 'Settings',
     icon: 'admin-icon',
-    component: AdminApp,
+    component: SettingsApp,
     defaultSize: { width: 650, height: 500 },
   },
 ];

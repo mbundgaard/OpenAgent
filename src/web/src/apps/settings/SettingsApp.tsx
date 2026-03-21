@@ -3,9 +3,9 @@ import { listProviders } from './api';
 import { ConnectionsForm } from './ConnectionsForm';
 import { ProviderForm } from './ProviderForm';
 import { SystemPromptForm } from './SystemPromptForm';
-import styles from './AdminApp.module.css';
+import styles from './SettingsApp.module.css';
 
-export function AdminApp() {
+export function SettingsApp() {
   const [providers, setProviders] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'providers' | 'prompt' | 'connections'>('providers');
@@ -19,7 +19,7 @@ export function AdminApp() {
   };
 
   return (
-    <div className={styles.admin}>
+    <div className={styles.settings}>
       <div className={styles.tabBar}>
         <button
           className={`${styles.mainTab} ${activeTab === 'providers' ? styles.activeTab : ''}`}
