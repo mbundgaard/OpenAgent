@@ -137,6 +137,29 @@
   margin: 12px 0;
 }
 
+.copyButton {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-family: inherit;
+  align-self: flex-start;
+}
+
+.copyButton:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+}
+
+.message:hover .copyButton {
+  opacity: 1;
+}
+
 .cursor {
   animation: blink 0.8s step-end infinite;
   color: var(--color-accent);

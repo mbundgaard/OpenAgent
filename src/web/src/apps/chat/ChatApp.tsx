@@ -13,6 +13,22 @@ interface ToolActivity {
   name: string;
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <button className={styles.copyButton} onClick={handleCopy} title="Copy">
+      {copied ? '\u2713' : '\u2398'}
+    </button>
+  );
+}
+
 export function ChatApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -120,13 +136,19 @@ export function ChatApp() {
         {messages.map((msg, i) => (
           <div key={i} className={`${styles.message} ${styles[msg.role]}`}>
             {msg.role === 'user' ? (
-              <div className={styles.userBubble}>{msg.content}</div>
+              <>
+                <div className={styles.userBubble}>{msg.content}</div>
+                <CopyButton text={msg.content} />
+              </>
             ) : (
               <div className={styles.assistantContent}>
                 {msg.content ? (
-                  <div className={styles.markdown}>
-                    <Markdown>{msg.content}</Markdown>
-                  </div>
+                  <>
+                    <div className={styles.markdown}>
+                      <Markdown>{msg.content}</Markdown>
+                    </div>
+                    <CopyButton text={msg.content} />
+                  </>
                 ) : (
                   streaming && i === messages.length - 1 && (
                     <span className={styles.cursor}>|</span>
