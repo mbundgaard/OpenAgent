@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Markdown from 'react-markdown';
 import { getToken } from '../../auth/token';
 import styles from './ChatApp.module.css';
 
@@ -10,7 +11,6 @@ interface ChatMessage {
 interface ToolActivity {
   type: 'tool_call' | 'tool_result';
   name: string;
-  detail: string;
 }
 
 export function ChatApp() {
@@ -22,7 +22,6 @@ export function ChatApp() {
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  // Ref to track accumulated assistant content for the current streaming response
   const streamContentRef = useRef('');
 
   const scrollToBottom = useCallback(() => {
@@ -33,11 +32,9 @@ export function ChatApp() {
     scrollToBottom();
   }, [messages, toolActivity, scrollToBottom]);
 
-  // Connect WebSocket
   useEffect(() => {
     const token = getToken();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // In dev, the API runs on a different port — use the Vite proxy or direct URL
     const host = window.location.hostname;
     const apiPort = '5264';
     const url = `${protocol}//${host}:${apiPort}/ws/conversations/${conversationId}/text?api_key=${token}`;
@@ -62,19 +59,11 @@ export function ChatApp() {
           break;
 
         case 'tool_call':
-          setToolActivity(prev => [...prev, {
-            type: 'tool_call',
-            name: data.name,
-            detail: data.arguments,
-          }]);
+          setToolActivity(prev => [...prev, { type: 'tool_call', name: data.name }]);
           break;
 
         case 'tool_result':
-          setToolActivity(prev => [...prev, {
-            type: 'tool_result',
-            name: data.name,
-            detail: data.result?.slice(0, 200) ?? '',
-          }]);
+          setToolActivity(prev => [...prev, { type: 'tool_result', name: data.name }]);
           break;
 
         case 'done':
@@ -90,18 +79,14 @@ export function ChatApp() {
       setStreaming(false);
     };
 
-    return () => {
-      ws.close();
-    };
+    return () => { ws.close(); };
   }, [conversationId]);
 
   const sendMessage = useCallback(() => {
     const trimmed = input.trim();
     if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
-    // Add user message
     setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
-    // Add empty assistant message for streaming
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
     setInput('');
     setStreaming(true);
@@ -127,11 +112,19 @@ export function ChatApp() {
         )}
         {messages.map((msg, i) => (
           <div key={i} className={`${styles.message} ${styles[msg.role]}`}>
-            <div className={styles.bubble}>
-              {msg.content || (streaming && i === messages.length - 1 ? (
-                <span className={styles.cursor}>|</span>
-              ) : null)}
-            </div>
+            {msg.role === 'user' ? (
+              <div className={styles.userBubble}>{msg.content}</div>
+            ) : (
+              <div className={styles.assistantContent}>
+                {msg.content ? (
+                  <Markdown>{msg.content}</Markdown>
+                ) : (
+                  streaming && i === messages.length - 1 && (
+                    <span className={styles.cursor}>|</span>
+                  )
+                )}
+              </div>
+            )}
           </div>
         ))}
         {toolActivity.length > 0 && (

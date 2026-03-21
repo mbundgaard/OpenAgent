@@ -6,14 +6,14 @@ const apps: AppDefinition[] = [
   {
     id: 'chat',
     title: 'Chat',
-    icon: '\u{1F4AC}',
+    icon: '\u2261',
     component: ChatApp,
     defaultSize: { width: 500, height: 600 },
   },
   {
     id: 'admin',
     title: 'Admin',
-    icon: '\u2699',
+    icon: '\u2630',
     component: AdminApp,
     defaultSize: { width: 650, height: 500 },
   },
