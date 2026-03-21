@@ -1,21 +1,65 @@
+import { useEffect, useState } from 'react';
+import { listProviders } from './api';
+import { ProviderForm } from './ProviderForm';
+import { SystemPromptForm } from './SystemPromptForm';
 import styles from './AdminApp.module.css';
 
 export function AdminApp() {
+  const [providers, setProviders] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'providers' | 'prompt'>('providers');
+
+  useEffect(() => {
+    listProviders().then(setProviders).catch(() => {});
+  }, []);
+
+  const toggle = (key: string) => {
+    setExpanded(prev => prev === key ? null : key);
+  };
+
   return (
     <div className={styles.admin}>
-      <h2>Settings</h2>
-      <div className={styles.section}>
-        <h3>General</h3>
-        <p className={styles.placeholder}>Settings will appear here.</p>
+      <div className={styles.tabBar}>
+        <button
+          className={`${styles.mainTab} ${activeTab === 'providers' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('providers')}
+        >
+          Providers
+        </button>
+        <button
+          className={`${styles.mainTab} ${activeTab === 'prompt' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('prompt')}
+        >
+          System Prompt
+        </button>
       </div>
-      <div className={styles.section}>
-        <h3>Providers</h3>
-        <p className={styles.placeholder}>LLM provider configuration.</p>
-      </div>
-      <div className={styles.section}>
-        <h3>Authentication</h3>
-        <p className={styles.placeholder}>Auth settings and API keys.</p>
-      </div>
+
+      {activeTab === 'providers' && (
+        <div className={styles.providers}>
+          {providers.length === 0 && (
+            <p className={styles.placeholder}>No providers found.</p>
+          )}
+          {providers.map(key => (
+            <div key={key} className={styles.provider}>
+              <button className={styles.providerHeader} onClick={() => toggle(key)}>
+                <span className={styles.chevron}>{expanded === key ? '\u25BC' : '\u25B6'}</span>
+                <span>{key}</span>
+              </button>
+              {expanded === key && (
+                <div className={styles.providerBody}>
+                  <ProviderForm providerKey={key} />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'prompt' && (
+        <div className={styles.promptSection}>
+          <SystemPromptForm />
+        </div>
+      )}
     </div>
   );
 }

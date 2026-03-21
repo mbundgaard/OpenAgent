@@ -1,0 +1,52 @@
+import { apiFetch } from '../../auth/api';
+
+export interface ConfigField {
+  key: string;
+  label: string;
+  type: string; // "String" | "Secret" | "Enum" | "Text"
+  required: boolean;
+  default_value?: string;
+  options?: string[];
+}
+
+/** List all configurable provider keys. */
+export async function listProviders(): Promise<string[]> {
+  const res = await apiFetch('/api/admin/providers');
+  return res.json();
+}
+
+/** Get the config schema (fields) for a provider. */
+export async function getProviderConfig(key: string): Promise<ConfigField[]> {
+  const res = await apiFetch(`/api/admin/providers/${key}/config`);
+  return res.json();
+}
+
+/** Get the current saved values for a provider. */
+export async function getProviderValues(key: string): Promise<Record<string, unknown>> {
+  const res = await apiFetch(`/api/admin/providers/${key}/values`);
+  return res.json();
+}
+
+/** Save provider configuration. */
+export async function saveProviderConfig(key: string, config: Record<string, string>): Promise<void> {
+  await apiFetch(`/api/admin/providers/${key}/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+}
+
+/** Get all system prompt file contents. */
+export async function getSystemPrompt(): Promise<Record<string, string | null>> {
+  const res = await apiFetch('/api/admin/system-prompt');
+  return res.json();
+}
+
+/** Save system prompt files (partial update). */
+export async function saveSystemPrompt(data: Record<string, string>): Promise<void> {
+  await apiFetch('/api/admin/system-prompt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
