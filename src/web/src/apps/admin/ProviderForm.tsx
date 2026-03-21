@@ -13,6 +13,7 @@ export function ProviderForm({ providerKey }: Props) {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [maskedFields, setMaskedFields] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -24,15 +25,24 @@ export function ProviderForm({ providerKey }: Props) {
         setFields(configFields);
 
         // Initialize form values from saved values or defaults
+        // Secret fields return "***" from the API — show that as placeholder
         const initial: Record<string, string> = {};
         for (const field of configFields) {
           const saved = savedValues[field.key];
-          if (typeof saved === 'string' && saved !== '***') {
-            initial[field.key] = saved;
+          if (typeof saved === 'string') {
+            initial[field.key] = saved === '***' ? '' : saved;
           } else {
             initial[field.key] = field.default_value ?? '';
           }
         }
+        // Track which secret fields have a saved value (masked as ***)
+        const maskedSecrets = new Set<string>();
+        for (const field of configFields) {
+          if (field.type === 'Secret' && savedValues[field.key] === '***') {
+            maskedSecrets.add(field.key);
+          }
+        }
+        setMaskedFields(maskedSecrets);
         setValues(initial);
         setLoading(false);
       })
@@ -82,7 +92,7 @@ export function ProviderForm({ providerKey }: Props) {
               className={styles.input}
               type={field.type === 'Secret' ? 'password' : 'text'}
               value={values[field.key] ?? ''}
-              placeholder={field.default_value ?? ''}
+              placeholder={field.type === 'Secret' && maskedFields.has(field.key) ? '••••••••  (saved)' : field.default_value ?? ''}
               onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
             />
           )}
