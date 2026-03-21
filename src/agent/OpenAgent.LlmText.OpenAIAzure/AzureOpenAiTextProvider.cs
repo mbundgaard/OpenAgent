@@ -15,7 +15,9 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
     private AzureOpenAiTextConfig? _config;
     private HttpClient? _httpClient;
 
-    public string Key => "text-provider";
+    public const string ProviderKey = "azure-openai-text";
+
+    public string Key => ProviderKey;
 
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [

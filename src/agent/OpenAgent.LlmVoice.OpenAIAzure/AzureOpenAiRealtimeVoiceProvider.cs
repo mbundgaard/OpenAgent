@@ -15,7 +15,9 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
 {
     private AzureRealtimeConfig? _config;
 
-    public string Key => "voice-provider";
+    public const string ProviderKey = "azure-openai-voice";
+
+    public string Key => ProviderKey;
 
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
