@@ -1,5 +1,5 @@
 import type { AppDefinition } from './types';
-import { AdminApp } from './admin/AdminApp';
+import { AdminApp } from './settings/AdminApp';
 import { ChatApp } from './chat/ChatApp';
 import { ConversationsApp } from './conversations/ConversationsApp';
 

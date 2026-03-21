@@ -1,0 +1,31 @@
+{
+  "apiPort": 9500,
+  "logDirectory": "./logs",
+  "services": [
+    {
+      "name": "openagent",
+      "command": "dotnet",
+      "args": [
+        "run"
+      ],
+      "workingDirectory": "src/agent/OpenAgent",
+      "url": "http://localhost:5264/health",
+      "environment": null,
+      "shutdownTimeoutSeconds": 5
+    },
+    {
+      "name": "openagent-web",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npm",
+        "run",
+        "dev"
+      ],
+      "workingDirectory": "src/web",
+      "url": "http://localhost:3000#token=dev-api-key-change-me",
+      "environment": null,
+      "shutdownTimeoutSeconds": 5
+    }
+  ]
+}
