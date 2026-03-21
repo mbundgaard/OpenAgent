@@ -32,6 +32,13 @@ export function ChatApp() {
     scrollToBottom();
   }, [messages, toolActivity, scrollToBottom]);
 
+  // Re-focus input when streaming ends (disabled attr is removed)
+  useEffect(() => {
+    if (!streaming) {
+      inputRef.current?.focus();
+    }
+  }, [streaming]);
+
   useEffect(() => {
     const token = getToken();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

@@ -11,7 +11,9 @@ export function AppGrid({ apps, onOpen }: Props) {
     <div className={styles.grid}>
       {apps.map(app => (
         <button key={app.id} className={styles.appIcon} onDoubleClick={() => onOpen(app)}>
-          <span className={styles.iconEmoji}>{app.icon}</span>
+          <svg className={styles.iconSvg}>
+            <use href={`/icons.svg#${app.icon}`} />
+          </svg>
           <span className={styles.label}>{app.title}</span>
         </button>
       ))}

@@ -25,9 +25,10 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-.iconEmoji {
-  font-size: 32px;
-  line-height: 1;
+.iconSvg {
+  width: 32px;
+  height: 32px;
+  color: var(--color-text);
 }
 
 .label {
