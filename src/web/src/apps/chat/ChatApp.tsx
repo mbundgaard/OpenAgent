@@ -81,6 +81,7 @@ export function ChatApp() {
           setStreaming(false);
           setToolActivity([]);
           streamContentRef.current = '';
+          setTimeout(() => inputRef.current?.focus(), 0);
           break;
       }
     };
@@ -108,6 +109,7 @@ export function ChatApp() {
     streamContentRef.current = '';
 
     wsRef.current.send(JSON.stringify({ content: trimmed }));
+    setTimeout(() => inputRef.current?.focus(), 0);
   }, [input]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
