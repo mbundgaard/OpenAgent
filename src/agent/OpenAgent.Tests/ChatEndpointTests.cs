@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 
@@ -21,7 +22,10 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll(typeof(ILlmTextProvider));
-                services.AddSingleton<ILlmTextProvider, FakeTextProvider>();
+                // Register fake as keyed service — endpoint resolves by conversation.Provider key
+                var fake = new FakeTextProvider();
+                services.AddKeyedSingleton<ILlmTextProvider>("azure-openai-text", fake);
+                services.AddSingleton<ILlmTextProvider>(fake);
             });
         });
     }

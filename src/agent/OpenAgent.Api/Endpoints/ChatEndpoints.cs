@@ -2,8 +2,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Text;
 
@@ -30,10 +32,12 @@ public static class ChatEndpoints
             string conversationId,
             ChatRequest request,
             IConversationStore store,
-            ILlmTextProvider textProvider,
+            AgentConfig agentConfig,
+            IServiceProvider services,
             CancellationToken ct) =>
         {
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
+            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
 
             var userMessage = new Message
             {

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
 
@@ -25,7 +26,7 @@ public static class WebSocketVoiceEndpoints
     public static void MapWebSocketVoiceEndpoints(this WebApplication app)
     {
         app.Map("/ws/conversations/{conversationId}/voice", async (string conversationId, HttpContext context,
-            IConversationStore store, IVoiceSessionManager sessionManager) =>
+            IConversationStore store, IVoiceSessionManager sessionManager, AgentConfig agentConfig) =>
         {
             if (!context.WebSockets.IsWebSocketRequest)
             {
@@ -33,7 +34,7 @@ public static class WebSocketVoiceEndpoints
                 return;
             }
 
-            store.GetOrCreate(conversationId, "app", ConversationType.Voice, "azure-openai-voice", "gpt-realtime");
+            store.GetOrCreate(conversationId, "app", ConversationType.Voice, agentConfig.VoiceProvider, agentConfig.VoiceModel);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
             var session = await sessionManager.GetOrCreateSessionAsync(conversationId, context.RequestAborted);

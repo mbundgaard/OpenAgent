@@ -3,8 +3,10 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Text;
 
@@ -28,7 +30,7 @@ public static class WebSocketTextEndpoints
     public static void MapWebSocketTextEndpoints(this WebApplication app)
     {
         app.Map("/ws/conversations/{conversationId}/text", async (string conversationId, HttpContext context,
-            IConversationStore store, ILlmTextProvider textProvider) =>
+            IConversationStore store, AgentConfig agentConfig, IServiceProvider services) =>
         {
             if (!context.WebSockets.IsWebSocketRequest)
             {
@@ -36,7 +38,8 @@ public static class WebSocketTextEndpoints
                 return;
             }
 
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
+            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
 
