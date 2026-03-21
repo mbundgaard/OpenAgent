@@ -26,6 +26,8 @@ public static class ConversationEndpoints
                 Id = c.Id,
                 Source = c.Source,
                 Type = c.Type,
+                Provider = c.Provider,
+                Model = c.Model,
                 CreatedAt = c.CreatedAt
             }));
         });
@@ -36,6 +38,16 @@ public static class ConversationEndpoints
             return conversation is null
                 ? Results.NotFound()
                 : Results.Ok(new ConversationIdResponse { Id = conversation.Id });
+        });
+
+        group.MapGet("/{conversationId}/messages", (string conversationId, IConversationStore store) =>
+        {
+            var conversation = store.Get(conversationId);
+            if (conversation is null)
+                return Results.NotFound();
+
+            var messages = store.GetMessages(conversationId);
+            return Results.Ok(messages);
         });
 
         group.MapDelete("/{conversationId}", (string conversationId, IConversationStore store) =>

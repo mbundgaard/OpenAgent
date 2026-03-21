@@ -17,6 +17,12 @@ public sealed class ConversationListItemResponse
     [JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
     public required ConversationType Type { get; init; }
 
+    [JsonPropertyName("provider")]
+    public required string Provider { get; init; }
+
+    [JsonPropertyName("model")]
+    public required string Model { get; init; }
+
     [JsonPropertyName("created_at")]
     public required DateTimeOffset CreatedAt { get; init; }
 }
