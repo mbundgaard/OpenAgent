@@ -124,7 +124,9 @@ export function ChatApp() {
             ) : (
               <div className={styles.assistantContent}>
                 {msg.content ? (
-                  <Markdown>{msg.content}</Markdown>
+                  <div className={styles.markdown}>
+                    <Markdown>{msg.content}</Markdown>
+                  </div>
                 ) : (
                   streaming && i === messages.length - 1 && (
                     <span className={styles.cursor}>|</span>

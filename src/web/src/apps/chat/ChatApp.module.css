@@ -57,36 +57,36 @@
   color: var(--color-text);
 }
 
-.assistantContent p {
+.markdown :global(p) {
   margin: 0 0 8px;
 }
 
-.assistantContent p:last-child {
+.markdown :global(p:last-child) {
   margin-bottom: 0;
 }
 
-.assistantContent h1,
-.assistantContent h2,
-.assistantContent h3 {
+.markdown :global(h1),
+.markdown :global(h2),
+.markdown :global(h3) {
   margin: 12px 0 6px;
   font-weight: 600;
 }
 
-.assistantContent h1 { font-size: 18px; }
-.assistantContent h2 { font-size: 16px; }
-.assistantContent h3 { font-size: 14px; color: var(--color-accent); }
+.markdown :global(h1) { font-size: 18px; }
+.markdown :global(h2) { font-size: 16px; }
+.markdown :global(h3) { font-size: 14px; color: var(--color-accent); }
 
-.assistantContent ul,
-.assistantContent ol {
+.markdown :global(ul),
+.markdown :global(ol) {
   margin: 4px 0 8px;
   padding-left: 20px;
 }
 
-.assistantContent li {
+.markdown :global(li) {
   margin-bottom: 4px;
 }
 
-.assistantContent code {
+.markdown :global(code) {
   background: rgba(255, 255, 255, 0.08);
   padding: 1px 5px;
   border-radius: 3px;
@@ -94,7 +94,7 @@
   font-size: 13px;
 }
 
-.assistantContent pre {
+.markdown :global(pre) {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -103,30 +103,30 @@
   margin: 6px 0;
 }
 
-.assistantContent pre code {
+.markdown :global(pre code) {
   background: none;
   padding: 0;
   font-size: 13px;
   line-height: 1.4;
 }
 
-.assistantContent blockquote {
+.markdown :global(blockquote) {
   border-left: 3px solid var(--color-accent);
   margin: 6px 0;
   padding: 4px 12px;
   color: var(--color-text-muted);
 }
 
-.assistantContent a {
+.markdown :global(a) {
   color: var(--color-accent);
   text-decoration: none;
 }
 
-.assistantContent a:hover {
+.markdown :global(a:hover) {
   text-decoration: underline;
 }
 
-.assistantContent hr {
+.markdown :global(hr) {
   border: none;
   border-top: 1px solid var(--color-border);
   margin: 12px 0;
