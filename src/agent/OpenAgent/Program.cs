@@ -126,6 +126,7 @@ app.MapChatEndpoints();
 app.MapWebSocketVoiceEndpoints();
 app.MapWebSocketTextEndpoints();
 app.MapAdminEndpoints();
+app.MapSystemPromptEndpoints();
 app.MapConnectionEndpoints();
 app.MapTelegramWebhookEndpoints();
 

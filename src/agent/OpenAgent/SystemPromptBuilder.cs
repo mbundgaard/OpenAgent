@@ -34,6 +34,16 @@ internal sealed class SystemPromptBuilder
         LoadFiles(_dataPath);
     }
 
+    /// <summary>Re-reads all prompt files from disk, replacing cached content.</summary>
+    public void Reload()
+    {
+        _files.Clear();
+        LoadFiles(_dataPath);
+    }
+
+    /// <summary>Returns the data path where prompt files are stored.</summary>
+    public string DataPath => _dataPath;
+
     /// <summary>
     /// Builds the system prompt for the given conversation type by concatenating
     /// the relevant files in order, separated by blank lines.
