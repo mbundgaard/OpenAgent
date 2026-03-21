@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Connections;
 using OpenAgent.Tests.Fakes;
@@ -27,8 +28,7 @@ public class TelegramWebhookEndpointTests : IClassFixture<WebApplicationFactory<
             builder.ConfigureServices(services =>
             {
                 // Replace ILlmTextProvider with a fake
-                var textDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(ILlmTextProvider));
-                if (textDescriptor is not null) services.Remove(textDescriptor);
+                services.RemoveAll(typeof(ILlmTextProvider));
                 services.AddSingleton<ILlmTextProvider>(new FakeTelegramTextProvider("ok"));
             });
         });

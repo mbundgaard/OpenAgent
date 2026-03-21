@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
@@ -19,8 +20,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         {
             builder.ConfigureServices(services =>
             {
-                var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(ILlmTextProvider));
-                if (descriptor is not null) services.Remove(descriptor);
+                services.RemoveAll(typeof(ILlmTextProvider));
                 services.AddSingleton<ILlmTextProvider, FakeTextProvider>();
             });
         });

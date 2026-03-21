@@ -7,6 +7,7 @@ using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.LlmText.OpenAIAzure;
 using OpenAgent.LlmVoice.OpenAIAzure;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.Expand;
@@ -50,38 +51,48 @@ builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
 
 builder.Services.AddSingleton(new CompactionConfig());
 
-// Compaction summarizer — optional, compaction is disabled without it
-var compactionEndpoint = builder.Configuration["Compaction:Endpoint"];
-if (!string.IsNullOrEmpty(compactionEndpoint))
-{
-    var compactionLlmConfig = new CompactionLlmConfig
-    {
-        ApiKey = builder.Configuration["Compaction:ApiKey"] ?? throw new InvalidOperationException("Compaction:ApiKey is required"),
-        Endpoint = compactionEndpoint,
-        DeploymentName = builder.Configuration["Compaction:DeploymentName"] ?? throw new InvalidOperationException("Compaction:DeploymentName is required"),
-        ApiVersion = builder.Configuration["Compaction:ApiVersion"] ?? "2025-04-01-preview"
-    };
-    builder.Services.AddSingleton(compactionLlmConfig);
-    builder.Services.AddSingleton<ICompactionSummarizer, CompactionSummarizer>();
-}
+var agentConfig = new AgentConfig();
+builder.Services.AddSingleton(agentConfig);
+builder.Services.AddSingleton<IConfigurable>(new AgentConfigConfigurable(agentConfig));
+
+builder.Services.AddSingleton<ICompactionSummarizer, CompactionSummarizer>();
 
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
-builder.Services.AddSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>();
-builder.Services.AddSingleton<ILlmTextProvider, AzureOpenAiTextProvider>();
+builder.Services.AddKeyedSingleton<ILlmTextProvider, AzureOpenAiTextProvider>(AzureOpenAiTextProvider.ProviderKey);
+builder.Services.AddKeyedSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey);
+builder.Services.AddSingleton<Func<string, ILlmTextProvider>>(sp =>
+    key => sp.GetRequiredKeyedService<ILlmTextProvider>(key));
+// Non-keyed forwarding — endpoints and VoiceSessionManager resolve the default provider
+builder.Services.AddSingleton<ILlmTextProvider>(sp =>
+    sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey));
+builder.Services.AddSingleton<ILlmVoiceProvider>(sp =>
+    sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
 builder.Services.AddSingleton<IVoiceSessionManager, VoiceSessionManager>();
 builder.Services.AddSingleton<IConfigStore, FileConfigStore>();
 
 builder.Services.AddSingleton<IConfigurable>(loggingConfig);
 builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<IConversationStore>());
-builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<ILlmTextProvider>());
-builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<ILlmVoiceProvider>());
+builder.Services.AddSingleton<IConfigurable>(sp =>
+    sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey));
+builder.Services.AddSingleton<IConfigurable>(sp =>
+    sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
 
 // Authentication — swap AddApiKeyAuth for AddEntraIdAuth when migrating to Entra ID
 builder.Services.AddApiKeyAuth(builder.Configuration);
 
 // Connections — channel providers created per-connection at runtime
 builder.Services.AddSingleton<IConnectionStore, FileConnectionStore>();
-builder.Services.AddSingleton<IChannelProviderFactory, TelegramChannelProviderFactory>();
+builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
+{
+    var cfg = sp.GetRequiredService<AgentConfig>();
+    var textProvider = sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider);
+    return new TelegramChannelProviderFactory(
+        sp.GetRequiredService<IConversationStore>(),
+        textProvider,
+        cfg.TextProvider,
+        cfg.TextModel,
+        sp.GetRequiredService<ILoggerFactory>());
+});
 builder.Services.AddSingleton<ConnectionManager>();
 builder.Services.AddSingleton<IConnectionManager>(sp => sp.GetRequiredService<ConnectionManager>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionManager>());

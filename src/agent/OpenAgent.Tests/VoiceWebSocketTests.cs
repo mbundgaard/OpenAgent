@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
@@ -22,8 +23,7 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
         {
             builder.ConfigureServices(services =>
             {
-                var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(ILlmVoiceProvider));
-                if (descriptor is not null) services.Remove(descriptor);
+                services.RemoveAll(typeof(ILlmVoiceProvider));
                 services.AddSingleton<FakeVoiceProvider>();
                 services.AddSingleton<ILlmVoiceProvider>(sp => sp.GetRequiredService<FakeVoiceProvider>());
             });

@@ -29,6 +29,8 @@ public sealed class TelegramMessageHandler
     private readonly IConversationStore _store;
     private readonly ILlmTextProvider _textProvider;
     private readonly string _conversationId;
+    private readonly string _provider;
+    private readonly string _model;
     private readonly TelegramAccessControl _accessControl;
     private readonly bool _streamResponses;
     private readonly bool _showThinking;
@@ -38,12 +40,16 @@ public sealed class TelegramMessageHandler
         IConversationStore store,
         ILlmTextProvider textProvider,
         string conversationId,
+        string provider,
+        string model,
         TelegramOptions options,
         ILogger<TelegramMessageHandler>? logger = null)
     {
         _store = store;
         _textProvider = textProvider;
         _conversationId = conversationId;
+        _provider = provider;
+        _model = model;
         _accessControl = new TelegramAccessControl(options.AllowedUserIds);
         _streamResponses = options.StreamResponses;
         _showThinking = options.ShowThinking;
@@ -90,7 +96,7 @@ public sealed class TelegramMessageHandler
         _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
 
         // Get or create conversation using the connection's configured ID
-        var conversation = _store.GetOrCreate(_conversationId, "telegram", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+        var conversation = _store.GetOrCreate(_conversationId, "telegram", ConversationType.Text, _provider, _model);
 
         // Build user message with Telegram message ID and optional reply-to reference
         var userMessage = new Models.Conversations.Message

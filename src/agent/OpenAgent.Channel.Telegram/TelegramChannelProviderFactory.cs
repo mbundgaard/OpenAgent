@@ -12,6 +12,8 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
 {
     private readonly IConversationStore _store;
     private readonly ILlmTextProvider _textProvider;
+    private readonly string _providerKey;
+    private readonly string _model;
     private readonly ILoggerFactory _loggerFactory;
 
     public string Type => "telegram";
@@ -19,10 +21,14 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
     public TelegramChannelProviderFactory(
         IConversationStore store,
         ILlmTextProvider textProvider,
+        string providerKey,
+        string model,
         ILoggerFactory loggerFactory)
     {
         _store = store;
         _textProvider = textProvider;
+        _providerKey = providerKey;
+        _model = model;
         _loggerFactory = loggerFactory;
     }
 
@@ -38,6 +44,8 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
             connection.ConversationId,
             _store,
             _textProvider,
+            _providerKey,
+            _model,
             _loggerFactory.CreateLogger<TelegramChannelProvider>(),
             _loggerFactory.CreateLogger<TelegramMessageHandler>());
     }
