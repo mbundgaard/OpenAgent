@@ -20,7 +20,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     public async Task GetConversation_Exists_ReturnsIt()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text);
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text, "test-provider", "test-model");
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
 
@@ -46,7 +46,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     public async Task DeleteConversation_ReturnsNoContent()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text);
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text, "test-provider", "test-model");
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
 

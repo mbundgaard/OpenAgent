@@ -22,6 +22,15 @@ public sealed class Conversation
     [JsonPropertyName("type")]
     [JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
     public required ConversationType Type { get; init; }
+
+    /// <summary>Provider key used for this conversation (e.g. "azure-openai-text").</summary>
+    [JsonPropertyName("provider")]
+    public required string Provider { get; set; }
+
+    /// <summary>Model/deployment used for this conversation (e.g. "gpt-5.2-chat").</summary>
+    [JsonPropertyName("model")]
+    public required string Model { get; set; }
+
     [JsonPropertyName("created_at")]
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     [JsonPropertyName("voice_session_id")]

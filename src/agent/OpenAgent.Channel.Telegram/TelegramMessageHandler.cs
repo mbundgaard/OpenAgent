@@ -90,7 +90,7 @@ public sealed class TelegramMessageHandler
         _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
 
         // Get or create conversation using the connection's configured ID
-        var conversation = _store.GetOrCreate(_conversationId, "telegram", ConversationType.Text);
+        var conversation = _store.GetOrCreate(_conversationId, "telegram", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
 
         // Build user message with Telegram message ID and optional reply-to reference
         var userMessage = new Models.Conversations.Message

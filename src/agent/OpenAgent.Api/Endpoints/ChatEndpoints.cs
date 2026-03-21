@@ -33,7 +33,7 @@ public static class ChatEndpoints
             ILlmTextProvider textProvider,
             CancellationToken ct) =>
         {
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text);
+            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
 
             var userMessage = new Message
             {

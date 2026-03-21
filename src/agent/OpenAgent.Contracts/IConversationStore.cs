@@ -7,8 +7,8 @@ namespace OpenAgent.Contracts;
 /// </summary>
 public interface IConversationStore : IConfigurable
 {
-    /// <summary>Returns the existing conversation or creates a new one with the given ID.</summary>
-    Conversation GetOrCreate(string conversationId, string source, ConversationType type);
+    /// <summary>Returns the existing conversation or creates a new one stamped with provider and model.</summary>
+    Conversation GetOrCreate(string conversationId, string source, ConversationType type, string provider, string model);
 
     /// <summary>Returns all conversations.</summary>
     IReadOnlyList<Conversation> GetAll();

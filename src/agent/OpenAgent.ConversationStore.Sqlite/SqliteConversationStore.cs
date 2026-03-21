@@ -83,11 +83,13 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Conversations", "Context", "TEXT");
         TryAddColumn(connection, "Conversations", "CompactedUpToRowId", "INTEGER");
         TryAddColumn(connection, "Conversations", "CompactionRunning", "INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn(connection, "Conversations", "Provider", "TEXT NOT NULL DEFAULT ''");
+        TryAddColumn(connection, "Conversations", "Model", "TEXT NOT NULL DEFAULT ''");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
 
-    public Conversation GetOrCreate(string conversationId, string source, ConversationType type)
+    public Conversation GetOrCreate(string conversationId, string source, ConversationType type, string provider, string model)
     {
         // Try to get existing first
         var existing = Get(conversationId);
@@ -100,14 +102,16 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             Id = conversationId,
             Source = source,
             Type = type,
+            Provider = provider,
+            Model = model,
             CreatedAt = DateTimeOffset.UtcNow
         };
 
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT OR IGNORE INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen)
-            VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen)
+            INSERT OR IGNORE INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model)
+            VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model)
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
         cmd.Parameters.AddWithValue("@source", conversation.Source);
@@ -115,6 +119,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@createdAt", conversation.CreatedAt.ToString("O"));
         cmd.Parameters.AddWithValue("@voiceSessionId", (object?)conversation.VoiceSessionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@voiceSessionOpen", conversation.VoiceSessionOpen ? 1 : 0);
+        cmd.Parameters.AddWithValue("@provider", conversation.Provider);
+        cmd.Parameters.AddWithValue("@model", conversation.Model);
         cmd.ExecuteNonQuery();
 
         // Re-read in case of a race (INSERT OR IGNORE means another thread may have created it)
@@ -125,7 +131,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning FROM Conversations ORDER BY CreatedAt DESC";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model FROM Conversations ORDER BY CreatedAt DESC";
 
         using var reader = cmd.ExecuteReader();
         var list = new List<Conversation>();
@@ -139,7 +145,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning FROM Conversations WHERE Id = @id";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -155,7 +161,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             SET Source = @source, Type = @type, VoiceSessionId = @voiceSessionId,
                 VoiceSessionOpen = @voiceSessionOpen, LastPromptTokens = @lastPromptTokens,
                 Context = @context, CompactedUpToRowId = @compactedUpToRowId,
-                CompactionRunning = @compactionRunning
+                CompactionRunning = @compactionRunning, Provider = @provider, Model = @model
             WHERE Id = @id
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
@@ -167,6 +173,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@context", (object?)conversation.Context ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@compactedUpToRowId", (object?)conversation.CompactedUpToRowId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@compactionRunning", conversation.CompactionRunning ? 1 : 0);
+        cmd.Parameters.AddWithValue("@provider", conversation.Provider);
+        cmd.Parameters.AddWithValue("@model", conversation.Model);
         cmd.ExecuteNonQuery();
 
         TryStartCompaction(conversation);
@@ -443,7 +451,9 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             LastPromptTokens = reader.IsDBNull(6) ? null : reader.GetInt32(6),
             Context = reader.IsDBNull(7) ? null : reader.GetString(7),
             CompactedUpToRowId = reader.IsDBNull(8) ? null : reader.GetInt64(8),
-            CompactionRunning = !reader.IsDBNull(9) && reader.GetInt32(9) != 0
+            CompactionRunning = !reader.IsDBNull(9) && reader.GetInt32(9) != 0,
+            Provider = reader.GetString(10),
+            Model = reader.GetString(11)
         };
     }
 }

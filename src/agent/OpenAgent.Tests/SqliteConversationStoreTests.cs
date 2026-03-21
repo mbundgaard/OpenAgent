@@ -27,7 +27,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessages_populates_RowId()
     {
-        _store.GetOrCreate("conv1", "test", ConversationType.Text);
+        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message
         {
@@ -48,7 +48,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessages_excludes_compacted_messages()
     {
-        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text);
+        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message { Id = "msg1", ConversationId = "conv1", Role = "user", Content = "old message" });
         _store.AddMessage("conv1", new Message { Id = "msg2", ConversationId = "conv1", Role = "assistant", Content = "old reply" });
@@ -75,7 +75,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessagesByIds_returns_compacted_messages()
     {
-        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text);
+        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message { Id = "msg1", ConversationId = "conv1", Role = "user", Content = "old" });
         _store.AddMessage("conv1", new Message { Id = "msg2", ConversationId = "conv1", Role = "assistant", Content = "old reply" });
@@ -98,7 +98,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessages_returns_all_when_no_compaction()
     {
-        _store.GetOrCreate("conv1", "test", ConversationType.Text);
+        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message { Id = "msg1", ConversationId = "conv1", Role = "user", Content = "hello" });
         _store.AddMessage("conv1", new Message { Id = "msg2", ConversationId = "conv1", Role = "assistant", Content = "hi" });
@@ -123,7 +123,7 @@ public class SqliteConversationStoreTests : IDisposable
         var env = new AgentEnvironment { DataPath = _dbDir };
         using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
 
-        var conv = store.GetOrCreate("conv1", "test", ConversationType.Text);
+        var conv = store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
 
         for (var i = 1; i <= 6; i++)
         {

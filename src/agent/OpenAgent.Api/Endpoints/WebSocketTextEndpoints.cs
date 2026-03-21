@@ -36,7 +36,7 @@ public static class WebSocketTextEndpoints
                 return;
             }
 
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text);
+            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
 

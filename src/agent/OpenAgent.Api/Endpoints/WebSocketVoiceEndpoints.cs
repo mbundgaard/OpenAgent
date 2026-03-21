@@ -33,7 +33,7 @@ public static class WebSocketVoiceEndpoints
                 return;
             }
 
-            store.GetOrCreate(conversationId, "app", ConversationType.Voice);
+            store.GetOrCreate(conversationId, "app", ConversationType.Voice, "azure-openai-voice", "gpt-realtime");
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
             var session = await sessionManager.GetOrCreateSessionAsync(conversationId, context.RequestAborted);

@@ -19,7 +19,7 @@ public sealed class InMemoryConversationStore : IConversationStore
     public IReadOnlyList<ProviderConfigField> ConfigFields => [];
     public void Configure(JsonElement configuration) { }
 
-    public Conversation GetOrCreate(string conversationId, string source, ConversationType type)
+    public Conversation GetOrCreate(string conversationId, string source, ConversationType type, string provider, string model)
     {
         if (_conversations.TryGetValue(conversationId, out var existing))
             return existing;
@@ -28,7 +28,9 @@ public sealed class InMemoryConversationStore : IConversationStore
         {
             Id = conversationId,
             Source = source,
-            Type = type
+            Type = type,
+            Provider = provider,
+            Model = model
         };
 
         _conversations[conversationId] = conversation;

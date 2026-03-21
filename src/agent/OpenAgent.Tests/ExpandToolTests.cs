@@ -10,7 +10,7 @@ public class ExpandToolTests
     public async Task Expand_returns_messages_by_id()
     {
         var store = new InMemoryConversationStore();
-        store.GetOrCreate("conv1", "test", ConversationType.Text);
+        store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
         store.AddMessage("conv1", new Message { Id = "msg1", ConversationId = "conv1", Role = "user", Content = "hello" });
         store.AddMessage("conv1", new Message { Id = "msg2", ConversationId = "conv1", Role = "assistant", Content = "hi there" });
         store.AddMessage("conv1", new Message { Id = "msg3", ConversationId = "conv1", Role = "user", Content = "bye" });
