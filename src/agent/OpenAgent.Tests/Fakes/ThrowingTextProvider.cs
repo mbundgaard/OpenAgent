@@ -27,4 +27,16 @@ public sealed class ThrowingTextProvider : ILlmTextProvider
         yield break;
 #pragma warning restore CS0162
     }
+
+    public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
+        IReadOnlyList<Message> messages,
+        string model,
+        CompletionOptions? options = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        throw new InvalidOperationException("LLM provider failed");
+#pragma warning disable CS0162 // Unreachable code
+        yield break;
+#pragma warning restore CS0162
+    }
 }

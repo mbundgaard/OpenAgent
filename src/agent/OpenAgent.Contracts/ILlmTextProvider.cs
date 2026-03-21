@@ -15,4 +15,14 @@ public interface ILlmTextProvider : IConfigurable
     /// collected (REST) transports.
     /// </summary>
     IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage, CancellationToken ct = default);
+
+    /// <summary>
+    /// Runs a raw completion without conversation context — no tool calls, no message
+    /// persistence, no system prompt. Used by compaction and other non-conversation callers.
+    /// </summary>
+    IAsyncEnumerable<CompletionEvent> CompleteAsync(
+        IReadOnlyList<Message> messages,
+        string model,
+        CompletionOptions? options = null,
+        CancellationToken ct = default);
 }

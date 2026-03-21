@@ -22,6 +22,10 @@ internal sealed class ChatCompletionRequest
     [JsonPropertyName("stream_options")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public StreamOptions? StreamOptions { get; set; }
+
+    [JsonPropertyName("response_format")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ResponseFormatSpec? ResponseFormat { get; set; }
 }
 
 internal sealed class StreamOptions

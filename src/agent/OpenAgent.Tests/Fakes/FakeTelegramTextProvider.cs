@@ -31,4 +31,14 @@ public sealed class FakeTelegramTextProvider : ILlmTextProvider
         yield return new TextDelta(_response);
         await Task.CompletedTask;
     }
+
+    public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
+        IReadOnlyList<Message> messages,
+        string model,
+        CompletionOptions? options = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        yield return new TextDelta(_response);
+        await Task.CompletedTask;
+    }
 }

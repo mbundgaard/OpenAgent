@@ -86,5 +86,13 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
             yield return new TextDelta("response");
             await Task.CompletedTask;
         }
+
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(IReadOnlyList<Message> messages, string model,
+            CompletionOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new TextDelta("fake raw response");
+            await Task.CompletedTask;
+        }
     }
 }

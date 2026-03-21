@@ -34,4 +34,17 @@ public sealed class StreamingTextProvider : ILlmTextProvider
             await Task.Yield();
         }
     }
+
+    public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
+        IReadOnlyList<Message> messages,
+        string model,
+        CompletionOptions? options = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        foreach (var token in _tokens)
+        {
+            yield return new TextDelta(token);
+            await Task.Yield();
+        }
+    }
 }

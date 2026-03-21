@@ -76,7 +76,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             StreamOptions = new StreamOptions { IncludeUsage = true }
         };
 
-        var url = $"openai/deployments/{_config.DeploymentName}/chat/completions?api-version={_config.ApiVersion}";
+        var url = $"openai/deployments/{conversation.Model}/chat/completions?api-version={_config.ApiVersion}";
 
         // Completion loop (handles tool calls across streaming rounds)
         const int maxToolRounds = 10;
@@ -243,6 +243,63 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         logger.LogError("Tool call loop exceeded {MaxRounds} rounds for conversation {ConversationId}",
             maxToolRounds, conversationId);
         throw new InvalidOperationException($"Tool call loop exceeded {maxToolRounds} rounds.");
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
+        IReadOnlyList<Message> messages,
+        string model,
+        CompletionOptions? options = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (_config is null || _httpClient is null)
+            throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
+
+        var chatMessages = messages.Select(m => new ChatMessage
+        {
+            Role = m.Role,
+            Content = m.Content
+        }).ToList();
+
+        var request = new ChatCompletionRequest
+        {
+            Messages = chatMessages,
+            Stream = true,
+            StreamOptions = new StreamOptions { IncludeUsage = true }
+        };
+
+        if (options?.ResponseFormat is not null)
+            request.ResponseFormat = new ResponseFormatSpec { Type = options.ResponseFormat };
+
+        var url = $"openai/deployments/{model}/chat/completions?api-version={_config.ApiVersion}";
+
+        var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(request)
+        };
+        var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        if (!httpResponse.IsSuccessStatusCode)
+        {
+            var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+            logger.LogError("Azure OpenAI returned {StatusCode}: {ErrorBody}", (int)httpResponse.StatusCode, errorBody);
+            throw new HttpRequestException($"Azure OpenAI returned {(int)httpResponse.StatusCode}: {errorBody}");
+        }
+
+        using var stream = await httpResponse.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream);
+
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (!line.StartsWith("data: ")) continue;
+            var data = line["data: ".Length..];
+            if (data == "[DONE]") break;
+
+            var chunk = JsonSerializer.Deserialize<ChatCompletionResponse>(data);
+            var choice = chunk?.Choices?.FirstOrDefault();
+            if (choice?.Delta?.Content is { Length: > 0 } content)
+                yield return new TextDelta(content);
+        }
     }
 
     private List<ChatMessage> BuildChatMessages(Conversation conversation)
