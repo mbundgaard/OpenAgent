@@ -51,7 +51,7 @@ export function ExplorerApp() {
       openDynamicWindow({
         id: `file-viewer-${entry.path}`,
         title: entry.name,
-        component: FileViewerApp as React.ComponentType<Record<string, unknown>>,
+        component: FileViewerApp as unknown as React.ComponentType<Record<string, unknown>>,
         componentProps: { filePath: entry.path },
         defaultSize: { width: 600, height: 500 },
       });
