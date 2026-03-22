@@ -166,6 +166,41 @@ public static class FileExplorerEndpoints
             return Results.NoContent();
         });
 
+        // Create a new directory
+        group.MapPost("/mkdir", (CreateDirectoryRequest request, AgentEnvironment env) =>
+        {
+            var dataRoot = Path.GetFullPath(env.DataPath);
+            var parentDir = string.IsNullOrEmpty(request.Path) ? dataRoot : ResolveSafePath(dataRoot, request.Path);
+            if (parentDir is null)
+                return Results.Forbid();
+
+            if (!Directory.Exists(parentDir))
+                return Results.NotFound(new { error = "Parent directory not found" });
+
+            // Name must not contain path separators
+            if (request.Name.Contains('/') || request.Name.Contains('\\'))
+                return Results.BadRequest(new { error = "Name cannot contain path separators" });
+
+            var newDir = Path.Combine(parentDir, request.Name);
+            if (ResolveSafePath(dataRoot, Path.GetRelativePath(dataRoot, newDir)) is null)
+                return Results.Forbid();
+
+            if (Directory.Exists(newDir))
+                return Results.Conflict(new { error = "A directory with that name already exists" });
+
+            Directory.CreateDirectory(newDir);
+
+            var info = new DirectoryInfo(newDir);
+            return Results.Ok(new FileEntry
+            {
+                Name = info.Name,
+                Path = Path.GetRelativePath(dataRoot, newDir).Replace('\\', '/'),
+                IsDirectory = true,
+                Size = null,
+                ModifiedAt = info.LastWriteTimeUtc
+            });
+        });
+
         // Upload files to the current directory
         group.MapPost("/upload", async (HttpRequest request, AgentEnvironment env) =>
         {
@@ -245,6 +280,18 @@ public sealed class FileEntry
 
     [JsonPropertyName("modifiedAt")]
     public DateTime ModifiedAt { get; init; }
+}
+
+/// <summary>
+/// Request to create a new directory.
+/// </summary>
+public sealed class CreateDirectoryRequest
+{
+    [JsonPropertyName("path")]
+    public required string Path { get; init; }
+
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
 }
 
 /// <summary>

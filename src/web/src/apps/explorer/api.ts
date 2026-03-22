@@ -61,6 +61,19 @@ export async function deleteFile(path: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
 }
 
+export async function createDirectory(parentPath: string, name: string): Promise<FileEntry> {
+  const res = await apiFetch('/api/files/mkdir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: parentPath, name }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `Status ${res.status}` }));
+    throw new Error(err.error ?? `Failed to create directory: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function uploadFiles(directory: string, files: FileList): Promise<FileEntry[]> {
   const form = new FormData();
   for (const file of files) {

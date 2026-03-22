@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FileEntry } from './api';
-import { listDirectory, downloadFile, renameFile, deleteFile, uploadFiles } from './api';
+import { listDirectory, downloadFile, renameFile, deleteFile, uploadFiles, createDirectory } from './api';
 import { FileViewerApp } from './FileViewerApp';
 import { ContextMenu } from './ContextMenu';
 import type { MenuItem } from './ContextMenu';
@@ -126,6 +126,17 @@ export function ExplorerApp() {
     }
   };
 
+  const handleNewFolder = async () => {
+    const name = prompt('Folder name:');
+    if (!name?.trim()) return;
+    try {
+      await createDirectory(currentPath, name.trim());
+      navigate(currentPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create folder');
+    }
+  };
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -191,20 +202,6 @@ export function ExplorerApp() {
         >
           {'\u21BB'}
         </button>
-        <button
-          className={styles.toolbarButton}
-          onClick={() => fileInputRef.current?.click()}
-          title="Upload"
-        >
-          +
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          style={{ display: 'none' }}
-          onChange={handleUpload}
-        />
         <div className={styles.breadcrumbs}>
           <button
             className={`${styles.breadcrumb} ${currentPath === '' ? styles.breadcrumbActive : ''}`}
@@ -223,6 +220,29 @@ export function ExplorerApp() {
               </button>
             </span>
           ))}
+        </div>
+        <div className={styles.toolbarRight}>
+          <button
+            className={styles.toolbarButton}
+            onClick={handleNewFolder}
+            title="New folder"
+          >
+            {'\uD83D\uDCC1+'}
+          </button>
+          <button
+            className={styles.toolbarButton}
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload"
+          >
+            +
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleUpload}
+          />
         </div>
       </div>
 

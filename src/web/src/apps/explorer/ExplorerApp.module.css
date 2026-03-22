@@ -39,9 +39,19 @@
   display: flex;
   align-items: center;
   margin-left: 4px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   white-space: nowrap;
   scrollbar-width: none;
+}
+
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .breadcrumbs::-webkit-scrollbar {
