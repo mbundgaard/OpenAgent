@@ -60,3 +60,17 @@ export async function deleteFile(path: string): Promise<void> {
   });
   if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
 }
+
+export async function uploadFiles(directory: string, files: FileList): Promise<FileEntry[]> {
+  const form = new FormData();
+  for (const file of files) {
+    form.append('files', file);
+  }
+  const params = directory ? `?path=${encodeURIComponent(directory)}` : '';
+  const res = await apiFetch(`/api/files/upload${params}`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Failed to upload: ${res.status}`);
+  return res.json();
+}

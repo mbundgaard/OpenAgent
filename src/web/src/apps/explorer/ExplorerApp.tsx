@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FileEntry } from './api';
-import { listDirectory, downloadFile, renameFile, deleteFile } from './api';
+import { listDirectory, downloadFile, renameFile, deleteFile, uploadFiles } from './api';
 import { FileViewerApp } from './FileViewerApp';
 import { ContextMenu } from './ContextMenu';
 import type { MenuItem } from './ContextMenu';
@@ -30,6 +30,7 @@ export function ExplorerApp() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const { openDynamicWindow } = useWindowContext();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const navigate = useCallback((path: string) => {
     setCurrentPath(path);
@@ -125,6 +126,19 @@ export function ExplorerApp() {
     }
   };
 
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    try {
+      await uploadFiles(currentPath, files);
+      navigate(currentPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    }
+    // Reset input so the same file can be re-uploaded
+    e.target.value = '';
+  };
+
   const getMenuItems = (entry: FileEntry): MenuItem[] => {
     const items: MenuItem[] = [];
 
@@ -177,6 +191,20 @@ export function ExplorerApp() {
         >
           {'\u21BB'}
         </button>
+        <button
+          className={styles.toolbarButton}
+          onClick={() => fileInputRef.current?.click()}
+          title="Upload"
+        >
+          {'\u2191'}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleUpload}
+        />
         <div className={styles.breadcrumbs}>
           <button
             className={`${styles.breadcrumb} ${currentPath === '' ? styles.breadcrumbActive : ''}`}

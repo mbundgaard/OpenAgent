@@ -165,6 +165,54 @@ public static class FileExplorerEndpoints
 
             return Results.NoContent();
         });
+
+        // Upload files to the current directory
+        group.MapPost("/upload", async (HttpRequest request, AgentEnvironment env) =>
+        {
+            var dataRoot = Path.GetFullPath(env.DataPath);
+            var targetDir = request.Query["path"].FirstOrDefault() ?? "";
+
+            var fullDir = ResolveSafePath(dataRoot, targetDir);
+            if (fullDir is null)
+                return Results.Forbid();
+
+            if (!Directory.Exists(fullDir))
+                return Results.NotFound(new { error = "Directory not found" });
+
+            if (!request.HasFormContentType)
+                return Results.BadRequest(new { error = "Expected multipart/form-data" });
+
+            var form = await request.ReadFormAsync();
+            var uploaded = new List<FileEntry>();
+
+            foreach (var file in form.Files)
+            {
+                var fileName = Path.GetFileName(file.FileName);
+                if (string.IsNullOrWhiteSpace(fileName))
+                    continue;
+
+                var filePath = Path.Combine(fullDir, fileName);
+
+                // Validate the target path stays within dataRoot
+                if (ResolveSafePath(dataRoot, Path.GetRelativePath(dataRoot, filePath)) is null)
+                    continue;
+
+                await using var stream = new FileStream(filePath, FileMode.Create);
+                await file.CopyToAsync(stream);
+
+                var info = new FileInfo(filePath);
+                uploaded.Add(new FileEntry
+                {
+                    Name = info.Name,
+                    Path = Path.GetRelativePath(dataRoot, filePath).Replace('\\', '/'),
+                    IsDirectory = false,
+                    Size = info.Length,
+                    ModifiedAt = info.LastWriteTimeUtc
+                });
+            }
+
+            return Results.Ok(uploaded);
+        });
     }
 
     /// <summary>
