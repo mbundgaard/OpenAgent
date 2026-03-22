@@ -3,6 +3,7 @@ import { SettingsApp } from './settings/SettingsApp';
 import { ChatApp } from './chat/ChatApp';
 import { VoiceApp } from './voice/VoiceApp';
 import { ConversationsApp } from './conversations/ConversationsApp';
+import { ExplorerApp } from './explorer/ExplorerApp';
 
 const apps: AppDefinition[] = [
   {
@@ -25,6 +26,13 @@ const apps: AppDefinition[] = [
     icon: 'conversations-icon',
     component: ConversationsApp,
     defaultSize: { width: 800, height: 500 },
+  },
+  {
+    id: 'explorer',
+    title: 'Explorer',
+    icon: 'explorer-icon',
+    component: ExplorerApp,
+    defaultSize: { width: 700, height: 500 },
   },
   {
     id: 'admin',
