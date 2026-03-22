@@ -4,6 +4,7 @@ import { ChatApp } from './chat/ChatApp';
 import { VoiceApp } from './voice/VoiceApp';
 import { ConversationsApp } from './conversations/ConversationsApp';
 import { ExplorerApp } from './explorer/ExplorerApp';
+import { TerminalApp } from './terminal/TerminalApp';
 
 const apps: AppDefinition[] = [
   {
@@ -33,6 +34,13 @@ const apps: AppDefinition[] = [
     icon: 'explorer-icon',
     component: ExplorerApp,
     defaultSize: { width: 700, height: 500 },
+  },
+  {
+    id: 'terminal',
+    title: 'Terminal',
+    icon: 'terminal-icon',
+    component: TerminalApp,
+    defaultSize: { width: 800, height: 500 },
   },
   {
     id: 'admin',

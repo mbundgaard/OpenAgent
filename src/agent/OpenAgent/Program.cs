@@ -12,6 +12,7 @@ using OpenAgent.Models.Conversations;
 using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.Expand;
 using OpenAgent.Tools.FileSystem;
+using OpenAgent.Terminal;
 using OpenAgent.Tools.Shell;
 using OpenAgent.Tools.WebFetch;
 using Serilog;
@@ -68,6 +69,7 @@ builder.Services.AddSingleton<ILlmTextProvider>(sp =>
 builder.Services.AddSingleton<ILlmVoiceProvider>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
 builder.Services.AddSingleton<IVoiceSessionManager, VoiceSessionManager>();
+builder.Services.AddSingleton<ITerminalSessionManager, TerminalSessionManager>();
 builder.Services.AddSingleton<IConfigStore, FileConfigStore>();
 
 builder.Services.AddSingleton<IConfigurable>(loggingConfig);
@@ -127,6 +129,7 @@ app.MapConversationEndpoints();
 app.MapChatEndpoints();
 app.MapWebSocketVoiceEndpoints();
 app.MapWebSocketTextEndpoints();
+app.MapWebSocketTerminalEndpoints();
 app.MapAdminEndpoints();
 app.MapSystemPromptEndpoints();
 app.MapConnectionEndpoints();

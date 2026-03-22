@@ -2,7 +2,9 @@
 
 ## Overview
 
-Add a browser-based terminal to the web portal using xterm.js on the frontend and Linux PTY via P/Invoke on the backend. No sidecar processes, no NuGet PTY packages — direct `forkpty` calls from .NET.
+Add a browser-based terminal to the web portal using xterm.js on the frontend and Linux PTY via P/Invoke on the backend. No sidecar processes, no NuGet PTY packages.
+
+**Important**: We do NOT use `forkpty()` because calling `fork()` from managed .NET code corrupts the CLR (only the calling thread survives). Instead we use `posix_openpt` + `grantpt` + `unlockpt` + `ptsname` to create the PTY pair, then launch bash via `System.Diagnostics.Process` with shell redirects to the slave device.
 
 ## Architecture
 
@@ -11,7 +13,8 @@ Browser (xterm.js)  <──WebSocket──>  WebSocketTerminalEndpoints  <──
                                                                               │
                                                                        PtyTerminalSession
                                                                               │
-                                                                       forkpty() ──> /bin/bash
+                                                                  posix_openpt() ──> master fd
+                                                                  Process.Start("bash") ──> slave PTY
 ```
 
 - **Binary frames**: keystrokes (client→server) and PTY output (server→client)
