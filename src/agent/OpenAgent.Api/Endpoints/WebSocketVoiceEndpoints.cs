@@ -2,6 +2,8 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
@@ -37,11 +39,31 @@ public static class WebSocketVoiceEndpoints
             store.GetOrCreate(conversationId, "app", ConversationType.Voice, agentConfig.VoiceProvider, agentConfig.VoiceModel);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
-            var session = await sessionManager.GetOrCreateSessionAsync(conversationId, context.RequestAborted);
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger(typeof(WebSocketVoiceEndpoints));
+
+            IVoiceSession session;
+            try
+            {
+                session = await sessionManager.GetOrCreateSessionAsync(conversationId, context.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to create voice session for conversation {ConversationId}", conversationId);
+                var errorJson = JsonSerializer.SerializeToUtf8Bytes(
+                    new VoiceErrorEvent { Type = "error", Message = $"Session creation failed: {ex.Message}" }, JsonOptions);
+                await ws.SendAsync(errorJson, WebSocketMessageType.Text, true, CancellationToken.None);
+                await ws.CloseAsync(WebSocketCloseStatus.InternalServerError, ex.Message.Length > 120 ? ex.Message[..120] : ex.Message, CancellationToken.None);
+                return;
+            }
 
             try
             {
                 await RunBridgeAsync(ws, session, context.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Voice bridge failed for conversation {ConversationId}", conversationId);
             }
             finally
             {

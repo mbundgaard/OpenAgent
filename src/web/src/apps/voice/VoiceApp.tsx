@@ -99,6 +99,7 @@ export function VoiceApp() {
 
       // Text frame = JSON control event
       const data = JSON.parse(event.data as string);
+      console.log('[Voice] received event:', data.type, data);
 
       switch (data.type) {
         case 'speech_started':
