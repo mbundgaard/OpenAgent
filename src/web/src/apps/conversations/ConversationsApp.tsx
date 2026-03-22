@@ -136,17 +136,7 @@ export function ConversationsApp() {
             <div className={styles.detailHeader}>
               <div className={styles.detailTop}>
                 <div className={styles.detailTitle}>
-                  <span className={styles.headerSource}>{detail.type}</span>
-                  {editing ? (
-                    <input
-                      className={styles.editInput}
-                      value={editSource}
-                      onChange={e => setEditSource(e.target.value)}
-                      placeholder="Source name"
-                    />
-                  ) : (
-                    <span className={styles.headerType}>{detail.source}</span>
-                  )}
+                  <span className={styles.headerId}>{detail.id.slice(0, 8)}...</span>
                 </div>
                 <div className={styles.detailActions}>
                   {editing ? (
@@ -165,7 +155,7 @@ export function ConversationsApp() {
                 </div>
               </div>
 
-              {/* Provider / Model */}
+              {/* Provider / Model / Name */}
               <div className={styles.detailRow}>
                 {editing ? (
                   <>
@@ -183,9 +173,15 @@ export function ConversationsApp() {
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
+                    <input
+                      className={styles.editInput}
+                      value={editSource}
+                      onChange={e => setEditSource(e.target.value)}
+                      placeholder="Name"
+                    />
                   </>
                 ) : (
-                  <span className={styles.detailLabel}>{detail.provider} / {detail.model}</span>
+                  <span className={styles.detailLabel}>{detail.provider} / {detail.model} / {detail.source}</span>
                 )}
               </div>
 
