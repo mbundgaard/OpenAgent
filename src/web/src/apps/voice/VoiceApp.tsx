@@ -77,12 +77,14 @@ export function VoiceApp() {
     const conversationId = conversationIdRef.current;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${window.location.host}/ws/conversations/${conversationId}/voice?api_key=${token}`;
+    console.log('[Voice] connecting WebSocket:', url);
 
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.log('[Voice] WebSocket open');
       setState('listening');
       setError(null);
     };
@@ -135,11 +137,13 @@ export function VoiceApp() {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      console.log('[Voice] WebSocket closed:', event.code, event.reason);
       setState('idle');
     };
 
-    ws.onerror = () => {
+    ws.onerror = (event) => {
+      console.error('[Voice] WebSocket error:', event);
       setError('Connection failed');
       setState('idle');
     };
@@ -198,15 +202,19 @@ export function VoiceApp() {
   // -- Start / Stop ------------------------------------------------------------
 
   const handleStart = useCallback(async () => {
+    console.log('[Voice] handleStart called');
     setError(null);
     setUserTranscript('');
     setAssistantTranscript('');
     conversationIdRef.current = crypto.randomUUID();
 
     try {
+      console.log('[Voice] starting microphone...');
       await startMicrophone();
+      console.log('[Voice] microphone started, connecting WebSocket...');
       connectWebSocket();
-    } catch {
+    } catch (err) {
+      console.error('[Voice] handleStart error:', err);
       setError('Microphone access denied');
       setState('idle');
     }
