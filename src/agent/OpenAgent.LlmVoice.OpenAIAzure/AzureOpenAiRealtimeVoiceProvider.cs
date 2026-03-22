@@ -48,6 +48,14 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
             Label = "API Version",
             Type = "String",
             DefaultValue = "2025-04-01-preview"
+        },
+        new ProviderConfigField
+        {
+            Key = "voice",
+            Label = "Voice",
+            Type = "Enum",
+            DefaultValue = "alloy",
+            Options = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"]
         }
     ];
 
