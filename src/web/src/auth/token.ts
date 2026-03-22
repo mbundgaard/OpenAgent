@@ -17,8 +17,10 @@ export function extractToken(): void {
   if (value) {
     token = value;
     sessionStorage.setItem(STORAGE_KEY, value);
-    // Strip token from URL to avoid leaking in shared links / screenshots
-    window.history.replaceState(null, '', window.location.pathname);
+    // Strip hash token from URL but keep query string (needed for PWA)
+    if (hashValue && !queryValue) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
   } else {
     // Restore from sessionStorage if no token in URL
     token = sessionStorage.getItem(STORAGE_KEY);
