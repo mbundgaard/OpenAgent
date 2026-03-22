@@ -109,6 +109,8 @@ foreach (var configurable in app.Services.GetServices<IConfigurable>())
 }
 
 app.UseWebSockets();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -130,6 +132,9 @@ app.MapSystemPromptEndpoints();
 app.MapConnectionEndpoints();
 app.MapFileExplorerEndpoints();
 app.MapTelegramWebhookEndpoints();
+
+// SPA fallback — serve index.html for unmatched routes (client-side routing)
+app.MapFallbackToFile("index.html");
 
 app.Run();
 
