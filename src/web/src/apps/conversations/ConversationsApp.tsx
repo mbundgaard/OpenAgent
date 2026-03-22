@@ -135,9 +135,7 @@ export function ConversationsApp() {
             {/* Detail header */}
             <div className={styles.detailHeader}>
               <div className={styles.detailTop}>
-                <div className={styles.detailTitle}>
-                  <span className={styles.headerId}>{detail.id.slice(0, 8)}...</span>
-                </div>
+                <div className={styles.detailTitle} />
                 <div className={styles.detailActions}>
                   {editing ? (
                     <>
