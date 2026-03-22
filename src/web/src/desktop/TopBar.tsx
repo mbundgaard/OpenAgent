@@ -14,7 +14,7 @@ interface Props {
 }
 
 function formatTime(): string {
-  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 export function TopBar({ apps, windows, onOpenApp, onFocus, onMinimize, onRestore }: Props) {
