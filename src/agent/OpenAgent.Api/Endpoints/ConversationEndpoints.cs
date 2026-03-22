@@ -6,13 +6,13 @@ using OpenAgent.Models.Conversations;
 namespace OpenAgent.Api.Endpoints;
 
 /// <summary>
-/// Conversation management — list, retrieve, and delete conversations.
+/// Conversation management — list, retrieve, update, and delete conversations.
 /// Conversations are created implicitly on first interaction.
 /// </summary>
 public static class ConversationEndpoints
 {
     /// <summary>
-    /// Maps read/delete endpoints under /api/conversations.
+    /// Maps read/update/delete endpoints under /api/conversations.
     /// </summary>
     public static void MapConversationEndpoints(this WebApplication app)
     {
@@ -28,16 +28,36 @@ public static class ConversationEndpoints
                 Type = c.Type,
                 Provider = c.Provider,
                 Model = c.Model,
-                CreatedAt = c.CreatedAt
+                CreatedAt = c.CreatedAt,
+                TotalPromptTokens = c.TotalPromptTokens,
+                TotalCompletionTokens = c.TotalCompletionTokens,
+                TurnCount = c.TurnCount,
+                LastActivity = c.LastActivity
             }));
         });
 
         group.MapGet("/{conversationId}", (string conversationId, IConversationStore store) =>
         {
             var conversation = store.Get(conversationId);
-            return conversation is null
-                ? Results.NotFound()
-                : Results.Ok(new ConversationIdResponse { Id = conversation.Id });
+            if (conversation is null)
+                return Results.NotFound();
+
+            return Results.Ok(new ConversationDetailResponse
+            {
+                Id = conversation.Id,
+                Source = conversation.Source,
+                Type = conversation.Type,
+                Provider = conversation.Provider,
+                Model = conversation.Model,
+                CreatedAt = conversation.CreatedAt,
+                TotalPromptTokens = conversation.TotalPromptTokens,
+                TotalCompletionTokens = conversation.TotalCompletionTokens,
+                TurnCount = conversation.TurnCount,
+                LastActivity = conversation.LastActivity,
+                VoiceSessionId = conversation.VoiceSessionId,
+                VoiceSessionOpen = conversation.VoiceSessionOpen,
+                CompactionRunning = conversation.CompactionRunning
+            });
         });
 
         group.MapGet("/{conversationId}/messages", (string conversationId, IConversationStore store) =>
@@ -48,6 +68,39 @@ public static class ConversationEndpoints
 
             var messages = store.GetMessages(conversationId);
             return Results.Ok(messages);
+        });
+
+        group.MapPatch("/{conversationId}", (string conversationId, UpdateConversationRequest request, IConversationStore store) =>
+        {
+            var conversation = store.Get(conversationId);
+            if (conversation is null)
+                return Results.NotFound();
+
+            if (request.Source is not null)
+                conversation.Source = request.Source;
+            if (request.Provider is not null)
+                conversation.Provider = request.Provider;
+            if (request.Model is not null)
+                conversation.Model = request.Model;
+
+            store.Update(conversation);
+
+            return Results.Ok(new ConversationDetailResponse
+            {
+                Id = conversation.Id,
+                Source = conversation.Source,
+                Type = conversation.Type,
+                Provider = conversation.Provider,
+                Model = conversation.Model,
+                CreatedAt = conversation.CreatedAt,
+                TotalPromptTokens = conversation.TotalPromptTokens,
+                TotalCompletionTokens = conversation.TotalCompletionTokens,
+                TurnCount = conversation.TurnCount,
+                LastActivity = conversation.LastActivity,
+                VoiceSessionId = conversation.VoiceSessionId,
+                VoiceSessionOpen = conversation.VoiceSessionOpen,
+                CompactionRunning = conversation.CompactionRunning
+            });
         });
 
         group.MapDelete("/{conversationId}", (string conversationId, IConversationStore store) =>

@@ -7,6 +7,16 @@ export interface ConversationSummary {
   provider: string;
   model: string;
   created_at: string;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  turn_count: number;
+  last_activity: string | null;
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  voice_session_id: string | null;
+  voice_session_open: boolean;
+  compaction_running: boolean;
 }
 
 export interface ConversationMessage {
@@ -17,6 +27,9 @@ export interface ConversationMessage {
   created_at: string;
   tool_calls: string | null;
   tool_call_id: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  elapsed_ms: number | null;
 }
 
 export async function listConversations(): Promise<ConversationSummary[]> {
@@ -24,8 +37,26 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   return res.json();
 }
 
+export async function getConversation(conversationId: string): Promise<ConversationDetail> {
+  const res = await apiFetch(`/api/conversations/${conversationId}`);
+  return res.json();
+}
+
 export async function getMessages(conversationId: string): Promise<ConversationMessage[]> {
   const res = await apiFetch(`/api/conversations/${conversationId}/messages`);
+  return res.json();
+}
+
+export async function updateConversation(conversationId: string, data: {
+  source?: string;
+  provider?: string;
+  model?: string;
+}): Promise<ConversationDetail> {
+  const res = await apiFetch(`/api/conversations/${conversationId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
   return res.json();
 }
 

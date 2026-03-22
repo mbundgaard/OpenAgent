@@ -18,7 +18,7 @@ public sealed class Conversation
     [JsonPropertyName("id")]
     public required string Id { get; init; }
     [JsonPropertyName("source")]
-    public required string Source { get; init; }
+    public required string Source { get; set; }
     [JsonPropertyName("type")]
     [JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
     public required ConversationType Type { get; init; }
