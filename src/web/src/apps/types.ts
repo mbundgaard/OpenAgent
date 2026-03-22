@@ -4,6 +4,6 @@ export interface AppDefinition {
   id: string;
   title: string;
   icon: string;
-  component: ComponentType;
+  component: ComponentType<Record<string, unknown>>;
   defaultSize: { width: number; height: number };
 }

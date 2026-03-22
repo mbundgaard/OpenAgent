@@ -1,12 +1,23 @@
 import { useReducer, useCallback } from 'react';
+import type { ComponentType } from 'react';
 import type { WindowState } from '../windows/types';
 import type { AppDefinition } from '../apps/types';
 
 const TASKBAR_HEIGHT = 48;
 const CASCADE_OFFSET = 30;
 
+/** Options for opening a dynamic (non-registry) window. */
+export interface DynamicWindowOptions {
+  id: string;
+  title: string;
+  component: ComponentType<Record<string, unknown>>;
+  componentProps?: Record<string, unknown>;
+  defaultSize: { width: number; height: number };
+}
+
 type Action =
   | { type: 'OPEN'; app: AppDefinition }
+  | { type: 'OPEN_DYNAMIC'; options: DynamicWindowOptions }
   | { type: 'CLOSE'; instanceId: string }
   | { type: 'FOCUS'; instanceId: string }
   | { type: 'MINIMIZE'; instanceId: string }
@@ -36,6 +47,27 @@ function reducer(state: State, action: Action): State {
         isMinimized: false,
         isMaximized: false,
         zIndex: state.nextZIndex,
+      };
+      return { windows: [...state.windows, win], nextZIndex: state.nextZIndex + 1 };
+    }
+
+    case 'OPEN_DYNAMIC': {
+      const count = state.windows.length;
+      const opts = action.options;
+      const win: WindowState = {
+        instanceId: crypto.randomUUID(),
+        appId: opts.id,
+        title: opts.title,
+        position: {
+          x: Math.max(0, (window.innerWidth - opts.defaultSize.width) / 2 + count * CASCADE_OFFSET),
+          y: Math.max(0, (window.innerHeight - TASKBAR_HEIGHT - opts.defaultSize.height) / 2 + count * CASCADE_OFFSET),
+        },
+        size: { ...opts.defaultSize },
+        isMinimized: false,
+        isMaximized: false,
+        zIndex: state.nextZIndex,
+        component: opts.component,
+        componentProps: opts.componentProps,
       };
       return { windows: [...state.windows, win], nextZIndex: state.nextZIndex + 1 };
     }
@@ -126,6 +158,7 @@ export function useWindowManager() {
   const [state, dispatch] = useReducer(reducer, { windows: [], nextZIndex: 1 });
 
   const openWindow = useCallback((app: AppDefinition) => dispatch({ type: 'OPEN', app }), []);
+  const openDynamicWindow = useCallback((options: DynamicWindowOptions) => dispatch({ type: 'OPEN_DYNAMIC', options }), []);
   const closeWindow = useCallback((instanceId: string) => dispatch({ type: 'CLOSE', instanceId }), []);
   const focusWindow = useCallback((instanceId: string) => dispatch({ type: 'FOCUS', instanceId }), []);
   const minimizeWindow = useCallback((instanceId: string) => dispatch({ type: 'MINIMIZE', instanceId }), []);
@@ -137,6 +170,7 @@ export function useWindowManager() {
   return {
     windows: state.windows,
     openWindow,
+    openDynamicWindow,
     closeWindow,
     focusWindow,
     minimizeWindow,

@@ -5,7 +5,8 @@ import styles from './WindowFrame.module.css';
 
 interface Props {
   window: WindowState;
-  component: ComponentType;
+  component: ComponentType<Record<string, unknown>>;
+  componentProps?: Record<string, unknown>;
   onFocus: () => void;
   onClose: () => void;
   onMinimize: () => void;
@@ -15,7 +16,7 @@ interface Props {
   onResize: (width: number, height: number, x: number, y: number) => void;
 }
 
-export function WindowFrame({ window: win, component: AppComponent, onFocus, onClose, onMinimize, onMaximize, onRestore, onMove, onResize }: Props) {
+export function WindowFrame({ window: win, component: AppComponent, componentProps, onFocus, onClose, onMinimize, onMaximize, onRestore, onMove, onResize }: Props) {
   if (win.isMinimized) return null;
 
   return (
@@ -46,7 +47,7 @@ export function WindowFrame({ window: win, component: AppComponent, onFocus, onC
           </div>
         </div>
         <div className={styles.content}>
-          <AppComponent />
+          <AppComponent {...(componentProps ?? {})} />
         </div>
       </div>
     </Rnd>

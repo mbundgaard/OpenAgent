@@ -1,3 +1,5 @@
+import type { ComponentType } from 'react';
+
 export interface WindowState {
   instanceId: string;
   appId: string;
@@ -8,4 +10,8 @@ export interface WindowState {
   isMaximized: boolean;
   preMaximizeRect?: { x: number; y: number; width: number; height: number };
   zIndex: number;
+  /** Component override for dynamic (non-registry) windows. */
+  component?: ComponentType<Record<string, unknown>>;
+  /** Props passed to the window component. */
+  componentProps?: Record<string, unknown>;
 }
