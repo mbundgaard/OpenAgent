@@ -62,6 +62,22 @@ public sealed class ProcessTerminalSession : ITerminalSession
 
         try
         {
+            // Echo input back since redirected stdin has no terminal echo
+            var echo = data.ToArray();
+            // Replace \r with \r\n for display in xterm
+            for (var i = 0; i < echo.Length; i++)
+            {
+                if (echo[i] == (byte)'\r')
+                {
+                    _outputChannel.Writer.TryWrite([.. echo[..i], (byte)'\r', (byte)'\n']);
+                    echo = echo[(i + 1)..];
+                    i = -1; // restart scan
+                    continue;
+                }
+            }
+            if (echo.Length > 0)
+                _outputChannel.Writer.TryWrite(echo);
+
             _process.StandardInput.BaseStream.Write(data);
             _process.StandardInput.BaseStream.Flush();
         }
