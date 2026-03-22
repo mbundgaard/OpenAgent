@@ -1,9 +1,7 @@
 .desktop {
   width: 100vw;
   height: 100vh;
-  background: var(--color-bg);
-  background-image: radial-gradient(ellipse at 20% 50%, rgba(15, 52, 96, 0.5) 0%, transparent 60%),
-                    radial-gradient(ellipse at 80% 20%, rgba(233, 69, 96, 0.08) 0%, transparent 50%);
+  background: var(--color-bg) url('/wallpaper.jpg') center / cover no-repeat;
   display: flex;
   flex-direction: column;
   overflow: hidden;
