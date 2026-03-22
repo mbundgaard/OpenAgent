@@ -14,7 +14,8 @@
   justify-content: space-between;
   height: var(--window-title-height);
   padding: 0 8px 0 12px;
-  background: var(--color-primary);
+  background: rgba(15, 52, 96, 0.6);
+  backdrop-filter: blur(12px);
   cursor: default;
   user-select: none;
   flex-shrink: 0;
