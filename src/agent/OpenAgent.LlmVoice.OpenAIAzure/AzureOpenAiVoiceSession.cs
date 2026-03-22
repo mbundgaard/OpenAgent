@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
 using OpenAgent.LlmVoice.OpenAIAzure.Protocol;
@@ -221,18 +222,53 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             var callId = envelope.CallId ?? "";
             var conversationId = _conversation.Id;
 
+            // Persist the tool call as an assistant message
+            var toolCalls = JsonSerializer.Serialize(new[]
+            {
+                new { id = callId, type = "function", function = new { name, arguments } }
+            });
+            _agentLogic.AddMessage(conversationId, new Message
+            {
+                Id = Guid.NewGuid().ToString(),
+                ConversationId = conversationId,
+                Role = "assistant",
+                ToolCalls = toolCalls
+            });
+
             _ = Task.Run(async () =>
             {
                 try
                 {
                     _logger.LogDebug("Executing voice tool {ToolName} for conversation {ConversationId}", name, conversationId);
                     var result = await _agentLogic.ExecuteToolAsync(conversationId, name, arguments, ct);
+
+                    // Persist tool result summary
+                    _agentLogic.AddMessage(conversationId, new Message
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        ConversationId = conversationId,
+                        Role = "tool",
+                        Content = ToolResultSummary.Create(name, result),
+                        ToolCallId = callId
+                    });
+
                     await SendToolResultAndContinueAsync(callId, result, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Voice tool {ToolName} failed for conversation {ConversationId}", name, conversationId);
                     var errorResult = JsonSerializer.Serialize(new { error = ex.Message });
+
+                    // Persist error summary
+                    _agentLogic.AddMessage(conversationId, new Message
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        ConversationId = conversationId,
+                        Role = "tool",
+                        Content = ToolResultSummary.Create(name, errorResult),
+                        ToolCallId = callId
+                    });
+
                     await SendToolResultAndContinueAsync(callId, errorResult, ct);
                 }
             }, ct);
@@ -242,6 +278,19 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         var voiceEvent = MapEvent(envelope);
         if (voiceEvent is not null)
         {
+            // Persist completed transcripts as messages
+            if (voiceEvent is TranscriptDone td)
+            {
+                var role = td.Source == TranscriptSource.User ? "user" : "assistant";
+                _agentLogic.AddMessage(_conversation.Id, new Message
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    ConversationId = _conversation.Id,
+                    Role = role,
+                    Content = td.Text
+                });
+            }
+
             await _channel.Writer.WriteAsync(voiceEvent, ct);
         }
     }
@@ -269,6 +318,11 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             SessionId = idProp.GetString() ?? "";
             _logger.LogDebug("Session created with ID {SessionId} for conversation {ConversationId}",
                 SessionId, _conversation.Id);
+
+            // Update conversation with session state
+            _conversation.VoiceSessionId = SessionId;
+            _conversation.VoiceSessionOpen = true;
+            _agentLogic.UpdateConversation(_conversation);
         }
         return null;
     }

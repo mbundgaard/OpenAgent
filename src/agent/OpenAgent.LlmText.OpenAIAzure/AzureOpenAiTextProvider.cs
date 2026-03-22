@@ -195,13 +195,13 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
                     yield return new ToolResultEvent(id, name, result);
 
-                    // Persist tool result
+                    // Persist tool result summary (compact), keep full result in-memory for current turn
                     agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = result,
+                        Content = ToolResultSummary.Create(name, result),
                         ToolCallId = id
                     });
                     request.Messages.Add(new ChatMessage

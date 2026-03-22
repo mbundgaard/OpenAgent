@@ -41,6 +41,14 @@ public sealed class VoiceSessionManager : IVoiceSessionManager, IAsyncDisposable
             return;
 
         await session.DisposeAsync();
+
+        // Mark voice session as closed on the conversation
+        var conversation = _store.Get(conversationId);
+        if (conversation is not null)
+        {
+            conversation.VoiceSessionOpen = false;
+            _store.Update(conversation);
+        }
     }
 
     public async ValueTask DisposeAsync()
