@@ -14,14 +14,16 @@ namespace OpenAgent.Terminal;
 /// </summary>
 public sealed class PtyTerminalSession : ITerminalSession, IAsyncDisposable
 {
+    // Lock for thread-safe PTY allocation (ptsname returns a static buffer)
+    private static readonly object PtyAllocLock = new();
+
     private readonly int _masterFd;
-    private readonly string _slavePath;
     private readonly Process _process;
     private readonly Channel<byte[]> _outputChannel;
     private readonly Thread _readThread;
     private readonly CancellationTokenSource _cts = new();
     private readonly ILogger _logger;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <summary>
     /// Creates a new PTY session. Allocates the PTY pair, sets initial window size,
@@ -31,29 +33,35 @@ public sealed class PtyTerminalSession : ITerminalSession, IAsyncDisposable
     {
         _logger = logger;
 
-        // Allocate PTY master
-        _masterFd = PtyInterop.posix_openpt(PtyInterop.O_RDWR | PtyInterop.O_NOCTTY);
-        if (_masterFd < 0)
-            throw new InvalidOperationException($"posix_openpt failed: errno {Marshal.GetLastPInvokeError()}");
+        string slavePath;
 
-        // Grant + unlock slave
-        if (PtyInterop.grantpt(_masterFd) != 0)
+        // Lock the entire PTY allocation sequence — ptsname is not thread-safe
+        lock (PtyAllocLock)
         {
-            PtyInterop.close(_masterFd);
-            throw new InvalidOperationException($"grantpt failed: errno {Marshal.GetLastPInvokeError()}");
-        }
-        if (PtyInterop.unlockpt(_masterFd) != 0)
-        {
-            PtyInterop.close(_masterFd);
-            throw new InvalidOperationException($"unlockpt failed: errno {Marshal.GetLastPInvokeError()}");
+            // Allocate PTY master
+            _masterFd = PtyInterop.posix_openpt(PtyInterop.O_RDWR | PtyInterop.O_NOCTTY);
+            if (_masterFd < 0)
+                throw new InvalidOperationException($"posix_openpt failed: errno {Marshal.GetLastPInvokeError()}");
+
+            // Grant + unlock slave
+            if (PtyInterop.grantpt(_masterFd) != 0)
+            {
+                PtyInterop.close(_masterFd);
+                throw new InvalidOperationException($"grantpt failed: errno {Marshal.GetLastPInvokeError()}");
+            }
+            if (PtyInterop.unlockpt(_masterFd) != 0)
+            {
+                PtyInterop.close(_masterFd);
+                throw new InvalidOperationException($"unlockpt failed: errno {Marshal.GetLastPInvokeError()}");
+            }
+
+            // Get slave device path (static buffer — must copy before releasing lock)
+            var slavePtr = PtyInterop.ptsname(_masterFd);
+            slavePath = Marshal.PtrToStringUTF8(slavePtr)
+                ?? throw new InvalidOperationException("ptsname returned null");
         }
 
-        // Get slave device path
-        var slavePtr = PtyInterop.ptsname(_masterFd);
-        _slavePath = Marshal.PtrToStringUTF8(slavePtr)
-            ?? throw new InvalidOperationException("ptsname returned null");
-
-        _logger.LogDebug("PTY allocated: master fd={MasterFd}, slave={SlavePath}", _masterFd, _slavePath);
+        _logger.LogDebug("PTY allocated: master fd={MasterFd}, slave={SlavePath}", _masterFd, slavePath);
 
         // Set initial window size on master
         var ws = new PtyInterop.Winsize
@@ -68,7 +76,7 @@ public sealed class PtyTerminalSession : ITerminalSession, IAsyncDisposable
         var psi = new ProcessStartInfo
         {
             FileName = "/bin/bash",
-            ArgumentList = { "-c", $"exec setsid bash -i <{_slavePath} >{_slavePath} 2>&1" },
+            ArgumentList = { "-c", $"exec setsid bash -i <{slavePath} >{slavePath} 2>&1" },
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             RedirectStandardInput = false,
@@ -79,10 +87,19 @@ public sealed class PtyTerminalSession : ITerminalSession, IAsyncDisposable
         psi.Environment["TERM"] = "xterm-256color";
         psi.Environment["HOME"] = workingDirectory;
 
-        _process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start bash process");
+        try
+        {
+            _process = Process.Start(psi)
+                ?? throw new InvalidOperationException("Failed to start bash process");
+        }
+        catch
+        {
+            // Clean up PTY master fd if process start fails
+            PtyInterop.close(_masterFd);
+            throw;
+        }
 
-        _logger.LogDebug("Bash started: pid={Pid}, slave={SlavePath}", _process.Id, _slavePath);
+        _logger.LogDebug("Bash started: pid={Pid}, slave={SlavePath}", _process.Id, slavePath);
 
         // Output channel for async reads
         _outputChannel = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions
@@ -180,24 +197,31 @@ public sealed class PtyTerminalSession : ITerminalSession, IAsyncDisposable
     {
         var buffer = new byte[4096];
 
-        while (!_cts.IsCancellationRequested)
+        try
         {
-            ref var first = ref buffer[0];
-            var bytesRead = PtyInterop.read(_masterFd, ref first, (nint)buffer.Length);
-
-            // EOF or error — PTY closed (bash exited or master fd closed)
-            if (bytesRead <= 0)
+            while (!_cts.IsCancellationRequested)
             {
-                _logger.LogDebug("PTY read returned {BytesRead}, ending read loop", bytesRead);
-                break;
+                ref var first = ref buffer[0];
+                var bytesRead = PtyInterop.read(_masterFd, ref first, (nint)buffer.Length);
+
+                // EOF or error — PTY closed (bash exited or master fd closed)
+                if (bytesRead <= 0)
+                {
+                    _logger.LogDebug("PTY read returned {BytesRead}, ending read loop", bytesRead);
+                    break;
+                }
+
+                // Copy the read bytes and push to channel
+                var chunk = new byte[bytesRead];
+                Buffer.BlockCopy(buffer, 0, chunk, 0, (int)bytesRead);
+
+                if (!_outputChannel.Writer.TryWrite(chunk))
+                    break;
             }
-
-            // Copy the read bytes and push to channel
-            var chunk = new byte[bytesRead];
-            Buffer.BlockCopy(buffer, 0, chunk, 0, (int)bytesRead);
-
-            if (!_outputChannel.Writer.TryWrite(chunk))
-                break;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "PTY read loop ended with exception");
         }
 
         _outputChannel.Writer.TryComplete();

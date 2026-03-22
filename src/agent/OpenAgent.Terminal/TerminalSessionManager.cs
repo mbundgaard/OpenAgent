@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 
@@ -6,12 +7,14 @@ namespace OpenAgent.Terminal;
 
 /// <summary>
 /// Manages terminal session lifecycle — create, retrieve, close.
+/// Uses PTY sessions on Linux, process-based sessions on Windows.
 /// Enforces a maximum concurrent session limit and handles cleanup on dispose.
 /// </summary>
 public sealed class TerminalSessionManager : ITerminalSessionManager, IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, ITerminalSession> _sessions = new();
     private readonly ILogger<TerminalSessionManager> _logger;
+    private readonly SemaphoreSlim _createLock = new(1, 1);
     private const int MaxSessions = 4;
 
     public TerminalSessionManager(ILogger<TerminalSessionManager> logger)
@@ -22,23 +25,33 @@ public sealed class TerminalSessionManager : ITerminalSessionManager, IAsyncDisp
     /// <inheritdoc />
     public ITerminalSession Create(string sessionId, string workingDirectory)
     {
-        if (_sessions.Count >= MaxSessions)
-            throw new InvalidOperationException($"Maximum terminal sessions ({MaxSessions}) reached.");
-
-        var session = new PtyTerminalSession(
-            workingDirectory,
-            cols: 80,
-            rows: 24,
-            _logger);
-
-        if (!_sessions.TryAdd(sessionId, session))
+        // Atomic check-and-add to prevent race conditions
+        _createLock.Wait();
+        try
         {
-            session.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            throw new InvalidOperationException($"Terminal session '{sessionId}' already exists.");
-        }
+            if (_sessions.Count >= MaxSessions)
+                throw new InvalidOperationException($"Maximum terminal sessions ({MaxSessions}) reached.");
 
-        _logger.LogInformation("Terminal session created: {SessionId}", sessionId);
-        return session;
+            if (_sessions.ContainsKey(sessionId))
+                throw new InvalidOperationException($"Terminal session '{sessionId}' already exists.");
+
+            var session = CreateSessionForPlatform(workingDirectory);
+
+            _sessions[sessionId] = session;
+            _logger.LogInformation("Terminal session created: {SessionId} ({Platform})",
+                sessionId, RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "PTY" : "Process");
+            return session;
+        }
+        catch
+        {
+            _createLock.Release();
+            throw;
+        }
+        finally
+        {
+            if (_createLock.CurrentCount == 0)
+                _createLock.Release();
+        }
     }
 
     /// <inheritdoc />
@@ -74,5 +87,21 @@ public sealed class TerminalSessionManager : ITerminalSessionManager, IAsyncDisp
         }
 
         _sessions.Clear();
+        _createLock.Dispose();
+    }
+
+    /// <summary>
+    /// Creates the right terminal session for the current platform.
+    /// Linux: PTY-based (full terminal with colors, interactive programs).
+    /// Windows: Process-based (redirected streams, basic shell commands).
+    /// </summary>
+    private ITerminalSession CreateSessionForPlatform(string workingDirectory)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            return new PtyTerminalSession(workingDirectory, cols: 80, rows: 24, _logger);
+        }
+
+        return new ProcessTerminalSession(workingDirectory, _logger);
     }
 }

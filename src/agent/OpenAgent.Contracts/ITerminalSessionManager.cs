@@ -3,7 +3,7 @@ namespace OpenAgent.Contracts;
 /// <summary>
 /// Manages terminal session lifecycle — create, retrieve, close.
 /// </summary>
-public interface ITerminalSessionManager
+public interface ITerminalSessionManager : IAsyncDisposable
 {
     /// <summary>Creates a new terminal session with the given working directory.</summary>
     ITerminalSession Create(string sessionId, string workingDirectory);

@@ -66,7 +66,8 @@ public static class WebSocketTerminalEndpoints
             }
             finally
             {
-                await sessionManager.CloseAsync(sessionId);
+                // Don't close the session on WebSocket disconnect — allow reconnection.
+                // Sessions are cleaned up via explicit close or idle timeout.
 
                 if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
                 {

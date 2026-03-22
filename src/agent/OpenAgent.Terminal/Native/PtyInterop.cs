@@ -12,39 +12,39 @@ internal static partial class PtyInterop
     // --- PTY allocation (safe, no fork) ---
 
     /// <summary>Opens a new pseudo-terminal master.</summary>
-    [LibraryImport("libc.so.6", SetLastError = true)]
+    [LibraryImport("c", SetLastError = true)]
     internal static partial int posix_openpt(int flags);
 
     /// <summary>Grants access to the slave PTY device.</summary>
-    [LibraryImport("libc.so.6", SetLastError = true)]
+    [LibraryImport("c", SetLastError = true)]
     internal static partial int grantpt(int masterFd);
 
     /// <summary>Unlocks the slave PTY device for opening.</summary>
-    [LibraryImport("libc.so.6", SetLastError = true)]
+    [LibraryImport("c", SetLastError = true)]
     internal static partial int unlockpt(int masterFd);
 
     /// <summary>Returns the path of the slave PTY device (e.g. /dev/pts/3).</summary>
-    [LibraryImport("libc.so.6", SetLastError = true)]
+    [LibraryImport("c", SetLastError = true)]
     internal static partial nint ptsname(int masterFd);
 
     // --- File descriptor I/O ---
 
     /// <summary>Reads bytes from a file descriptor.</summary>
-    [LibraryImport("libc.so.6", SetLastError = true)]
+    [LibraryImport("c", SetLastError = true)]
     internal static partial nint read(int fd, ref byte buf, nint count);
 
     /// <summary>Writes bytes to a file descriptor.</summary>
-    [LibraryImport("libc.so.6", SetLastError = true)]
+    [LibraryImport("c", SetLastError = true)]
     internal static partial nint write(int fd, ref byte buf, nint count);
 
     /// <summary>Closes a file descriptor.</summary>
-    [LibraryImport("libc.so.6", SetLastError = true)]
+    [LibraryImport("c", SetLastError = true)]
     internal static partial int close(int fd);
 
     // --- Terminal control ---
 
     /// <summary>Sets the terminal window size (TIOCSWINSZ).</summary>
-    [LibraryImport("libc.so.6", EntryPoint = "ioctl", SetLastError = true)]
+    [LibraryImport("c", EntryPoint = "ioctl", SetLastError = true)]
     internal static partial int ioctl_winsize(int fd, uint request, ref Winsize winsize);
 
     // --- Constants ---

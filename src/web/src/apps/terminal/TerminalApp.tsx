@@ -124,8 +124,11 @@ export function TerminalApp() {
       }
     };
 
+    // Debounced resize to avoid storms during window dragging
+    let resizeTimer: ReturnType<typeof setTimeout>;
     const resizeObserver = new ResizeObserver(() => {
-      sendResize();
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(sendResize, 100);
     });
     resizeObserver.observe(container);
 
@@ -136,6 +139,7 @@ export function TerminalApp() {
 
     // Cleanup
     return () => {
+      clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       dataDisposable.dispose();
       binaryDisposable.dispose();
