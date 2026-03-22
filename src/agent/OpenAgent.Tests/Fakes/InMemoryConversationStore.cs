@@ -65,7 +65,10 @@ public sealed class InMemoryConversationStore : IConversationStore
             ToolCalls = message.ToolCalls,
             ToolCallId = message.ToolCallId,
             ChannelMessageId = message.ChannelMessageId,
-            ReplyToChannelMessageId = message.ReplyToChannelMessageId
+            ReplyToChannelMessageId = message.ReplyToChannelMessageId,
+            PromptTokens = message.PromptTokens,
+            CompletionTokens = message.CompletionTokens,
+            ElapsedMs = message.ElapsedMs
         };
         _messages[conversationId].Add(withRowId);
     }

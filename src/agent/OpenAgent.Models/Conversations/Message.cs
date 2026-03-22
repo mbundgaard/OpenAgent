@@ -55,4 +55,19 @@ public sealed class Message
     [JsonPropertyName("row_id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public long RowId { get; init; }
+
+    /// <summary>Prompt tokens used for this turn (assistant messages only).</summary>
+    [JsonPropertyName("prompt_tokens")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? PromptTokens { get; init; }
+
+    /// <summary>Completion tokens generated for this turn (assistant messages only).</summary>
+    [JsonPropertyName("completion_tokens")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? CompletionTokens { get; init; }
+
+    /// <summary>Elapsed time in milliseconds for this turn (assistant messages only).</summary>
+    [JsonPropertyName("elapsed_ms")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? ElapsedMs { get; init; }
 }

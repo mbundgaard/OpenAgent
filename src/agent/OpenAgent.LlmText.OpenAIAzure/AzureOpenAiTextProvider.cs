@@ -61,6 +61,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
         var conversationId = conversation.Id;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         logger.LogDebug("StreamAsync called for conversation {ConversationId}", conversationId);
 
         // Persist the caller-supplied user message
@@ -103,6 +104,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             var toolCallAccumulator = new Dictionary<int, (string Id, string Name, System.Text.StringBuilder Args)>();
             string? finishReason = null;
             int? promptTokens = null;
+            int? completionTokens = null;
 
             using var stream = await httpResponse.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream);
@@ -118,7 +120,10 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
                 // Capture usage from the final chunk (sent when stream_options.include_usage is true)
                 if (chunk?.Usage is not null)
+                {
                     promptTokens = chunk.Usage.PromptTokens;
+                    completionTokens = chunk.Usage.CompletionTokens;
+                }
 
                 var choice = chunk?.Choices?.FirstOrDefault();
                 if (choice is null) continue;
@@ -215,27 +220,30 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 continue; // Re-call the LLM with tool results
             }
 
-            // Final text response — store and notify caller
+            // Final text response — store with usage stats
+            stopwatch.Stop();
             var assistantMessageId = Guid.NewGuid().ToString();
             agentLogic.AddMessage(conversationId, new Message
             {
                 Id = assistantMessageId,
                 ConversationId = conversationId,
                 Role = "assistant",
-                Content = fullContent.ToString()
+                Content = fullContent.ToString(),
+                PromptTokens = promptTokens,
+                CompletionTokens = completionTokens,
+                ElapsedMs = stopwatch.ElapsedMilliseconds
             });
 
-            // Update conversation with token usage from the last LLM call
-            if (promptTokens is not null)
-            {
-                conversation.LastPromptTokens = promptTokens;
-                agentLogic.UpdateConversation(conversation);
-                logger.LogDebug("Conversation {ConversationId}: {PromptTokens} prompt tokens",
-                    conversationId, promptTokens);
-            }
+            // Update conversation with token usage and turn stats
+            conversation.LastPromptTokens = promptTokens;
+            conversation.TotalPromptTokens += promptTokens ?? 0;
+            conversation.TotalCompletionTokens += completionTokens ?? 0;
+            conversation.TurnCount++;
+            conversation.LastActivity = DateTimeOffset.UtcNow;
+            agentLogic.UpdateConversation(conversation);
 
-            logger.LogDebug("Stream finished for conversation {ConversationId}, {ContentLength} chars",
-                conversationId, fullContent.Length);
+            logger.LogDebug("Conversation {ConversationId}: {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",
+                conversationId, promptTokens, completionTokens, stopwatch.ElapsedMilliseconds);
             yield return new AssistantMessageSaved(assistantMessageId);
             yield break;
         }

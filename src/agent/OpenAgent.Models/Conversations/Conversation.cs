@@ -68,4 +68,21 @@ public sealed class Conversation
     [JsonPropertyName("compaction_running")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool CompactionRunning { get; set; }
+
+    /// <summary>Cumulative prompt tokens across all turns.</summary>
+    [JsonPropertyName("total_prompt_tokens")]
+    public long TotalPromptTokens { get; set; }
+
+    /// <summary>Cumulative completion tokens across all turns.</summary>
+    [JsonPropertyName("total_completion_tokens")]
+    public long TotalCompletionTokens { get; set; }
+
+    /// <summary>Number of completed request/response turns.</summary>
+    [JsonPropertyName("turn_count")]
+    public int TurnCount { get; set; }
+
+    /// <summary>When the last message was sent or received.</summary>
+    [JsonPropertyName("last_activity")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? LastActivity { get; set; }
 }
