@@ -136,6 +136,7 @@ export function ConversationsApp() {
             <div className={styles.detailHeader}>
               <div className={styles.detailTop}>
                 <div className={styles.detailTitle}>
+                  <span className={styles.headerSource}>{detail.type}</span>
                   {editing ? (
                     <input
                       className={styles.editInput}
@@ -144,9 +145,8 @@ export function ConversationsApp() {
                       placeholder="Source name"
                     />
                   ) : (
-                    <span className={styles.headerSource}>{detail.type}</span>
+                    <span className={styles.headerType}>{detail.source}</span>
                   )}
-                  <span className={styles.headerType}>{detail.source}</span>
                 </div>
                 <div className={styles.detailActions}>
                   {editing ? (
