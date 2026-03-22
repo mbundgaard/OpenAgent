@@ -17,6 +17,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 
     public ChatEndpointTests(WebApplicationFactory<Program> factory)
     {
+        TestSetup.EnsureConfigSeeded();
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>

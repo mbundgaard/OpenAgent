@@ -19,6 +19,7 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
 
     public VoiceWebSocketTests(WebApplicationFactory<Program> factory)
     {
+        TestSetup.EnsureConfigSeeded();
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>

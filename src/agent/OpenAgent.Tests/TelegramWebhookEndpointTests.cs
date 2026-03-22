@@ -23,6 +23,7 @@ public class TelegramWebhookEndpointTests : IClassFixture<WebApplicationFactory<
 
     public TelegramWebhookEndpointTests(WebApplicationFactory<Program> factory)
     {
+        TestSetup.EnsureConfigSeeded();
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>

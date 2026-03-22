@@ -13,6 +13,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
 
     public ConversationEndpointTests(WebApplicationFactory<Program> factory)
     {
+        TestSetup.EnsureConfigSeeded();
         _factory = factory;
     }
 

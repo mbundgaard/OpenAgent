@@ -14,6 +14,7 @@ public class ApiKeyAuthTests : IClassFixture<WebApplicationFactory<Program>>
 
     public ApiKeyAuthTests(WebApplicationFactory<Program> factory)
     {
+        TestSetup.EnsureConfigSeeded();
         _factory = factory;
     }
 

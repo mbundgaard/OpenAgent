@@ -15,12 +15,12 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
 
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
-        new() { Key = "textProvider", Label = "Text Provider", Type = "String", Required = true, DefaultValue = "azure-openai-text" },
-        new() { Key = "textModel", Label = "Text Model", Type = "String", Required = true, DefaultValue = "gpt-5.2-chat" },
-        new() { Key = "voiceProvider", Label = "Voice Provider", Type = "String", Required = true, DefaultValue = "azure-openai-voice" },
-        new() { Key = "voiceModel", Label = "Voice Model", Type = "String", Required = true, DefaultValue = "gpt-realtime" },
-        new() { Key = "compactionProvider", Label = "Compaction Provider", Type = "String", Required = true, DefaultValue = "azure-openai-text" },
-        new() { Key = "compactionModel", Label = "Compaction Model", Type = "String", Required = true, DefaultValue = "gpt-4.1-mini" }
+        new() { Key = "textProvider", Label = "Text Provider", Type = "String", Required = true },
+        new() { Key = "textModel", Label = "Text Model", Type = "String", Required = true },
+        new() { Key = "voiceProvider", Label = "Voice Provider", Type = "String", Required = true },
+        new() { Key = "voiceModel", Label = "Voice Model", Type = "String", Required = true },
+        new() { Key = "compactionProvider", Label = "Compaction Provider", Type = "String", Required = true },
+        new() { Key = "compactionModel", Label = "Compaction Model", Type = "String", Required = true }
     ];
 
     public void Configure(JsonElement configuration)
