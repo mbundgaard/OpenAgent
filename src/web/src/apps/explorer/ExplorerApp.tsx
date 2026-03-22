@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FileEntry } from './api';
-import { listDirectory } from './api';
+import { listDirectory, downloadFile, renameFile, deleteFile } from './api';
 import { FileViewerApp } from './FileViewerApp';
+import { ContextMenu } from './ContextMenu';
+import type { MenuItem } from './ContextMenu';
 import { useWindowContext } from '../../windows/WindowContext';
 import styles from './ExplorerApp.module.css';
 
@@ -13,11 +15,20 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+interface ContextMenuState {
+  x: number;
+  y: number;
+  entry: FileEntry;
+}
+
 export function ExplorerApp() {
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const { openDynamicWindow } = useWindowContext();
 
   const navigate = useCallback((path: string) => {
@@ -44,18 +55,103 @@ export function ExplorerApp() {
     }
   };
 
+  const openViewer = (entry: FileEntry) => {
+    openDynamicWindow({
+      id: `file-viewer-${entry.path}`,
+      title: entry.name,
+      component: FileViewerApp as unknown as React.ComponentType<Record<string, unknown>>,
+      componentProps: { filePath: entry.path },
+      defaultSize: { width: 600, height: 500 },
+    });
+  };
+
   const handleDoubleClick = (entry: FileEntry) => {
     if (entry.isDirectory) {
       navigate(entry.path);
     } else {
-      openDynamicWindow({
-        id: `file-viewer-${entry.path}`,
-        title: entry.name,
-        component: FileViewerApp as unknown as React.ComponentType<Record<string, unknown>>,
-        componentProps: { filePath: entry.path },
-        defaultSize: { width: 600, height: 500 },
+      openViewer(entry);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, entry: FileEntry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, entry });
+  };
+
+  const handleView = (entry: FileEntry) => {
+    if (entry.isDirectory) {
+      navigate(entry.path);
+    } else {
+      openViewer(entry);
+    }
+  };
+
+  const handleDownload = async (entry: FileEntry) => {
+    try {
+      await downloadFile(entry.path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed');
+    }
+  };
+
+  const startRename = (entry: FileEntry) => {
+    setRenaming(entry.path);
+    setRenameValue(entry.name);
+  };
+
+  const submitRename = async (entry: FileEntry) => {
+    const newName = renameValue.trim();
+    setRenaming(null);
+    if (!newName || newName === entry.name) return;
+
+    try {
+      await renameFile(entry.path, newName);
+      navigate(currentPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rename failed');
+    }
+  };
+
+  const handleDelete = async (entry: FileEntry) => {
+    const label = entry.isDirectory ? 'directory' : 'file';
+    if (!confirm(`Delete ${label} "${entry.name}"?`)) return;
+
+    try {
+      await deleteFile(entry.path);
+      navigate(currentPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
+
+  const getMenuItems = (entry: FileEntry): MenuItem[] => {
+    const items: MenuItem[] = [];
+
+    items.push({
+      label: entry.isDirectory ? 'Open' : 'View',
+      action: () => handleView(entry),
+    });
+
+    if (!entry.isDirectory) {
+      items.push({
+        label: 'Download',
+        action: () => handleDownload(entry),
       });
     }
+
+    items.push({
+      label: 'Rename',
+      action: () => startRename(entry),
+    });
+
+    items.push({
+      label: 'Delete',
+      action: () => handleDelete(entry),
+      danger: true,
+    });
+
+    return items;
   };
 
   return (
@@ -122,10 +218,27 @@ export function ExplorerApp() {
             key={entry.path}
             className={styles.fileRow}
             onDoubleClick={() => handleDoubleClick(entry)}
+            onContextMenu={(e) => handleContextMenu(e, entry)}
           >
             <span className={styles.colName}>
               <span className={styles.icon}>{entry.isDirectory ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}</span>
-              <span className={styles.fileName}>{entry.name}</span>
+              {renaming === entry.path ? (
+                <input
+                  className={styles.renameInput}
+                  value={renameValue}
+                  onChange={e => setRenameValue(e.target.value)}
+                  onBlur={() => submitRename(entry)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') submitRename(entry);
+                    if (e.key === 'Escape') setRenaming(null);
+                  }}
+                  onClick={e => e.stopPropagation()}
+                  onDoubleClick={e => e.stopPropagation()}
+                  autoFocus
+                />
+              ) : (
+                <span className={styles.fileName}>{entry.name}</span>
+              )}
             </span>
             <span className={styles.colSize}>
               {entry.isDirectory ? '--' : formatSize(entry.size ?? 0)}
@@ -136,6 +249,16 @@ export function ExplorerApp() {
           </button>
         ))}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={getMenuItems(contextMenu.entry)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

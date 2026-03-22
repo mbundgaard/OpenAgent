@@ -153,6 +153,19 @@
   white-space: nowrap;
 }
 
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-accent);
+  border-radius: 3px;
+  color: var(--color-text);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 1px 4px;
+  outline: none;
+}
+
 .muted {
   padding: 12px;
   font-size: 12px;

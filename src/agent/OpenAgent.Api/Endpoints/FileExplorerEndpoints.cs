@@ -83,6 +83,88 @@ public static class FileExplorerEndpoints
                 Content = content
             });
         });
+
+        // Download file as binary attachment
+        group.MapGet("/download", (string path, AgentEnvironment env) =>
+        {
+            var dataRoot = Path.GetFullPath(env.DataPath);
+            var fullPath = ResolveSafePath(dataRoot, path);
+            if (fullPath is null)
+                return Results.Forbid();
+
+            if (!System.IO.File.Exists(fullPath))
+                return Results.NotFound(new { error = "File not found" });
+
+            var fileName = Path.GetFileName(fullPath);
+            return Results.File(fullPath, "application/octet-stream", fileName);
+        });
+
+        // Rename a file or directory
+        group.MapPost("/rename", (RenameRequest request, AgentEnvironment env) =>
+        {
+            var dataRoot = Path.GetFullPath(env.DataPath);
+            var fullPath = ResolveSafePath(dataRoot, request.Path);
+            if (fullPath is null)
+                return Results.Forbid();
+
+            // New name must not contain path separators
+            if (request.NewName.Contains('/') || request.NewName.Contains('\\'))
+                return Results.BadRequest(new { error = "Name cannot contain path separators" });
+
+            var parentDir = Path.GetDirectoryName(fullPath)!;
+            var newFullPath = Path.Combine(parentDir, request.NewName);
+
+            // Validate the new path also stays within dataRoot
+            if (ResolveSafePath(dataRoot, Path.GetRelativePath(dataRoot, newFullPath)) is null)
+                return Results.Forbid();
+
+            var isDirectory = Directory.Exists(fullPath);
+            var isFile = System.IO.File.Exists(fullPath);
+
+            if (!isDirectory && !isFile)
+                return Results.NotFound(new { error = "File or directory not found" });
+
+            if (Directory.Exists(newFullPath) || System.IO.File.Exists(newFullPath))
+                return Results.Conflict(new { error = "A file or directory with that name already exists" });
+
+            if (isDirectory)
+                Directory.Move(fullPath, newFullPath);
+            else
+                System.IO.File.Move(fullPath, newFullPath);
+
+            return Results.Ok(new FileEntry
+            {
+                Name = request.NewName,
+                Path = Path.GetRelativePath(dataRoot, newFullPath).Replace('\\', '/'),
+                IsDirectory = isDirectory,
+                Size = isFile ? new FileInfo(newFullPath).Length : null,
+                ModifiedAt = isDirectory
+                    ? new DirectoryInfo(newFullPath).LastWriteTimeUtc
+                    : new FileInfo(newFullPath).LastWriteTimeUtc
+            });
+        });
+
+        // Delete a file or directory
+        group.MapDelete("/", (string path, AgentEnvironment env) =>
+        {
+            var dataRoot = Path.GetFullPath(env.DataPath);
+            var fullPath = ResolveSafePath(dataRoot, path);
+            if (fullPath is null)
+                return Results.Forbid();
+
+            // Prevent deleting the data root itself
+            if (string.Equals(fullPath, dataRoot, StringComparison.OrdinalIgnoreCase))
+                return Results.Forbid();
+
+            if (Directory.Exists(fullPath))
+                Directory.Delete(fullPath, recursive: true);
+            else if (System.IO.File.Exists(fullPath))
+                System.IO.File.Delete(fullPath);
+            else
+                return Results.NotFound(new { error = "File or directory not found" });
+
+            return Results.NoContent();
+        });
     }
 
     /// <summary>
@@ -115,6 +197,18 @@ public sealed class FileEntry
 
     [JsonPropertyName("modifiedAt")]
     public DateTime ModifiedAt { get; init; }
+}
+
+/// <summary>
+/// Request to rename a file or directory.
+/// </summary>
+public sealed class RenameRequest
+{
+    [JsonPropertyName("path")]
+    public required string Path { get; init; }
+
+    [JsonPropertyName("newName")]
+    public required string NewName { get; init; }
 }
 
 /// <summary>
