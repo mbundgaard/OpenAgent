@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { readFile } from './api';
 import styles from './FileViewerApp.module.css';
 
@@ -12,7 +12,7 @@ export function FileViewerApp({ filePath }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
     setError(null);
     readFile(filePath)
@@ -21,12 +21,17 @@ export function FileViewerApp({ filePath }: Props) {
       .finally(() => setLoading(false));
   }, [filePath]);
 
-  if (loading) return <div className={styles.status}>Loading...</div>;
-  if (error) return <div className={styles.error}>{error}</div>;
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div className={styles.container}>
-      <pre className={styles.content}>{content}</pre>
+      <div className={styles.toolbar}>
+        <span className={styles.path}>{filePath}</span>
+        <button className={styles.refreshButton} onClick={load} title="Refresh">{'\u21BB'}</button>
+      </div>
+      {loading && <div className={styles.status}>Loading...</div>}
+      {error && <div className={styles.error}>{error}</div>}
+      {!loading && !error && <pre className={styles.content}>{content}</pre>}
     </div>
   );
 }
