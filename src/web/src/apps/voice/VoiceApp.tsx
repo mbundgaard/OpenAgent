@@ -76,9 +76,7 @@ export function VoiceApp() {
     const token = getToken();
     const conversationId = conversationIdRef.current;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const apiPort = '5264';
-    const url = `${protocol}//${host}:${apiPort}/ws/conversations/${conversationId}/voice?api_key=${token}`;
+    const url = `${protocol}//${window.location.host}/ws/conversations/${conversationId}/voice?api_key=${token}`;
 
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
