@@ -196,7 +196,7 @@ export function ExplorerApp() {
           onClick={() => fileInputRef.current?.click()}
           title="Upload"
         >
-          {'\u2191'}
+          {'\u2B06'}
         </button>
         <input
           ref={fileInputRef}
