@@ -134,26 +134,7 @@ export function ConversationsApp() {
           <>
             {/* Detail header */}
             <div className={styles.detailHeader}>
-              <div className={styles.detailTop}>
-                <div className={styles.detailTitle} />
-                <div className={styles.detailActions}>
-                  {editing ? (
-                    <>
-                      <button className={styles.saveButton} onClick={saveEditing} disabled={saving}>
-                        {saving ? '...' : 'Save'}
-                      </button>
-                      <button className={styles.cancelButton} onClick={cancelEditing}>Cancel</button>
-                    </>
-                  ) : (
-                    <>
-                      <button className={styles.editButton} onClick={startEditing}>Edit</button>
-                      <button className={styles.deleteButton} onClick={() => handleDelete(selected)}>Delete</button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Provider / Model / Name */}
+              {/* Provider / Model / Name + Actions */}
               <div className={styles.detailRow}>
                 {editing ? (
                   <>
@@ -177,9 +158,21 @@ export function ConversationsApp() {
                       onChange={e => setEditSource(e.target.value)}
                       placeholder="Name"
                     />
+                    <div className={styles.detailActions}>
+                      <button className={styles.saveButton} onClick={saveEditing} disabled={saving}>
+                        {saving ? '...' : 'Save'}
+                      </button>
+                      <button className={styles.cancelButton} onClick={cancelEditing}>Cancel</button>
+                    </div>
                   </>
                 ) : (
-                  <span className={styles.detailLabel}>{detail.provider} / {detail.model} / {detail.source}</span>
+                  <>
+                    <span className={styles.detailLabel}>{detail.provider} / {detail.model} / {detail.source}</span>
+                    <div className={styles.detailActions}>
+                      <button className={styles.editButton} onClick={startEditing}>Edit</button>
+                      <button className={styles.deleteButton} onClick={() => handleDelete(selected)}>Delete</button>
+                    </div>
+                  </>
                 )}
               </div>
 
