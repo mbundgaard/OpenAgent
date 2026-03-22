@@ -32,6 +32,18 @@ public static class AdminEndpoints
         });
 
         /// <summary>
+        /// Returns available models for a provider. Empty array if not a model provider.
+        /// </summary>
+        group.MapGet("/{key}/models", (string key, IEnumerable<IConfigurable> configurables) =>
+        {
+            var configurable = configurables.FirstOrDefault(c => c.Key == key);
+            if (configurable is null)
+                return Results.NotFound();
+
+            return Results.Ok(configurable.Models);
+        });
+
+        /// <summary>
         /// Returns the current saved configuration values for a provider.
         /// Secret fields are masked with "***".
         /// </summary>

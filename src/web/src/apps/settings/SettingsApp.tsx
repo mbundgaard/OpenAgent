@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listProviders } from './api';
+import { AgentConfigForm } from './AgentConfigForm';
 import { ConnectionsForm } from './ConnectionsForm';
 import { ProviderForm } from './ProviderForm';
 import { SystemPromptForm } from './SystemPromptForm';
@@ -8,7 +9,7 @@ import styles from './SettingsApp.module.css';
 export function SettingsApp() {
   const [providers, setProviders] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'providers' | 'prompt' | 'connections'>('providers');
+  const [activeTab, setActiveTab] = useState<'agent' | 'providers' | 'prompt' | 'connections'>('agent');
 
   useEffect(() => {
     listProviders().then(setProviders).catch(() => {});
@@ -18,9 +19,18 @@ export function SettingsApp() {
     setExpanded(prev => prev === key ? null : key);
   };
 
+  // Filter out "agent" from provider list — it has its own tab
+  const providerKeys = providers.filter(k => k !== 'agent');
+
   return (
     <div className={styles.settings}>
       <div className={styles.tabBar}>
+        <button
+          className={`${styles.mainTab} ${activeTab === 'agent' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('agent')}
+        >
+          Agent
+        </button>
         <button
           className={`${styles.mainTab} ${activeTab === 'providers' ? styles.activeTab : ''}`}
           onClick={() => setActiveTab('providers')}
@@ -41,12 +51,18 @@ export function SettingsApp() {
         </button>
       </div>
 
+      {activeTab === 'agent' && (
+        <div className={styles.providers}>
+          <AgentConfigForm />
+        </div>
+      )}
+
       {activeTab === 'providers' && (
         <div className={styles.providers}>
-          {providers.length === 0 && (
+          {providerKeys.length === 0 && (
             <p className={styles.placeholder}>No providers found.</p>
           )}
-          {providers.map(key => (
+          {providerKeys.map(key => (
             <div key={key} className={styles.provider}>
               <button className={styles.providerHeader} onClick={() => toggle(key)}>
                 <span className={styles.chevron}>{expanded === key ? '\u25BC' : '\u25B6'}</span>

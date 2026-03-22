@@ -27,6 +27,12 @@ export async function getProviderValues(key: string): Promise<Record<string, unk
   return res.json();
 }
 
+/** Get available models for a provider. */
+export async function getProviderModels(key: string): Promise<string[]> {
+  const res = await apiFetch(`/api/admin/providers/${key}/models`);
+  return res.json();
+}
+
 /** Save provider configuration. */
 export async function saveProviderConfig(key: string, config: Record<string, string>): Promise<void> {
   await apiFetch(`/api/admin/providers/${key}/config`, {

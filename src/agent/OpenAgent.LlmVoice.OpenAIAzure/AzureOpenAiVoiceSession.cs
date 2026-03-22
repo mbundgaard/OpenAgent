@@ -45,7 +45,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         var host = new Uri(_config.Endpoint).Host;
         var uri = new Uri(
             $"wss://{host}/openai/realtime" +
-            $"?api-version={_config.ApiVersion}&deployment={_config.DeploymentName}");
+            $"?api-version={_config.ApiVersion}&deployment={_conversation.Model}");
 
         _ws.Options.SetRequestHeader("api-key", _config.ApiKey);
 

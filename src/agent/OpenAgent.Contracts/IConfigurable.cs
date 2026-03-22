@@ -17,4 +17,7 @@ public interface IConfigurable
 
     /// <summary>Applies configuration from a JSON payload. Throws on invalid or missing values.</summary>
     void Configure(JsonElement configuration);
+
+    /// <summary>Available models/deployments for this provider. Empty if not a model provider.</summary>
+    IReadOnlyList<string> Models => [];
 }

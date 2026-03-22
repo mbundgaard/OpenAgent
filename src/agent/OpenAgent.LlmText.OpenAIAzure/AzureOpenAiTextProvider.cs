@@ -23,9 +23,11 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
     [
         new() { Key = "apiKey", Label = "API Key", Type = "Secret", Required = true },
         new() { Key = "endpoint", Label = "Endpoint", Type = "String", Required = true },
-        new() { Key = "deploymentName", Label = "Deployment Name", Type = "String", Required = true },
+        new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true },
         new() { Key = "apiVersion", Label = "API Version", Type = "String", DefaultValue = "2025-04-01-preview" }
     ];
+
+    public IReadOnlyList<string> Models => _config?.Models ?? [];
 
     public void Configure(JsonElement configuration)
     {
@@ -37,8 +39,12 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             throw new InvalidOperationException("apiKey is required.");
         if (string.IsNullOrWhiteSpace(_config.Endpoint))
             throw new InvalidOperationException("endpoint is required.");
-        if (string.IsNullOrWhiteSpace(_config.DeploymentName))
-            throw new InvalidOperationException("deploymentName is required.");
+
+        // Parse models from comma-separated string if provided as a single string
+        if (configuration.TryGetProperty("models", out var modelsProp) && modelsProp.ValueKind == JsonValueKind.String)
+        {
+            _config.Models = modelsProp.GetString()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
 
         var baseUri = _config.Endpoint.TrimEnd('/');
         _httpClient?.Dispose();
@@ -48,8 +54,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         };
         _httpClient.DefaultRequestHeaders.Add("api-key", _config.ApiKey);
 
-        logger.LogInformation("Text provider configured for deployment {DeploymentName} at {Endpoint}",
-            _config.DeploymentName, _config.Endpoint);
+        logger.LogInformation("Text provider configured with {ModelCount} models at {Endpoint}",
+            _config.Models.Length, _config.Endpoint);
     }
 
     public void Dispose() => _httpClient?.Dispose();
