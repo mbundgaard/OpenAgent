@@ -99,11 +99,12 @@ export function ConversationsApp() {
     <div className={styles.container}>
       <div className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
-          <span className={styles.sidebarTitle}>Conversations</span>
+          <span className={styles.sidebarTitle}>
+            Conversations{loading && <span className={styles.loadingDot}> ...</span>}
+          </span>
           <button className={styles.refreshButton} onClick={refresh} title="Refresh">{'\u21BB'}</button>
         </div>
         <div className={styles.list}>
-          {loading && <div className={styles.muted}>Loading...</div>}
           {!loading && conversations.length === 0 && (
             <div className={styles.muted}>No conversations</div>
           )}
