@@ -57,7 +57,13 @@ export function ProviderForm({ providerKey }: Props) {
     setSaving(true);
     setStatus(null);
     try {
-      await saveProviderConfig(providerKey, values);
+      // Exclude empty secret fields that haven't been changed (still masked)
+      const payload: Record<string, string> = {};
+      for (const [key, value] of Object.entries(values)) {
+        if (value === '' && maskedFields.has(key)) continue;
+        payload[key] = value;
+      }
+      await saveProviderConfig(providerKey, payload);
       setStatus('Saved');
       setTimeout(() => setStatus(null), 2000);
     } catch {

@@ -71,8 +71,27 @@ public static class AdminEndpoints
             if (configurable is null)
                 return Results.NotFound();
 
-            configurable.Configure(config);
-            configStore.Save(key, config);
+            // Merge incoming config with existing saved config so partial updates work
+            // (e.g. changing voice without re-sending the apiKey)
+            var existing = configStore.Load(key);
+            JsonElement merged;
+            if (existing.HasValue)
+            {
+                var dict = new Dictionary<string, JsonElement>();
+                foreach (var prop in existing.Value.EnumerateObject())
+                    dict[prop.Name] = prop.Value;
+                foreach (var prop in config.EnumerateObject())
+                    dict[prop.Name] = prop.Value;
+
+                merged = JsonSerializer.SerializeToElement(dict);
+            }
+            else
+            {
+                merged = config;
+            }
+
+            configurable.Configure(merged);
+            configStore.Save(key, merged);
 
             return Results.NoContent();
         });
