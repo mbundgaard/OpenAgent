@@ -75,6 +75,13 @@
   opacity: 0.5;
 }
 
+/* Main area — horizontal split between file list and viewer */
+.mainArea {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
 .fileList {
   flex: 1;
   overflow-y: auto;
@@ -83,6 +90,11 @@
 
 .fileList::-webkit-scrollbar {
   display: none;
+}
+
+.fileListNarrow {
+  flex: 0 0 260px;
+  border-right: 1px solid var(--color-border);
 }
 
 .headerRow {
@@ -116,6 +128,10 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+.fileRowSelected {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .colName {
   flex: 1;
   display: flex;
@@ -141,6 +157,12 @@
   font-size: 11px;
 }
 
+/* Hide size and date columns when the file list is narrow */
+.fileListNarrow .colSize,
+.fileListNarrow .colDate {
+  display: none;
+}
+
 .icon {
   flex-shrink: 0;
   font-size: 14px;
@@ -163,4 +185,66 @@
   padding: 12px;
   font-size: 12px;
   color: var(--color-accent);
+}
+
+/* Viewer panel */
+.viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.viewerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.viewerTitle {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewerClose {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.viewerClose:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+}
+
+.viewerContent {
+  flex: 1;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.viewerContent::-webkit-scrollbar {
+  display: none;
+}
+
+.viewerText {
+  margin: 0;
+  padding: 10px;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text);
 }

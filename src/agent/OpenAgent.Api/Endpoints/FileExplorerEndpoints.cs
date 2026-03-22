@@ -24,9 +24,8 @@ public static class FileExplorerEndpoints
             var dataRoot = Path.GetFullPath(env.DataPath);
             var requestedPath = string.IsNullOrEmpty(path) ? "" : path;
 
-            // Resolve and validate the target directory stays within dataRoot
-            var fullPath = Path.GetFullPath(Path.Combine(dataRoot, requestedPath));
-            if (!fullPath.StartsWith(dataRoot, StringComparison.OrdinalIgnoreCase))
+            var fullPath = ResolveSafePath(dataRoot, requestedPath);
+            if (fullPath is null)
                 return Results.Forbid();
 
             if (!Directory.Exists(fullPath))
@@ -64,6 +63,36 @@ public static class FileExplorerEndpoints
 
             return Results.Ok(entries);
         });
+
+        // Read file contents as text
+        group.MapGet("/content", (string path, AgentEnvironment env) =>
+        {
+            var dataRoot = Path.GetFullPath(env.DataPath);
+            var fullPath = ResolveSafePath(dataRoot, path);
+            if (fullPath is null)
+                return Results.Forbid();
+
+            if (!System.IO.File.Exists(fullPath))
+                return Results.NotFound(new { error = "File not found" });
+
+            var content = System.IO.File.ReadAllText(fullPath);
+            return Results.Ok(new FileContentResponse
+            {
+                Path = Path.GetRelativePath(dataRoot, fullPath).Replace('\\', '/'),
+                Name = Path.GetFileName(fullPath),
+                Content = content
+            });
+        });
+    }
+
+    /// <summary>
+    /// Resolves a relative path within the data root and validates it doesn't escape.
+    /// Returns null if the path escapes the root.
+    /// </summary>
+    private static string? ResolveSafePath(string dataRoot, string relativePath)
+    {
+        var fullPath = Path.GetFullPath(Path.Combine(dataRoot, relativePath));
+        return fullPath.StartsWith(dataRoot, StringComparison.OrdinalIgnoreCase) ? fullPath : null;
     }
 }
 
@@ -86,4 +115,19 @@ public sealed class FileEntry
 
     [JsonPropertyName("modifiedAt")]
     public DateTime ModifiedAt { get; init; }
+}
+
+/// <summary>
+/// Response containing a file's text content.
+/// </summary>
+public sealed class FileContentResponse
+{
+    [JsonPropertyName("path")]
+    public required string Path { get; init; }
+
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    [JsonPropertyName("content")]
+    public required string Content { get; init; }
 }
