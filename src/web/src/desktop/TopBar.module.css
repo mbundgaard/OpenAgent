@@ -1,0 +1,84 @@
+.topbar {
+  height: var(--topbar-height);
+  background: rgba(16, 16, 32, 0.85);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 2px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 99998;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Start menu button */
+.startBtn {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.startBtn:hover,
+.startBtnActive {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Open window icons row */
+.windowIcons {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  overflow-x: auto;
+  padding: 0 4px;
+}
+
+.windowIcon {
+  width: 36px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.windowIcon:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.windowIconActive {
+  background: var(--color-primary);
+}
+
+.iconSvg {
+  width: 18px;
+  height: 18px;
+  color: var(--color-text);
+}
+
+.iconFallback {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Clock */
+.clock {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  padding: 0 10px;
+  white-space: nowrap;
+}

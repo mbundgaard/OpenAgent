@@ -3,8 +3,7 @@ import apps from '../apps/registry';
 import { useWindowManager } from '../hooks/useWindowManager';
 import { WindowFrame } from '../windows/WindowFrame';
 import { WindowContext } from '../windows/WindowContext';
-import { AppGrid } from './AppGrid';
-import { Taskbar } from './Taskbar';
+import { TopBar } from './TopBar';
 import styles from './Desktop.module.css';
 
 export function Desktop() {
@@ -17,8 +16,15 @@ export function Desktop() {
   return (
     <WindowContext.Provider value={windowCtx}>
       <div className={styles.desktop}>
+        <TopBar
+          apps={apps}
+          windows={wm.windows}
+          onOpenApp={wm.openWindow}
+          onFocus={wm.focusWindow}
+          onMinimize={wm.minimizeWindow}
+          onRestore={wm.restoreWindow}
+        />
         <div className={styles.windowArea}>
-          <AppGrid apps={apps} onOpen={wm.openWindow} />
           {wm.windows.map(win => {
             // Dynamic windows carry their own component; registry windows look it up
             const app = apps.find(a => a.id === win.appId);
@@ -41,7 +47,6 @@ export function Desktop() {
             );
           })}
         </div>
-        <Taskbar windows={wm.windows} onFocus={wm.focusWindow} onMinimize={wm.minimizeWindow} onRestore={wm.restoreWindow} />
       </div>
     </WindowContext.Provider>
   );
