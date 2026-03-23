@@ -41,7 +41,7 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
 
         return new TelegramChannelProvider(
             options,
-            connection.ConversationId,
+            connection.Id,
             _store,
             _textProvider,
             _providerKey,

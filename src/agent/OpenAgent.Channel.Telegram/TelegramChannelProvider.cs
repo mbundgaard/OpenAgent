@@ -14,7 +14,7 @@ namespace OpenAgent.Channel.Telegram;
 public sealed class TelegramChannelProvider : IChannelProvider
 {
     private readonly TelegramOptions _options;
-    private readonly string _conversationId;
+    private readonly string _connectionId;
     private readonly IConversationStore _store;
     private readonly ILlmTextProvider _textProvider;
     private readonly string _providerKey;
@@ -39,7 +39,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
 
     public TelegramChannelProvider(
         TelegramOptions options,
-        string conversationId,
+        string connectionId,
         IConversationStore store,
         ILlmTextProvider textProvider,
         string providerKey,
@@ -48,7 +48,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
         ILogger<TelegramMessageHandler> handlerLogger)
     {
         _options = options;
-        _conversationId = conversationId;
+        _connectionId = connectionId;
         _store = store;
         _textProvider = textProvider;
         _providerKey = providerKey;
@@ -71,7 +71,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
         // Initialize bot client, sender, and handler
         _botClient = new TelegramBotClient(_options.BotToken);
         _sender = new TelegramBotClientSender(_botClient, _options.BotToken);
-        _handler = new TelegramMessageHandler(_store, _textProvider, _conversationId, _providerKey, _model, _options, _handlerLogger);
+        _handler = new TelegramMessageHandler(_store, _textProvider, _connectionId, _providerKey, _model, _options, _handlerLogger);
 
         if (isWebhook)
         {
