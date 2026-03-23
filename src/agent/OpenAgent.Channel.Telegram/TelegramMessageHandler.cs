@@ -28,7 +28,7 @@ public sealed class TelegramMessageHandler
 
     private readonly IConversationStore _store;
     private readonly ILlmTextProvider _textProvider;
-    private readonly string _conversationId;
+    private readonly string _connectionId;
     private readonly string _provider;
     private readonly string _model;
     private readonly TelegramAccessControl _accessControl;
@@ -39,7 +39,7 @@ public sealed class TelegramMessageHandler
     public TelegramMessageHandler(
         IConversationStore store,
         ILlmTextProvider textProvider,
-        string conversationId,
+        string connectionId,
         string provider,
         string model,
         TelegramOptions options,
@@ -47,7 +47,7 @@ public sealed class TelegramMessageHandler
     {
         _store = store;
         _textProvider = textProvider;
-        _conversationId = conversationId;
+        _connectionId = connectionId;
         _provider = provider;
         _model = model;
         _accessControl = new TelegramAccessControl(options.AllowedUserIds);
@@ -62,10 +62,11 @@ public sealed class TelegramMessageHandler
     /// </summary>
     public async Task HandleUpdateAsync(ITelegramSender sender, Update update, CancellationToken ct)
     {
-        // Filter: only handle text messages in private chats from known users
-        if (update.Message is not { Text: not null, Chat.Type: ChatType.Private, From: not null } message)
+        // Filter: handle text messages in private, group, and supergroup chats from known users
+        if (update.Message is not { Text: not null, From: not null } message
+            || message.Chat.Type is not (ChatType.Private or ChatType.Group or ChatType.Supergroup))
         {
-            _logger?.LogDebug("Update {UpdateId} filtered out: not a private text message (Type={Type}, HasText={HasText})",
+            _logger?.LogDebug("Update {UpdateId} filtered out: not a supported text message (Type={Type}, HasText={HasText})",
                 update.Id, update.Message?.Chat?.Type, update.Message?.Text is not null);
             return;
         }
@@ -95,14 +96,17 @@ public sealed class TelegramMessageHandler
 
         _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
 
-        // Get or create conversation using the connection's configured ID
-        var conversation = _store.GetOrCreate(_conversationId, "telegram", ConversationType.Text, _provider, _model);
+        // Derive conversation ID from connection + chat — each chat gets its own conversation
+        var derivedConversationId = $"telegram:{_connectionId}:{chatId}";
+
+        // Get or create conversation using the derived ID
+        var conversation = _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, _provider, _model);
 
         // Build user message with Telegram message ID and optional reply-to reference
         var userMessage = new Models.Conversations.Message
         {
             Id = Guid.NewGuid().ToString(),
-            ConversationId = _conversationId,
+            ConversationId = derivedConversationId,
             Role = "user",
             Content = userText,
             ChannelMessageId = message.MessageId.ToString(),
