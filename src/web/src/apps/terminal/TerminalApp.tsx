@@ -65,16 +65,22 @@ export function TerminalApp() {
     // Initial fit
     fitAddon.fit();
 
+    // Guard against React Strict Mode double-invoke — if cleanup runs before
+    // the WebSocket connects, we skip closing and suppress stale callbacks.
+    let disposed = false;
+
     // Connect WebSocket
     const token = getToken();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${window.location.host}/ws/terminal/${sessionId}?api_key=${token}`;
+    console.log('[Terminal] Connecting to', url);
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
     // PTY output -> terminal display
     ws.onmessage = (event) => {
+      if (disposed) return;
       if (event.data instanceof ArrayBuffer) {
         terminal.write(new Uint8Array(event.data));
       } else {
@@ -90,7 +96,15 @@ export function TerminalApp() {
       }
     };
 
-    ws.onclose = () => {
+    ws.onerror = () => {
+      if (disposed) return;
+      console.error('[Terminal] WebSocket error');
+      terminal.write('\r\n\x1b[31m[WebSocket error]\x1b[0m\r\n');
+    };
+
+    ws.onclose = (event) => {
+      if (disposed) return;
+      console.log('[Terminal] WebSocket closed — code:', event.code, 'reason:', event.reason);
       terminal.write('\r\n\x1b[90m[Connection closed]\x1b[0m\r\n');
     };
 
@@ -134,16 +148,21 @@ export function TerminalApp() {
 
     // Also send initial size once connected
     ws.onopen = () => {
+      if (disposed) return;
+      console.log('[Terminal] WebSocket connected');
       sendResize();
     };
 
     // Cleanup
     return () => {
+      disposed = true;
       clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       dataDisposable.dispose();
       binaryDisposable.dispose();
-      ws.close();
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+        ws.close();
+      }
       terminal.dispose();
     };
   }, [sessionId]);

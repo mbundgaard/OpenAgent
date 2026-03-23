@@ -18,6 +18,7 @@ public sealed class ProcessTerminalSession : ITerminalSession
     private readonly Channel<byte[]> _outputChannel;
     private readonly ILogger _logger;
     private volatile bool _disposed;
+    private int _inputLength; // tracks typed characters for backspace bounds
 
     public ProcessTerminalSession(string workingDirectory, ILogger logger)
     {
@@ -28,6 +29,7 @@ public sealed class ProcessTerminalSession : ITerminalSession
         var psi = new ProcessStartInfo
         {
             FileName = isWindows ? "cmd.exe" : "/bin/bash",
+            Arguments = isWindows ? "/Q" : "",
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             RedirectStandardInput = true,
@@ -62,23 +64,42 @@ public sealed class ProcessTerminalSession : ITerminalSession
 
         try
         {
-            // Echo input back since redirected stdin has no terminal echo
-            var echo = data.ToArray();
-            // Replace \r with \r\n for display in xterm
-            for (var i = 0; i < echo.Length; i++)
+            // Redirected stdin has no terminal echo — we echo typed characters manually.
+            // cmd.exe echoes the full command after Enter, so we only echo keystrokes,
+            // not the Enter itself (to avoid double-display of the command line).
+            var raw = data.ToArray();
+            using var echoStream = new MemoryStream();
+            using var inputStream = new MemoryStream();
+            foreach (var b in raw)
             {
-                if (echo[i] == (byte)'\r')
+                if (b == (byte)'\r')
                 {
-                    _outputChannel.Writer.TryWrite([.. echo[..i], (byte)'\r', (byte)'\n']);
-                    echo = echo[(i + 1)..];
-                    i = -1; // restart scan
-                    continue;
+                    // Echo newline and send \n to shell (cmd /Q suppresses its own echo)
+                    echoStream.Write([(byte)'\r', (byte)'\n']);
+                    inputStream.WriteByte((byte)'\n');
+                    _inputLength = 0;
+                }
+                else if (b == 0x7f) // DEL — xterm sends this for Backspace
+                {
+                    if (_inputLength > 0)
+                    {
+                        echoStream.Write([(byte)'\b', (byte)' ', (byte)'\b']);
+                        inputStream.WriteByte(0x08);
+                        _inputLength--;
+                    }
+                }
+                else
+                {
+                    echoStream.WriteByte(b);
+                    inputStream.WriteByte(b);
+                    _inputLength++;
                 }
             }
-            if (echo.Length > 0)
-                _outputChannel.Writer.TryWrite(echo);
 
-            _process.StandardInput.BaseStream.Write(data);
+            if (echoStream.Length > 0)
+                _outputChannel.Writer.TryWrite(echoStream.ToArray());
+
+            _process.StandardInput.BaseStream.Write(inputStream.ToArray());
             _process.StandardInput.BaseStream.Flush();
         }
         catch (Exception ex)

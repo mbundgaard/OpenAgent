@@ -29,11 +29,12 @@ public sealed class TerminalSessionManager : ITerminalSessionManager, IAsyncDisp
         _createLock.Wait();
         try
         {
+            // Return existing session if another thread created it first
+            if (_sessions.TryGetValue(sessionId, out var existing))
+                return existing;
+
             if (_sessions.Count >= MaxSessions)
                 throw new InvalidOperationException($"Maximum terminal sessions ({MaxSessions}) reached.");
-
-            if (_sessions.ContainsKey(sessionId))
-                throw new InvalidOperationException($"Terminal session '{sessionId}' already exists.");
 
             var session = CreateSessionForPlatform(workingDirectory);
 
@@ -42,15 +43,9 @@ public sealed class TerminalSessionManager : ITerminalSessionManager, IAsyncDisp
                 sessionId, RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "PTY" : "Process");
             return session;
         }
-        catch
-        {
-            _createLock.Release();
-            throw;
-        }
         finally
         {
-            if (_createLock.CurrentCount == 0)
-                _createLock.Release();
+            _createLock.Release();
         }
     }
 
