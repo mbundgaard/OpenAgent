@@ -49,6 +49,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Compaction", "Ope
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Terminal", "OpenAgent.Terminal\OpenAgent.Terminal.csproj", "{7A8B9C0D-1234-5678-9ABC-DEF012345678}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Channel.WhatsApp", "OpenAgent.Channel.WhatsApp\OpenAgent.Channel.WhatsApp.csproj", "{4F170820-F658-4DF1-9D8B-244997A5A5D9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -263,6 +265,18 @@ Global
 		{7A8B9C0D-1234-5678-9ABC-DEF012345678}.Release|x64.Build.0 = Release|Any CPU
 		{7A8B9C0D-1234-5678-9ABC-DEF012345678}.Release|x86.ActiveCfg = Release|Any CPU
 		{7A8B9C0D-1234-5678-9ABC-DEF012345678}.Release|x86.Build.0 = Release|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Debug|x64.Build.0 = Debug|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Debug|x86.Build.0 = Debug|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Release|x64.ActiveCfg = Release|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Release|x64.Build.0 = Release|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Release|x86.ActiveCfg = Release|Any CPU
+		{4F170820-F658-4DF1-9D8B-244997A5A5D9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
