@@ -1,6 +1,7 @@
 using OpenAgent;
 using OpenAgent.Api.Endpoints;
 using OpenAgent.Channel.Telegram;
+using OpenAgent.Channel.WhatsApp;
 using OpenAgent.Compaction;
 using OpenAgent.ConfigStore.File;
 using OpenAgent.Contracts;
@@ -95,6 +96,18 @@ builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
         cfg.TextModel,
         sp.GetRequiredService<ILoggerFactory>());
 });
+builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
+{
+    var cfg = sp.GetRequiredService<AgentConfig>();
+    var textProvider = sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider);
+    return new WhatsAppChannelProviderFactory(
+        sp.GetRequiredService<IConversationStore>(),
+        textProvider,
+        cfg.TextProvider,
+        cfg.TextModel,
+        sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<ILoggerFactory>());
+});
 builder.Services.AddSingleton<ConnectionManager>();
 builder.Services.AddSingleton<IConnectionManager>(sp => sp.GetRequiredService<ConnectionManager>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionManager>());
@@ -135,6 +148,7 @@ app.MapSystemPromptEndpoints();
 app.MapConnectionEndpoints();
 app.MapFileExplorerEndpoints();
 app.MapTelegramWebhookEndpoints();
+app.MapWhatsAppEndpoints();
 
 // SPA fallback — serve index.html for unmatched routes (client-side routing)
 app.MapFallbackToFile("index.html");
