@@ -1,0 +1,218 @@
+using System.Text;
+using Microsoft.Extensions.Logging;
+using OpenAgent.Contracts;
+using OpenAgent.Models.Common;
+using OpenAgent.Models.Conversations;
+
+namespace OpenAgent.Channel.WhatsApp;
+
+/// <summary>
+/// Processes inbound WhatsApp messages: access control, dedup, sender attribution
+/// for groups, LLM completion, composing indicator, and response sending.
+/// </summary>
+public sealed class WhatsAppMessageHandler
+{
+    private const int WhatsAppMaxMessageLength = 4096;
+    private const int DedupMaxEntries = 5000;
+    private const int DedupEvictThreshold = 2500;
+    private static readonly TimeSpan DedupTtl = TimeSpan.FromMinutes(20);
+
+    private readonly IConversationStore _store;
+    private readonly ILlmTextProvider _textProvider;
+    private readonly string _connectionId;
+    private readonly string _provider;
+    private readonly string _model;
+    private readonly WhatsAppAccessControl _accessControl;
+    private readonly ILogger<WhatsAppMessageHandler>? _logger;
+
+    // Dedup: message ID -> time first seen
+    private readonly Dictionary<string, DateTime> _processedMessages = new();
+
+    /// <summary>
+    /// Creates a new WhatsAppMessageHandler.
+    /// </summary>
+    /// <param name="store">Conversation store for persistence.</param>
+    /// <param name="textProvider">LLM text provider for completions.</param>
+    /// <param name="connectionId">Unique connection identifier for this WhatsApp instance.</param>
+    /// <param name="providerKey">Provider key (e.g. "azure-openai-text").</param>
+    /// <param name="model">Model name (e.g. "gpt-5.2-chat").</param>
+    /// <param name="options">WhatsApp options including allowlist.</param>
+    /// <param name="logger">Optional logger.</param>
+    public WhatsAppMessageHandler(
+        IConversationStore store,
+        ILlmTextProvider textProvider,
+        string connectionId,
+        string providerKey,
+        string model,
+        WhatsAppOptions options,
+        ILogger<WhatsAppMessageHandler>? logger = null)
+    {
+        _store = store;
+        _textProvider = textProvider;
+        _connectionId = connectionId;
+        _provider = providerKey;
+        _model = model;
+        _accessControl = new WhatsAppAccessControl(options.AllowedChatIds);
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Processes a single inbound WhatsApp message event. Checks access control,
+    /// deduplicates, sends composing indicator, calls LLM, and sends the reply.
+    /// </summary>
+    /// <param name="sender">Sender abstraction for composing and text messages.</param>
+    /// <param name="message">The inbound message event from the Node bridge.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task HandleMessageAsync(IWhatsAppSender sender, NodeEvent message, CancellationToken ct)
+    {
+        // Validate message has required fields
+        if (message.ChatId is null || message.Text is null)
+        {
+            _logger?.LogDebug("Message missing chatId or text, skipping");
+            return;
+        }
+
+        var chatId = message.ChatId;
+
+        // Access control -- silently ignore unauthorized chats
+        if (!_accessControl.IsAllowed(chatId))
+        {
+            _logger?.LogWarning("Blocked message from unauthorized chat {ChatId}", chatId);
+            return;
+        }
+
+        // Dedup -- skip if we already processed this message ID
+        if (message.Id is not null && !TryRecordMessage(message.Id))
+        {
+            _logger?.LogDebug("Duplicate message {MessageId} from chat {ChatId}, skipping", message.Id, chatId);
+            return;
+        }
+
+        // Send composing indicator (best-effort)
+        try
+        {
+            await sender.SendComposingAsync(chatId);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to send composing indicator to chat {ChatId}", chatId);
+        }
+
+        _logger?.LogInformation("Message from chat {ChatId}: {Text}", chatId, message.Text);
+
+        // Derive conversation ID from connection + chat
+        var derivedConversationId = $"whatsapp:{_connectionId}:{chatId}";
+
+        // Get or create conversation
+        var conversation = _store.GetOrCreate(derivedConversationId, "whatsapp", ConversationType.Text, _provider, _model);
+
+        // For group messages, prefix user text with sender name
+        var userText = message.Text;
+        if (chatId.EndsWith("@g.us", StringComparison.Ordinal) && message.PushName is not null)
+        {
+            userText = $"[{message.PushName}] {userText}";
+        }
+
+        // Build user message
+        var userMessage = new Message
+        {
+            Id = Guid.NewGuid().ToString(),
+            ConversationId = derivedConversationId,
+            Role = "user",
+            Content = userText,
+            ChannelMessageId = message.Id
+        };
+
+        // Call LLM and collect response
+        string replyText;
+        string? assistantMessageId = null;
+        try
+        {
+            var sb = new StringBuilder();
+            var events = _textProvider.CompleteAsync(conversation, userMessage, ct);
+            await foreach (var evt in events.WithCancellation(ct))
+            {
+                switch (evt)
+                {
+                    case TextDelta delta:
+                        sb.Append(delta.Content);
+                        break;
+                    case AssistantMessageSaved saved:
+                        assistantMessageId = saved.MessageId;
+                        break;
+                }
+            }
+
+            replyText = sb.ToString();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "LLM completion failed for chat {ChatId}", chatId);
+            replyText = $"Something went wrong: {ex.Message}";
+        }
+
+        // Convert markdown to WhatsApp formatting
+        var whatsAppText = WhatsAppMarkdownConverter.ToWhatsApp(replyText);
+
+        // Chunk and send
+        var chunks = WhatsAppMarkdownConverter.ChunkText(whatsAppText, WhatsAppMaxMessageLength);
+        foreach (var chunk in chunks)
+        {
+            await sender.SendTextAsync(chatId, chunk);
+        }
+
+        // Update assistant message with channel message ID if available
+        if (assistantMessageId is not null)
+        {
+            _store.UpdateChannelMessageId(assistantMessageId, $"whatsapp:{chatId}");
+            _logger?.LogDebug("Updated assistant message {MessageId} for chat {ChatId}", assistantMessageId, chatId);
+        }
+
+        _logger?.LogInformation("Reply sent to chat {ChatId}, {ChunkCount} chunk(s)", chatId, chunks.Count);
+    }
+
+    /// <summary>
+    /// Records a message ID as processed. Returns true if the message is new,
+    /// false if it was already seen (duplicate). Evicts expired entries when
+    /// the cache exceeds the threshold.
+    /// </summary>
+    private bool TryRecordMessage(string messageId)
+    {
+        var now = DateTime.UtcNow;
+
+        // Evict expired entries if we're above the threshold
+        if (_processedMessages.Count > DedupEvictThreshold)
+        {
+            var expired = new List<string>();
+            foreach (var (key, timestamp) in _processedMessages)
+            {
+                if (now - timestamp > DedupTtl)
+                    expired.Add(key);
+            }
+
+            foreach (var key in expired)
+                _processedMessages.Remove(key);
+
+            // Hard cap: if still over max, clear the oldest half
+            if (_processedMessages.Count >= DedupMaxEntries)
+            {
+                _logger?.LogWarning("Dedup cache hit hard cap ({Count}), clearing", _processedMessages.Count);
+                _processedMessages.Clear();
+            }
+        }
+
+        // Check if already seen (within TTL)
+        if (_processedMessages.TryGetValue(messageId, out var existingTime))
+        {
+            if (now - existingTime <= DedupTtl)
+                return false; // duplicate
+
+            // Expired entry -- allow reprocessing
+            _processedMessages[messageId] = now;
+            return true;
+        }
+
+        _processedMessages[messageId] = now;
+        return true;
+    }
+}
