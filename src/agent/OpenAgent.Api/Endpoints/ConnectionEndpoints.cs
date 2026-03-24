@@ -2,8 +2,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Connections;
+using OpenAgent.Models.Providers;
 
 namespace OpenAgent.Api.Endpoints;
 
@@ -17,6 +19,20 @@ public static class ConnectionEndpoints
     /// </summary>
     public static void MapConnectionEndpoints(this WebApplication app)
     {
+        // Channel type metadata for dynamic form rendering
+        app.MapGet("/api/connections/types", (IEnumerable<IChannelProviderFactory> factories) =>
+        {
+            var types = factories.Select(f => new ChannelTypeInfo
+            {
+                Type = f.Type,
+                DisplayName = f.DisplayName,
+                ConfigFields = f.ConfigFields,
+                SetupStep = f.SetupStep,
+            });
+            return Results.Ok(types);
+        })
+        .RequireAuthorization();
+
         var group = app.MapGroup("/api/connections").RequireAuthorization();
 
         // List all connections with runtime status
@@ -36,8 +52,10 @@ public static class ConnectionEndpoints
         });
 
         // Create connection
-        group.MapPost("/", async (CreateConnectionRequest request, IConnectionStore store, IConnectionManager connectionManager, CancellationToken ct) =>
+        group.MapPost("/", async (CreateConnectionRequest request, IConnectionStore store, IConnectionManager connectionManager,
+            ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("ConnectionEndpoints");
             var connectionId = Guid.NewGuid().ToString("N")[..12];
 
             var connection = new Connection
@@ -59,9 +77,9 @@ public static class ConnectionEndpoints
                 {
                     await connectionManager.StartConnectionAsync(connectionId, ct);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Saved but failed to start — caller can check status
+                    logger.LogError(ex, "Connection {ConnectionId} saved but failed to start", connectionId);
                 }
             }
 

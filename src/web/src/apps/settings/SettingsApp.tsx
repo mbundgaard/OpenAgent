@@ -6,10 +6,19 @@ import { ProviderForm } from './ProviderForm';
 import { SystemPromptForm } from './SystemPromptForm';
 import styles from './SettingsApp.module.css';
 
+type Section = 'agent' | 'providers' | 'prompt' | 'connections';
+
+const sidebarItems: { key: Section; label: string }[] = [
+  { key: 'agent', label: 'Agent' },
+  { key: 'providers', label: 'Providers' },
+  { key: 'prompt', label: 'System Prompt' },
+  { key: 'connections', label: 'Connections' },
+];
+
 export function SettingsApp() {
   const [providers, setProviders] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'agent' | 'providers' | 'prompt' | 'connections'>('agent');
+  const [activeTab, setActiveTab] = useState<Section>('agent');
 
   useEffect(() => {
     listProviders().then(setProviders).catch(() => {});
@@ -24,71 +33,58 @@ export function SettingsApp() {
 
   return (
     <div className={styles.settings}>
-      <div className={styles.tabBar}>
-        <button
-          className={`${styles.mainTab} ${activeTab === 'agent' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('agent')}
-        >
-          Agent
-        </button>
-        <button
-          className={`${styles.mainTab} ${activeTab === 'providers' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('providers')}
-        >
-          Providers
-        </button>
-        <button
-          className={`${styles.mainTab} ${activeTab === 'prompt' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('prompt')}
-        >
-          System Prompt
-        </button>
-        <button
-          className={`${styles.mainTab} ${activeTab === 'connections' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('connections')}
-        >
-          Connections
-        </button>
+      <div className={styles.sidebar}>
+        {sidebarItems.map(item => (
+          <button
+            key={item.key}
+            className={`${styles.sidebarItem} ${activeTab === item.key ? styles.sidebarItemActive : ''}`}
+            onClick={() => setActiveTab(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
 
-      {activeTab === 'agent' && (
-        <div className={styles.providers}>
-          <AgentConfigForm />
-        </div>
-      )}
+      <div className={styles.content}>
+        {activeTab === 'agent' && (
+          <div className={styles.providers}>
+            <AgentConfigForm />
+          </div>
+        )}
 
-      {activeTab === 'providers' && (
-        <div className={styles.providers}>
-          {providerKeys.length === 0 && (
-            <p className={styles.placeholder}>No providers found.</p>
-          )}
-          {providerKeys.map(key => (
-            <div key={key} className={styles.provider}>
-              <button className={styles.providerHeader} onClick={() => toggle(key)}>
-                <span className={styles.chevron}>{expanded === key ? '\u25BC' : '\u25B6'}</span>
-                <span>{key}</span>
-              </button>
-              {expanded === key && (
-                <div className={styles.providerBody}>
-                  <ProviderForm providerKey={key} />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+        {activeTab === 'providers' && (
+          <div className={styles.providers}>
+            {providerKeys.length === 0 && (
+              <p className={styles.placeholder}>No providers found.</p>
+            )}
+            {providerKeys.map(key => (
+              <div key={key} className={styles.provider}>
+                <button className={styles.providerHeader} onClick={() => toggle(key)}>
+                  <span className={styles.chevron}>{expanded === key ? '\u25BC' : '\u25B6'}</span>
+                  <span>{key}</span>
+                </button>
+                {expanded === key && (
+                  <div className={styles.providerBody}>
+                    <ProviderForm providerKey={key} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
-      {activeTab === 'prompt' && (
-        <div className={styles.promptSection}>
-          <SystemPromptForm />
-        </div>
-      )}
+        {activeTab === 'prompt' && (
+          <div className={styles.promptSection}>
+            <SystemPromptForm />
+          </div>
+        )}
 
-      {activeTab === 'connections' && (
-        <div className={styles.providers}>
-          <ConnectionsForm />
-        </div>
-      )}
+        {activeTab === 'connections' && (
+          <div className={styles.providers}>
+            <ConnectionsForm />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

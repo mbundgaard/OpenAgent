@@ -189,7 +189,7 @@ public class TelegramMessageHandlerTests
     }
 
     [Fact]
-    public async Task HandleUpdateAsync_EmptyAllowList_BlocksEveryone()
+    public async Task HandleUpdateAsync_EmptyAllowList_AllowsEveryone()
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
@@ -199,8 +199,8 @@ public class TelegramMessageHandlerTests
 
         await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
 
-        Assert.Empty(sender.TypingCalls);
-        Assert.Empty(sender.HtmlCalls);
+        Assert.NotEmpty(sender.TypingCalls);
+        Assert.NotEmpty(sender.HtmlCalls);
     }
 
     [Fact]

@@ -108,3 +108,33 @@ export async function startConnection(id: string): Promise<void> {
 export async function stopConnection(id: string): Promise<void> {
   await apiFetch(`/api/connections/${id}/stop`, { method: 'POST' });
 }
+
+// --- Connection Types ---
+
+export interface ChannelSetupStep {
+  type: string;       // "qr-code", "none"
+  endpoint: string | null;
+}
+
+export interface ChannelTypeInfo {
+  type: string;
+  displayName: string;
+  configFields: ConfigField[];
+  setupStep: ChannelSetupStep | null;
+}
+
+export interface WhatsAppQrResponse {
+  status: string;
+  qr: string | null;
+  error: string | null;
+}
+
+export async function getConnectionTypes(): Promise<ChannelTypeInfo[]> {
+  const res = await apiFetch('/api/connections/types');
+  return res.json();
+}
+
+export async function getWhatsAppQr(connectionId: string): Promise<WhatsAppQrResponse> {
+  const res = await apiFetch(`/api/connections/${connectionId}/whatsapp/qr`);
+  return res.json();
+}

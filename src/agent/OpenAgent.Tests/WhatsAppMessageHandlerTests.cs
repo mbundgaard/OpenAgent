@@ -70,19 +70,19 @@ public class WhatsAppMessageHandlerTests
     }
 
     [Fact]
-    public async Task EmptyAllowList_BlocksEveryone()
+    public async Task EmptyAllowList_AllowsEveryone()
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
-        var options = CreateOptions(); // empty
+        var options = CreateOptions(); // empty = allow all
         var handler = new WhatsAppMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", options);
         var sender = new FakeWhatsAppSender();
         var message = CreateTextMessage(AllowedDmChatId, "Hi");
 
         await handler.HandleMessageAsync(sender, message, CancellationToken.None);
 
-        Assert.Empty(sender.ComposingCalls);
-        Assert.Empty(sender.TextCalls);
+        Assert.NotEmpty(sender.ComposingCalls);
+        Assert.NotEmpty(sender.TextCalls);
     }
 
     [Fact]

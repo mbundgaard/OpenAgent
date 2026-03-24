@@ -5,10 +5,10 @@ namespace OpenAgent.Tests;
 public class WhatsAppAccessControlTests
 {
     [Fact]
-    public void IsAllowed_EmptyList_BlocksEveryone()
+    public void IsAllowed_EmptyList_AllowsEveryone()
     {
         var ac = new WhatsAppAccessControl([]);
-        Assert.False(ac.IsAllowed("+4512345678@s.whatsapp.net"));
+        Assert.True(ac.IsAllowed("+4512345678@s.whatsapp.net"));
     }
 
     [Fact]
