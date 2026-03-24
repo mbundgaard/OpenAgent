@@ -49,6 +49,7 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
     private DateTime _lastPongTime = DateTime.UtcNow;
     private int _reconnectAttempts;
     private DateTime? _lastConnectedAt;
+    private string? _lastError;
 
     /// <summary>Current connection state.</summary>
     public WhatsAppConnectionState State
@@ -158,14 +159,14 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
     /// for a QR code to become available.
     /// </summary>
     /// <param name="timeout">Maximum time to wait for QR data.</param>
-    /// <returns>Tuple of current state and QR data (null if not pairing or timed out).</returns>
-    public async Task<(WhatsAppConnectionState Status, string? QrData)> GetQrAsync(TimeSpan timeout)
+    /// <returns>Tuple of current state, QR data, and last error (if any).</returns>
+    public async Task<(WhatsAppConnectionState Status, string? QrData, string? Error)> GetQrAsync(TimeSpan timeout)
     {
         // Already connected -- nothing to pair
         lock (_lock)
         {
             if (_state == WhatsAppConnectionState.Connected)
-                return (WhatsAppConnectionState.Connected, null);
+                return (WhatsAppConnectionState.Connected, null, null);
         }
 
         // If unpaired, kick off pairing
@@ -184,7 +185,7 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
         lock (_lock)
         {
             if (_latestQr is not null)
-                return (WhatsAppConnectionState.Pairing, _latestQr);
+                return (WhatsAppConnectionState.Pairing, _latestQr, null);
         }
 
         // Wait for QR code with timeout
@@ -205,7 +206,7 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
 
         lock (_lock)
         {
-            return (_state, _latestQr);
+            return (_state, _latestQr, _lastError);
         }
     }
 
@@ -268,6 +269,7 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
                 {
                     _state = WhatsAppConnectionState.Connected;
                     _latestQr = null;
+                    _lastError = null;
                     _lastConnectedAt = DateTime.UtcNow;
                     _reconnectAttempts = 0;
                 }
@@ -331,6 +333,7 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
                 break;
 
             case "error":
+                lock (_lock) _lastError = evt.Message;
                 _logger.LogError("WhatsApp [{ConnectionId}]: bridge error: {Message}", _connectionId, evt.Message);
                 break;
 

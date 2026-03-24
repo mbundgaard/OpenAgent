@@ -17,4 +17,9 @@
   <ItemGroup>
     <Content Include="node\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- Install Baileys dependencies in output directory after build -->
+  <Target Name="NpmInstallBaileys" AfterTargets="Build" Condition="!Exists('$(OutputPath)node\node_modules')">
+    <Exec Command="npm ci --omit=dev" WorkingDirectory="$(OutputPath)node" />
+  </Target>
 </Project>

@@ -8,7 +8,8 @@ namespace OpenAgent.Channel.WhatsApp;
 /// <summary>Response model for the WhatsApp QR pairing endpoint.</summary>
 public sealed record WhatsAppQrResponse(
     [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("qr")] string? Qr);
+    [property: JsonPropertyName("qr")] string? Qr,
+    [property: JsonPropertyName("error")] string? Error = null);
 
 /// <summary>
 /// Registers WhatsApp-specific HTTP endpoints.
@@ -24,11 +25,11 @@ public static class WhatsAppEndpoints
         {
             var provider = connectionManager.GetProvider(connectionId) as WhatsAppChannelProvider;
             if (provider is null)
-                return Results.NotFound(new WhatsAppQrResponse("error", null));
+                return Results.NotFound(new WhatsAppQrResponse("error", null, "No WhatsApp connection found or not started"));
 
-            var (status, qrData) = await provider.GetQrAsync(TimeSpan.FromSeconds(30));
+            var (status, qrData, error) = await provider.GetQrAsync(TimeSpan.FromSeconds(30));
 
-            return Results.Ok(new WhatsAppQrResponse(status.ToString().ToLowerInvariant(), qrData));
+            return Results.Ok(new WhatsAppQrResponse(status.ToString().ToLowerInvariant(), qrData, error));
         })
         .RequireAuthorization();
 
