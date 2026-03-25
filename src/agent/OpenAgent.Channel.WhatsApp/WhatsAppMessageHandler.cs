@@ -84,7 +84,7 @@ public sealed class WhatsAppMessageHandler
             var connection = _connectionStore.Load(_connectionId);
             if (connection is null || !connection.AllowNewConversations)
             {
-                _logger?.LogDebug("New conversation from chat {ChatId} dropped — new conversations not allowed", chatId);
+                _logger?.LogInformation("New conversation from chat {ChatId} dropped — new conversations not allowed", chatId);
                 return;
             }
 
