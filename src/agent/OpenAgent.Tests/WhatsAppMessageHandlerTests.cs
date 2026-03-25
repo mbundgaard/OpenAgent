@@ -38,7 +38,7 @@ public class WhatsAppMessageHandlerTests
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("Hello from LLM");
         var options = CreateOptions(AllowedDmChatId);
-        var handler = new WhatsAppMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", options);
+        var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat");
         var sender = new FakeWhatsAppSender();
         var message = CreateTextMessage(AllowedDmChatId, "Hi");
 
@@ -54,12 +54,12 @@ public class WhatsAppMessageHandlerTests
     }
 
     [Fact]
-    public async Task BlockedChat_IgnoresMessage()
+    public async Task NewConversationsDisabled_DropsMessage()
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("should not see this");
-        var options = CreateOptions(AllowedDmChatId);
-        var handler = new WhatsAppMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", options);
+        var connStore = new FakeConnectionStore(ConnectionId, allowNewConversations: false);
+        var handler = new WhatsAppMessageHandler(store, connStore, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat");
         var sender = new FakeWhatsAppSender();
         var message = CreateTextMessage(BlockedChatId, "Hi");
 
@@ -75,7 +75,7 @@ public class WhatsAppMessageHandlerTests
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
         var options = CreateOptions(); // empty = allow all
-        var handler = new WhatsAppMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", options);
+        var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat");
         var sender = new FakeWhatsAppSender();
         var message = CreateTextMessage(AllowedDmChatId, "Hi");
 
@@ -91,7 +91,7 @@ public class WhatsAppMessageHandlerTests
         var store = new InMemoryConversationStore();
         var provider = new CapturingTextProvider("reply");
         var options = CreateOptions(GroupChatId);
-        var handler = new WhatsAppMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", options);
+        var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat");
         var sender = new FakeWhatsAppSender();
         var message = CreateTextMessage(GroupChatId, "Hello group", pushName: "Bob");
 
@@ -108,7 +108,7 @@ public class WhatsAppMessageHandlerTests
         var store = new InMemoryConversationStore();
         var provider = new StreamingTextProvider("Hello");
         var options = CreateOptions(AllowedDmChatId);
-        var handler = new WhatsAppMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", options);
+        var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat");
         var sender = new FakeWhatsAppSender();
         var messageId = "msg-duplicate-123";
         var message = CreateTextMessage(AllowedDmChatId, "Hi", messageId: messageId);
@@ -128,7 +128,7 @@ public class WhatsAppMessageHandlerTests
         var store = new InMemoryConversationStore();
         var provider = new ThrowingTextProvider();
         var options = CreateOptions(AllowedDmChatId);
-        var handler = new WhatsAppMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", options);
+        var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat");
         var sender = new FakeWhatsAppSender();
         var message = CreateTextMessage(AllowedDmChatId, "Hi");
 
@@ -144,7 +144,7 @@ public class WhatsAppMessageHandlerTests
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
         var options = CreateOptions(AllowedDmChatId);
-        var handler = new WhatsAppMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", options);
+        var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat");
         var sender = new FakeWhatsAppSender();
         var message = CreateTextMessage(AllowedDmChatId, "Hi");
 

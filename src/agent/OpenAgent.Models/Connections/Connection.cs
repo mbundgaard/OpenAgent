@@ -25,6 +25,14 @@ public sealed class Connection
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
 
+    /// <summary>
+    /// Whether new conversations can be created from incoming messages.
+    /// When false, only existing conversations receive responses.
+    /// Auto-locks to false after the first conversation is created.
+    /// </summary>
+    [JsonPropertyName("allowNewConversations")]
+    public bool AllowNewConversations { get; set; } = true;
+
     /// <summary>The conversation this connection feeds into.</summary>
     [JsonPropertyName("conversationId")]
     public required string ConversationId { get; set; }

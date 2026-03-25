@@ -27,17 +27,18 @@ public sealed class TelegramMessageHandler
     ];
 
     private readonly IConversationStore _store;
+    private readonly IConnectionStore _connectionStore;
     private readonly ILlmTextProvider _textProvider;
     private readonly string _connectionId;
     private readonly string _provider;
     private readonly string _model;
-    private readonly TelegramAccessControl _accessControl;
     private readonly bool _streamResponses;
     private readonly bool _showThinking;
     private readonly ILogger<TelegramMessageHandler>? _logger;
 
     public TelegramMessageHandler(
         IConversationStore store,
+        IConnectionStore connectionStore,
         ILlmTextProvider textProvider,
         string connectionId,
         string provider,
@@ -46,11 +47,11 @@ public sealed class TelegramMessageHandler
         ILogger<TelegramMessageHandler>? logger = null)
     {
         _store = store;
+        _connectionStore = connectionStore;
         _textProvider = textProvider;
         _connectionId = connectionId;
         _provider = provider;
         _model = model;
-        _accessControl = new TelegramAccessControl(options.AllowedUserIds);
         _streamResponses = options.StreamResponses;
         _showThinking = options.ShowThinking;
         _logger = logger;
@@ -77,11 +78,24 @@ public sealed class TelegramMessageHandler
 
         _logger?.LogDebug("Handler received message from user {UserId} in chat {ChatId}", userId, chatId);
 
-        // Access control check — silently ignore unauthorized users
-        if (!_accessControl.IsAllowed(userId))
+        // Derive conversation ID from connection + chat — each chat gets its own conversation
+        var derivedConversationId = $"telegram:{_connectionId}:{chatId}";
+
+        // Conversation gating — check if conversation exists or if new ones are allowed
+        var existing = _store.Get(derivedConversationId);
+        if (existing is null)
         {
-            _logger?.LogWarning("Blocked message from unauthorized user {UserId}", userId);
-            return;
+            var connection = _connectionStore.Load(_connectionId);
+            if (connection is null || !connection.AllowNewConversations)
+            {
+                _logger?.LogDebug("New conversation from chat {ChatId} dropped — new conversations not allowed", chatId);
+                return;
+            }
+
+            // Auto-lock: disable new conversations after the first one is created
+            connection.AllowNewConversations = false;
+            _connectionStore.Save(connection);
+            _logger?.LogInformation("First conversation created for connection {ConnectionId}, auto-locked new conversations", _connectionId);
         }
 
         // Send typing indicator (best-effort, don't fail the whole flow)
@@ -96,10 +110,7 @@ public sealed class TelegramMessageHandler
 
         _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
 
-        // Derive conversation ID from connection + chat — each chat gets its own conversation
-        var derivedConversationId = $"telegram:{_connectionId}:{chatId}";
-
-        // Get or create conversation using the derived ID
+        // Get or create conversation
         var conversation = _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, _provider, _model);
 
         // Build user message with Telegram message ID and optional reply-to reference

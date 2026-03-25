@@ -48,7 +48,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("Hello from LLM");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
@@ -65,7 +65,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
@@ -79,13 +79,14 @@ public class TelegramMessageHandlerTests
     }
 
     [Fact]
-    public async Task HandleUpdateAsync_BlockedUser_IgnoresMessage()
+    public async Task HandleUpdateAsync_NewConversationsDisabled_DropsMessage()
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("should not see this");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
+        var connStore = new FakeConnectionStore(ConnectionId, allowNewConversations: false);
+        var handler = new TelegramMessageHandler(store, connStore, provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
-        var update = CreatePrivateTextUpdate(BlockedUserId, ChatId, "Hi");
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
         await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
 
@@ -99,7 +100,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var update = new Update();
 
@@ -113,7 +114,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var groupChatId = 99999L;
         var update = new Update
@@ -139,7 +140,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var update = new Update
         {
@@ -162,7 +163,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new ThrowingTextProvider();
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
@@ -177,7 +178,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("Hello **bold**");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions(AllowedUserId));
         var sender = new FakeTelegramSender { FailHtml = true };
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
@@ -193,7 +194,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateOptions());
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateOptions());
         var sender = new FakeTelegramSender();
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
@@ -208,7 +209,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new StreamingTextProvider("Hello", " ", "world");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateBatchOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateBatchOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
@@ -225,7 +226,7 @@ public class TelegramMessageHandlerTests
         var store = new InMemoryConversationStore();
         var provider = new StreamingTextProvider("Hello", " ", "world");
         // Zero throttle so drafts fire on every token
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateStreamingOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateStreamingOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
@@ -248,7 +249,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new StreamingTextProvider("Hello", " ", "world");
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateStreamingOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateStreamingOptions(AllowedUserId));
         var sender = new FakeTelegramSender { FailDraft = true };
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
@@ -265,7 +266,7 @@ public class TelegramMessageHandlerTests
     {
         var store = new InMemoryConversationStore();
         var provider = new ThrowingTextProvider();
-        var handler = new TelegramMessageHandler(store, provider, ConnectionId, "azure-openai-text", "gpt-5.2-chat", CreateStreamingOptions(AllowedUserId));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), provider, ConnectionId,"azure-openai-text", "gpt-5.2-chat", CreateStreamingOptions(AllowedUserId));
         var sender = new FakeTelegramSender();
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 

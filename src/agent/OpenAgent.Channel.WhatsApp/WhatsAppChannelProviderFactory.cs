@@ -12,6 +12,7 @@ namespace OpenAgent.Channel.WhatsApp;
 public sealed class WhatsAppChannelProviderFactory : IChannelProviderFactory
 {
     private readonly IConversationStore _store;
+    private readonly IConnectionStore _connectionStore;
     private readonly ILlmTextProvider _textProvider;
     private readonly string _providerKey;
     private readonly string _model;
@@ -45,6 +46,7 @@ public sealed class WhatsAppChannelProviderFactory : IChannelProviderFactory
     /// <param name="loggerFactory">Logger factory for creating typed loggers.</param>
     public WhatsAppChannelProviderFactory(
         IConversationStore store,
+        IConnectionStore connectionStore,
         ILlmTextProvider textProvider,
         string providerKey,
         string model,
@@ -52,6 +54,7 @@ public sealed class WhatsAppChannelProviderFactory : IChannelProviderFactory
         ILoggerFactory loggerFactory)
     {
         _store = store;
+        _connectionStore = connectionStore;
         _textProvider = textProvider;
         _providerKey = providerKey;
         _model = model;
@@ -94,6 +97,7 @@ public sealed class WhatsAppChannelProviderFactory : IChannelProviderFactory
             connection.Id,
             authDir,
             _store,
+            _connectionStore,
             _textProvider,
             _providerKey,
             _model,

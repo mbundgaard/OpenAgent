@@ -12,6 +12,7 @@ namespace OpenAgent.Channel.Telegram;
 public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
 {
     private readonly IConversationStore _store;
+    private readonly IConnectionStore _connectionStore;
     private readonly ILlmTextProvider _textProvider;
     private readonly string _providerKey;
     private readonly string _model;
@@ -33,12 +34,14 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
 
     public TelegramChannelProviderFactory(
         IConversationStore store,
+        IConnectionStore connectionStore,
         ILlmTextProvider textProvider,
         string providerKey,
         string model,
         ILoggerFactory loggerFactory)
     {
         _store = store;
+        _connectionStore = connectionStore;
         _textProvider = textProvider;
         _providerKey = providerKey;
         _model = model;
@@ -105,6 +108,7 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
             options,
             connection.Id,
             _store,
+            _connectionStore,
             _textProvider,
             _providerKey,
             _model,

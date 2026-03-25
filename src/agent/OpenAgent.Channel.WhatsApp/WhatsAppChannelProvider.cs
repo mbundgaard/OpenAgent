@@ -73,6 +73,7 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
         string connectionId,
         string authDir,
         IConversationStore store,
+        IConnectionStore connectionStore,
         ILlmTextProvider textProvider,
         string providerKey,
         string model,
@@ -88,9 +89,9 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<WhatsAppChannelProvider>();
 
-        // Create the message handler -- it handles dedup, access control, LLM calls
+        // Create the message handler -- it handles dedup, conversation gating, LLM calls
         _handler = new WhatsAppMessageHandler(
-            store, textProvider, connectionId, providerKey, model, options,
+            store, connectionStore, textProvider, connectionId, providerKey, model,
             loggerFactory.CreateLogger<WhatsAppMessageHandler>());
     }
 

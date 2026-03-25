@@ -91,6 +91,7 @@ builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
     var textProvider = sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider);
     return new TelegramChannelProviderFactory(
         sp.GetRequiredService<IConversationStore>(),
+        sp.GetRequiredService<IConnectionStore>(),
         textProvider,
         cfg.TextProvider,
         cfg.TextModel,
@@ -102,6 +103,7 @@ builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
     var textProvider = sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider);
     return new WhatsAppChannelProviderFactory(
         sp.GetRequiredService<IConversationStore>(),
+        sp.GetRequiredService<IConnectionStore>(),
         textProvider,
         cfg.TextProvider,
         cfg.TextModel,

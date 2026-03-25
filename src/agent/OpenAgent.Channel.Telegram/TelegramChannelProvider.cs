@@ -16,6 +16,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
     private readonly TelegramOptions _options;
     private readonly string _connectionId;
     private readonly IConversationStore _store;
+    private readonly IConnectionStore _connectionStore;
     private readonly ILlmTextProvider _textProvider;
     private readonly string _providerKey;
     private readonly string _model;
@@ -41,6 +42,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
         TelegramOptions options,
         string connectionId,
         IConversationStore store,
+        IConnectionStore connectionStore,
         ILlmTextProvider textProvider,
         string providerKey,
         string model,
@@ -50,6 +52,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
         _options = options;
         _connectionId = connectionId;
         _store = store;
+        _connectionStore = connectionStore;
         _textProvider = textProvider;
         _providerKey = providerKey;
         _model = model;
@@ -71,7 +74,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
         // Initialize bot client, sender, and handler
         _botClient = new TelegramBotClient(_options.BotToken);
         _sender = new TelegramBotClientSender(_botClient, _options.BotToken);
-        _handler = new TelegramMessageHandler(_store, _textProvider, _connectionId, _providerKey, _model, _options, _handlerLogger);
+        _handler = new TelegramMessageHandler(_store, _connectionStore, _textProvider, _connectionId, _providerKey, _model, _options, _handlerLogger);
 
         if (isWebhook)
         {

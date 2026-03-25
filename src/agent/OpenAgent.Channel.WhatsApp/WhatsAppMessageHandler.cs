@@ -7,7 +7,7 @@ using OpenAgent.Models.Conversations;
 namespace OpenAgent.Channel.WhatsApp;
 
 /// <summary>
-/// Processes inbound WhatsApp messages: access control, dedup, sender attribution
+/// Processes inbound WhatsApp messages: conversation gating, dedup, sender attribution
 /// for groups, LLM completion, composing indicator, and response sending.
 /// </summary>
 public sealed class WhatsAppMessageHandler
@@ -18,11 +18,11 @@ public sealed class WhatsAppMessageHandler
     private static readonly TimeSpan DedupTtl = TimeSpan.FromMinutes(20);
 
     private readonly IConversationStore _store;
+    private readonly IConnectionStore _connectionStore;
     private readonly ILlmTextProvider _textProvider;
     private readonly string _connectionId;
     private readonly string _provider;
     private readonly string _model;
-    private readonly WhatsAppAccessControl _accessControl;
     private readonly ILogger<WhatsAppMessageHandler>? _logger;
 
     // Dedup: message ID -> time first seen
@@ -31,28 +31,21 @@ public sealed class WhatsAppMessageHandler
     /// <summary>
     /// Creates a new WhatsAppMessageHandler.
     /// </summary>
-    /// <param name="store">Conversation store for persistence.</param>
-    /// <param name="textProvider">LLM text provider for completions.</param>
-    /// <param name="connectionId">Unique connection identifier for this WhatsApp instance.</param>
-    /// <param name="providerKey">Provider key (e.g. "azure-openai-text").</param>
-    /// <param name="model">Model name (e.g. "gpt-5.2-chat").</param>
-    /// <param name="options">WhatsApp options including allowlist.</param>
-    /// <param name="logger">Optional logger.</param>
     public WhatsAppMessageHandler(
         IConversationStore store,
+        IConnectionStore connectionStore,
         ILlmTextProvider textProvider,
         string connectionId,
         string providerKey,
         string model,
-        WhatsAppOptions options,
         ILogger<WhatsAppMessageHandler>? logger = null)
     {
         _store = store;
+        _connectionStore = connectionStore;
         _textProvider = textProvider;
         _connectionId = connectionId;
         _provider = providerKey;
         _model = model;
-        _accessControl = new WhatsAppAccessControl(options.AllowedChatIds);
         _logger = logger;
     }
 
@@ -74,18 +67,31 @@ public sealed class WhatsAppMessageHandler
 
         var chatId = message.ChatId;
 
-        // Access control -- silently ignore unauthorized chats
-        if (!_accessControl.IsAllowed(chatId))
-        {
-            _logger?.LogWarning("Blocked message from unauthorized chat {ChatId}", chatId);
-            return;
-        }
-
         // Dedup -- skip if we already processed this message ID
         if (message.Id is not null && !TryRecordMessage(message.Id))
         {
             _logger?.LogDebug("Duplicate message {MessageId} from chat {ChatId}, skipping", message.Id, chatId);
             return;
+        }
+
+        // Derive conversation ID from connection + chat
+        var derivedConversationId = $"whatsapp:{_connectionId}:{chatId}";
+
+        // Conversation gating -- check if conversation exists or if new ones are allowed
+        var existing = _store.Get(derivedConversationId);
+        if (existing is null)
+        {
+            var connection = _connectionStore.Load(_connectionId);
+            if (connection is null || !connection.AllowNewConversations)
+            {
+                _logger?.LogDebug("New conversation from chat {ChatId} dropped — new conversations not allowed", chatId);
+                return;
+            }
+
+            // Auto-lock: disable new conversations after the first one is created
+            connection.AllowNewConversations = false;
+            _connectionStore.Save(connection);
+            _logger?.LogInformation("First conversation created for connection {ConnectionId}, auto-locked new conversations", _connectionId);
         }
 
         // Send composing indicator (best-effort)
@@ -99,9 +105,6 @@ public sealed class WhatsAppMessageHandler
         }
 
         _logger?.LogInformation("Message from chat {ChatId}: {Text}", chatId, message.Text);
-
-        // Derive conversation ID from connection + chat
-        var derivedConversationId = $"whatsapp:{_connectionId}:{chatId}";
 
         // Get or create conversation
         var conversation = _store.GetOrCreate(derivedConversationId, "whatsapp", ConversationType.Text, _provider, _model);
