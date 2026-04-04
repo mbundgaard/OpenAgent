@@ -38,14 +38,14 @@ public static class WebSocketTextEndpoints
                 return;
             }
 
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
-            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
+            // Create conversation if needed, then resolve provider per-message inside the loop
+            store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
 
             try
             {
-                await RunChatLoopAsync(ws, conversation, textProvider, context.RequestAborted);
+                await RunChatLoopAsync(ws, conversationId, store, agentConfig, services, context.RequestAborted);
             }
             finally
             {
@@ -63,7 +63,8 @@ public static class WebSocketTextEndpoints
     }
 
     private static async Task RunChatLoopAsync(
-        WebSocket ws, Conversation conversation, ILlmTextProvider textProvider, CancellationToken ct)
+        WebSocket ws, string conversationId, IConversationStore store,
+        AgentConfig agentConfig, IServiceProvider services, CancellationToken ct)
     {
         var buffer = new byte[8192];
 
@@ -83,10 +84,14 @@ public static class WebSocketTextEndpoints
             if (request?.Content is null)
                 continue;
 
+            // Re-read conversation and resolve provider per message — picks up provider/model changes
+            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
+            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
+
             var userMessage = new Message
             {
                 Id = Guid.NewGuid().ToString(),
-                ConversationId = conversation.Id,
+                ConversationId = conversationId,
                 Role = "user",
                 Content = request.Content
             };
