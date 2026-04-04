@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <!-- Install Baileys dependencies in output directory after build -->
-  <Target Name="NpmInstallBaileys" AfterTargets="Build" Condition="!Exists('$(OutputPath)node\node_modules')">
+  <Target Name="NpmInstallBaileys" AfterTargets="Build" Condition="!Exists('$(OutputPath)node\node_modules') And '$(SkipNpmInstall)' != 'true'">
     <Exec Command="npm ci --omit=dev" WorkingDirectory="$(OutputPath)node" />
   </Target>
 </Project>

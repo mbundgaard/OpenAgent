@@ -17,7 +17,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY src/agent/ .
 RUN dotnet restore
-RUN dotnet build -c Release --no-restore
+RUN dotnet build -c Release --no-restore -p:SkipNpmInstall=true
 RUN dotnet test -c Release --no-build --no-restore
 
 # Publish
