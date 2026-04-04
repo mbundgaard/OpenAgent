@@ -9,8 +9,12 @@
         "run"
       ],
       "workingDirectory": "src/agent/OpenAgent",
+      "port": 5264,
       "url": "http://localhost:5264/health",
-      "environment": null,
+      "environment": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DATA_DIR": "./data"
+      },
       "shutdownTimeoutSeconds": 5
     },
     {
@@ -23,7 +27,8 @@
         "dev"
       ],
       "workingDirectory": "src/web",
-      "url": "http://localhost:3000#token=dev-api-key-change-me",
+      "port": 3000,
+      "url": "http://localhost:3000",
       "environment": null,
       "shutdownTimeoutSeconds": 5
     }
