@@ -6,6 +6,7 @@ using OpenAgent.Compaction;
 using OpenAgent.ConfigStore.File;
 using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.Sqlite;
+using OpenAgent.LlmText.AnthropicSubscription;
 using OpenAgent.LlmText.OpenAIAzure;
 using OpenAgent.LlmVoice.OpenAIAzure;
 using OpenAgent.Models.Configs;
@@ -61,6 +62,7 @@ builder.Services.AddSingleton<ICompactionSummarizer, CompactionSummarizer>();
 
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddKeyedSingleton<ILlmTextProvider, AzureOpenAiTextProvider>(AzureOpenAiTextProvider.ProviderKey);
+builder.Services.AddKeyedSingleton<ILlmTextProvider, AnthropicSubscriptionTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey);
 builder.Services.AddSingleton<Func<string, ILlmTextProvider>>(sp =>
     key => sp.GetRequiredKeyedService<ILlmTextProvider>(key));
@@ -77,6 +79,8 @@ builder.Services.AddSingleton<IConfigurable>(loggingConfig);
 builder.Services.AddSingleton<IConfigurable>(sp => sp.GetRequiredService<IConversationStore>());
 builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey));
+builder.Services.AddSingleton<IConfigurable>(sp =>
+    sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey));
 builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
 
