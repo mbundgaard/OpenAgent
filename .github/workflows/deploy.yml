@@ -1,4 +1,4 @@
-name: Deploy to Azure
+name: Build and Push Container
 
 on:
   push:
@@ -6,66 +6,36 @@ on:
     paths:
       - "src/agent/**"
       - "src/web/**"
+      - "Dockerfile"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: "10.0.x"
-  NODE_VERSION: "22"
-  APP_NAME: openagent-test
-  PROJECT_PATH: src/agent/OpenAgent/OpenAgent.csproj
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/open-agent
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
 
-      # --- Web frontend ---
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: src/web/package-lock.json
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install web dependencies
-        run: npm ci
-        working-directory: src/web
-
-      - name: Build web
-        run: npm run build
-        working-directory: src/web
-
-      # --- .NET backend ---
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-          dotnet-quality: ga
-
-      - name: Restore
-        run: dotnet restore src/agent
-
-      - name: Build
-        run: dotnet build src/agent --no-restore --configuration Release
-
-      - name: Test
-        run: dotnet test src/agent --no-build --configuration Release
-        env:
-          DATA_DIR: ${{ runner.temp }}/openagent-data
-
-      - name: Publish
-        run: dotnet publish ${{ env.PROJECT_PATH }} --no-build --configuration Release --output ./publish
-
-      # Copy web build output into wwwroot
-      - name: Copy web to wwwroot
-        run: mkdir -p ./publish/wwwroot && cp -r src/web/dist/* ./publish/wwwroot/
-
-      - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ env.APP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./publish
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
