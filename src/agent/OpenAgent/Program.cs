@@ -28,6 +28,9 @@ var environment = new AgentEnvironment
 };
 Directory.CreateDirectory(environment.DataPath);
 
+// Bootstrap — ensure required folders and default files exist
+DataDirectoryBootstrap.Run(environment.DataPath);
+
 builder.Services.AddSingleton(environment);
 
 var loggingConfig = new LoggingConfig();
@@ -92,11 +95,12 @@ builder.Services.AddSingleton<IConnectionStore, FileConnectionStore>();
 builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
 {
     var cfg = sp.GetRequiredService<AgentConfig>();
-    var textProvider = sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider);
+    ILlmTextProvider? textProvider = !string.IsNullOrEmpty(cfg.TextProvider)
+        ? sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider) : null;
     return new TelegramChannelProviderFactory(
         sp.GetRequiredService<IConversationStore>(),
         sp.GetRequiredService<IConnectionStore>(),
-        textProvider,
+        textProvider!,
         cfg.TextProvider,
         cfg.TextModel,
         sp.GetRequiredService<ILoggerFactory>());
@@ -104,11 +108,12 @@ builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
 builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
 {
     var cfg = sp.GetRequiredService<AgentConfig>();
-    var textProvider = sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider);
+    ILlmTextProvider? textProvider = !string.IsNullOrEmpty(cfg.TextProvider)
+        ? sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider) : null;
     return new WhatsAppChannelProviderFactory(
         sp.GetRequiredService<IConversationStore>(),
         sp.GetRequiredService<IConnectionStore>(),
-        textProvider,
+        textProvider!,
         cfg.TextProvider,
         cfg.TextModel,
         sp.GetRequiredService<AgentEnvironment>(),

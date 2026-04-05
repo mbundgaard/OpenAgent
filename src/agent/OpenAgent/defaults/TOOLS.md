@@ -1,0 +1,38 @@
+# TOOLS.md — File System & Shell Tools
+
+This file describes the tools available to you and how the data directory is organized.
+
+## Data Directory Structure
+
+All file and shell operations are scoped to the data directory. You cannot access files outside it.
+
+```
+/
+├── projects/     One folder per project — docs, notes, data, exports, everything related
+├── repos/        Git repositories — cloned repos for reference or contribution
+├── memory/       Your persistent memory — notes you keep across conversations
+├── config/       Provider configurations (managed by the system, do not edit)
+└── logs/         Application logs (managed by the system, do not edit)
+```
+
+### projects/
+One folder per project. Each project folder contains everything related to that project: documents, notes, drafts, data files, exports, configs. When the user asks you to save or create something, put it in the relevant project folder. Create a new project folder if it doesn't fit an existing one.
+
+### repos/
+Git clones. Use `shell_exec` to clone repositories here. Keep them separate from projects.
+
+### memory/
+Your own persistent notes. Use this to remember things across conversations — preferences, decisions, context. Organize by topic.
+
+## File Tools
+
+- **file_read** — Read a file by path (relative to data directory)
+- **file_write** — Create or overwrite a file
+- **file_append** — Append content to an existing file
+- **file_edit** — Search and replace within a file
+
+All paths are relative to the data directory root. Use forward slashes: `projects/my-project/notes.md`, `repos/my-repo/README.md`.
+
+## Shell Tool
+
+- **shell_exec** — Execute a shell command. Working directory defaults to the data directory root. Use the `cwd` parameter for a subdirectory.

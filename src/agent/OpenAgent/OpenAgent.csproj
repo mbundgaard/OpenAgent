@@ -40,4 +40,8 @@
     <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="defaults\*.md" />
+  </ItemGroup>
+
 </Project>
