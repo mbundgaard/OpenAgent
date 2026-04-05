@@ -104,13 +104,13 @@ public sealed class WhatsAppMessageHandler
 
         _logger?.LogInformation("Message from chat {ChatId}: {Text}", chatId, message.Text);
 
-        // Resolve provider and model from current config (lazy — picks up changes without restart)
+        // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
         var providerKey = _agentConfig.TextProvider;
         var model = _agentConfig.TextModel;
-        var textProvider = _textProviderResolver(providerKey);
-
-        // Get or create conversation
         var conversation = _store.GetOrCreate(derivedConversationId, "whatsapp", ConversationType.Text, providerKey, model);
+
+        // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
+        var textProvider = _textProviderResolver(conversation.Provider);
 
         // For group messages, prefix user text with sender name
         var userText = message.Text;

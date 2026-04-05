@@ -108,13 +108,13 @@ public sealed class TelegramMessageHandler
 
         _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
 
-        // Resolve provider and model from current config (lazy — picks up changes without restart)
+        // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
         var providerKey = _agentConfig.TextProvider;
         var model = _agentConfig.TextModel;
-        var textProvider = _textProviderResolver(providerKey);
-
-        // Get or create conversation
         var conversation = _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, providerKey, model);
+
+        // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
+        var textProvider = _textProviderResolver(conversation.Provider);
 
         // Build user message with Telegram message ID and optional reply-to reference
         var userMessage = new Models.Conversations.Message
