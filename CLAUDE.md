@@ -30,6 +30,7 @@ src/agent/
     Common/                               CompletionEvent hierarchy (TextDelta, ToolCallEvent, ToolResultEvent)
   OpenAgent.ConversationStore.Sqlite/     SQLite persistent store (conversations.db) with schema migration
   OpenAgent.LlmText.OpenAIAzure/         Azure OpenAI Chat Completions provider
+  OpenAgent.LlmText.AnthropicSubscription/ Anthropic Messages API via Claude subscription setup-token (OAuth)
   OpenAgent.LlmVoice.OpenAIAzure/        Azure OpenAI Realtime voice provider
   OpenAgent.Tools.FileSystem/             File tools (read, write, append, edit) — scoped to dataPath, UTF-8 no BOM
   OpenAgent.Security.ApiKey/              API key authentication — AddApiKeyAuth() extension
@@ -52,9 +53,12 @@ IAgentLogic provides system prompt, tools, message history, and tool execution. 
 
 ### Provider pattern
 Three provider types, all with IConfigurable:
-- **ILlmTextProvider** — single `CompleteAsync` returning `IAsyncEnumerable<CompletionEvent>`. Used by both REST (collected) and WebSocket (streamed).
+- **ILlmTextProvider** — single `CompleteAsync` returning `IAsyncEnumerable<CompletionEvent>`. Used by both REST (collected) and WebSocket (streamed). Two implementations: `AzureOpenAiTextProvider` (OpenAI Chat Completions) and `AnthropicSubscriptionTextProvider` (Anthropic Messages API with setup-token OAuth).
 - **ILlmVoiceProvider** — creates bidirectional voice sessions
 - **IChannelProvider** — inbound channel adapters (Telegram, WhatsApp). `StartAsync`/`StopAsync` lifecycle managed by `ConnectionManager`.
+
+### Lazy provider resolution
+All text provider consumers (WebSocket endpoints, channel message handlers) resolve the provider **per message** via `Func<string, ILlmTextProvider>` and read `AgentConfig.TextProvider`/`TextModel` at call time. Provider/model changes take effect without restart. Both providers are registered as keyed singletons — the resolver just picks which one to use.
 
 ### Channel provider infrastructure
 - **IChannelProviderFactory** — creates providers from `Connection` config. Exposes `Type`, `DisplayName`, `ConfigFields` (for dynamic UI forms), and `SetupStep` (post-creation flow like QR pairing).
@@ -118,6 +122,10 @@ cd src/agent && dotnet build
 cd src/agent && dotnet test
 ```
 
+## CI/CD
+
+GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image and pushes to `ghcr.io/mbundgaard/open-agent:latest` + `:sha` on every push to master. Azure App Services pull the image independently — restart to pick up a new version. The Dockerfile runs tests during build (`dotnet test`), so broken code never gets pushed as an image.
+
 ## Key Design Decisions
 
 - ConversationType drives system prompt selection — the agent behaves differently for voice vs text vs cron
@@ -127,7 +135,8 @@ cd src/agent && dotnet test
 - SQLite conversation store (conversations.db in dataPath) — persistent across restarts, with schema migration via TryAddColumn
 - File tools use UTF-8 without BOM, controlled from a single constant in FileSystemToolHandler
 - All tools scoped to `{dataPath}` — no access outside data directory
-- Data directory has standard folders: `projects/` (one per project), `repos/` (git clones), `memory/` (agent notes) — created on startup by FileSystemToolHandler
+- Data directory bootstrapped on first startup by `DataDirectoryBootstrap.Run()` — creates required folders (`projects/`, `repos/`, `memory/`, `config/`, `connections/`) and extracts embedded default personality files (AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md, MEMORY.md, BOOTSTRAP.md) if missing. Also writes empty `config/agent.json` and `config/connections.json`. Never overwrites existing files.
+- BOOTSTRAP.md is a first-run conversation ritual — guides the agent through identity discovery with the user, then self-deletes. AGENTS.md checks for its presence on session startup.
 - System prompt composed from markdown files in dataPath: AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md — loaded once at startup, filtered by ConversationType
 - BuildChatMessages validates tool call rounds — skips orphaned tool calls to avoid API 400 errors
 - WhatsApp uses Baileys (Node.js) as a managed child process — .NET spawns `node baileys-bridge.js`, communicates via stdin/stdout JSON lines. No sidecar container needed.
@@ -135,6 +144,7 @@ cd src/agent && dotnet test
 - Node process lifecycle: unpaired (no process) -> pairing (QR) -> connected. LoggedOut clears creds. Reconnect with exponential backoff (2s->30s, 10 max).
 - `GET /api/connections/types` returns channel metadata (config fields, setup steps) so the frontend can build dynamic forms without hardcoded channel knowledge
 - Settings app uses `IConfigurable` pattern for provider config and `IChannelProviderFactory.ConfigFields` for connection config — both render dynamic forms from backend-provided schemas
+- Anthropic setup-token auth requires per-request `Authorization: Bearer` header (not on `DefaultRequestHeaders`), identity headers (`anthropic-beta`, `x-app`, `user-agent`), system prompt as text block array with Claude Code identity prefix, and adaptive thinking for 4.6 models. See [docs/anthropic-setup-token-auth.md](docs/anthropic-setup-token-auth.md).
 
 ## Memory
 
