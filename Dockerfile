@@ -33,7 +33,7 @@ WORKDIR /app
 COPY --from=publish /app/publish .
 
 # Install Node.js for Baileys bridge
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs python3 jq curl && rm -rf /var/lib/apt/lists/*
 
 # Copy Baileys bridge script and dependencies
 COPY --from=baileys-build /baileys/node_modules /app/node/node_modules
