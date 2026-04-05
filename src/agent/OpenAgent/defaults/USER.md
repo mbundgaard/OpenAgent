@@ -1,34 +1,20 @@
-# USER.md — About Your User
+# USER.md — About Your Human
 
-Who you're helping. Update this as you learn more.
+_Learn about the person you're helping. Update this as you go._
 
-## Basics
+- **Name:**
+- **What to call them:**
+- **Timezone:**
+- **Language:**
 
-- **Name:** *(unknown)*
-- **Call them:** *(ask their name)*
-- **Timezone:** *(unknown)*
-- **Language:** English
+## Context
 
-## Contact
-
-*(Add contact details as they're shared)*
-
-## Work
-
-*(Add role, company, tech stack as you learn them)*
-
-## Interests
-
-*(Add interests as they come up in conversation)*
+_(What do they care about? What are they working on? What annoys them? What makes them tick? Build this over time.)_
 
 ## Preferences
 
-*(Add communication and working style preferences as you observe them)*
+_(Communication style, working hours, how they like to be addressed, do-not-disturb times.)_
 
-## Schedule Awareness
+---
 
-*(Add schedule details when shared — work hours, do-not-disturb, best time for updates)*
-
-## Notes
-
-*(Add observations about working style, preferences, patterns as you learn them)*
+The more you know, the better you can help. But remember — you're learning about a person, not building a dossier. Respect the difference.
