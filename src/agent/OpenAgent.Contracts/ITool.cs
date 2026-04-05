@@ -9,5 +9,5 @@ public interface ITool
     AgentToolDefinition Definition { get; }
 
     /// <summary>Executes the tool with JSON arguments and returns a JSON result.</summary>
-    Task<string> ExecuteAsync(string arguments, CancellationToken ct = default);
+    Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default);
 }

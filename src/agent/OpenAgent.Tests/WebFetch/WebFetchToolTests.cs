@@ -27,7 +27,7 @@ public class WebFetchToolTests
         var html = "<html><head><title>Test Page</title></head><body><article><h1>Hello</h1><p>World paragraph content here.</p></article></body></html>";
         var tool = CreateTool(html);
 
-        var result = await tool.ExecuteAsync("""{"url": "https://example.com"}""");
+        var result = await tool.ExecuteAsync("""{"url": "https://example.com"}""", "");
         var doc = JsonDocument.Parse(result);
         var root = doc.RootElement;
 
@@ -42,7 +42,7 @@ public class WebFetchToolTests
     {
         var tool = CreateTool();
 
-        var result = await tool.ExecuteAsync("""{"url": "ftp://evil.com"}""");
+        var result = await tool.ExecuteAsync("""{"url": "ftp://evil.com"}""", "");
         var doc = JsonDocument.Parse(result);
         var root = doc.RootElement;
 
@@ -55,7 +55,7 @@ public class WebFetchToolTests
     {
         var tool = CreateTool();
 
-        var result = await tool.ExecuteAsync("""{"url": "http://192.168.1.1"}""");
+        var result = await tool.ExecuteAsync("""{"url": "http://192.168.1.1"}""", "");
         var doc = JsonDocument.Parse(result);
 
         Assert.False(doc.RootElement.GetProperty("success").GetBoolean());
@@ -66,7 +66,7 @@ public class WebFetchToolTests
     {
         var tool = CreateTool(statusCode: HttpStatusCode.InternalServerError);
 
-        var result = await tool.ExecuteAsync("""{"url": "https://example.com"}""");
+        var result = await tool.ExecuteAsync("""{"url": "https://example.com"}""", "");
         var doc = JsonDocument.Parse(result);
         var root = doc.RootElement;
 
@@ -81,7 +81,7 @@ public class WebFetchToolTests
         var html = $"<html><head><title>Long</title></head><body><article><p>{longContent}</p></article></body></html>";
         var tool = CreateTool(html);
 
-        var result = await tool.ExecuteAsync("""{"url": "https://example.com", "maxChars": 100}""");
+        var result = await tool.ExecuteAsync("""{"url": "https://example.com", "maxChars": 100}""", "");
         var doc = JsonDocument.Parse(result);
         var root = doc.RootElement;
 
@@ -95,7 +95,7 @@ public class WebFetchToolTests
     {
         var tool = CreateTool();
 
-        var result = await tool.ExecuteAsync("""{}""");
+        var result = await tool.ExecuteAsync("""{}""", "");
         var doc = JsonDocument.Parse(result);
 
         Assert.False(doc.RootElement.GetProperty("success").GetBoolean());
@@ -109,7 +109,7 @@ public class WebFetchToolTests
         var resolver = new FakeDnsResolver(IPAddress.Parse("10.0.0.1"));
         var tool = CreateTool(dnsResolver: resolver);
 
-        var result = await tool.ExecuteAsync("""{"url": "https://sneaky.com"}""");
+        var result = await tool.ExecuteAsync("""{"url": "https://sneaky.com"}""", "");
         var doc = JsonDocument.Parse(result);
 
         Assert.False(doc.RootElement.GetProperty("success").GetBoolean());
@@ -123,7 +123,7 @@ public class WebFetchToolTests
     {
         var tool = CreateTool();
 
-        var result = await tool.ExecuteAsync("not valid json{{{");
+        var result = await tool.ExecuteAsync("not valid json{{{", "");
         var doc = JsonDocument.Parse(result);
 
         Assert.False(doc.RootElement.GetProperty("success").GetBoolean());
@@ -139,7 +139,7 @@ public class WebFetchToolTests
         var tool = CreateTool(html);
 
         // Should not throw — negative maxChars should be clamped
-        var result = await tool.ExecuteAsync("""{"url": "https://example.com", "maxChars": -5}""");
+        var result = await tool.ExecuteAsync("""{"url": "https://example.com", "maxChars": -5}""", "");
         var doc = JsonDocument.Parse(result);
 
         Assert.True(doc.RootElement.GetProperty("success").GetBoolean());
@@ -152,7 +152,7 @@ public class WebFetchToolTests
         var html = "<html><head><title>Test</title></head><body><article><p>Some content.</p></article></body></html>";
         var tool = CreateTool(html);
 
-        var result = await tool.ExecuteAsync("""{"url": "https://example.com", "maxChars": 0}""");
+        var result = await tool.ExecuteAsync("""{"url": "https://example.com", "maxChars": 0}""", "");
         var doc = JsonDocument.Parse(result);
 
         Assert.True(doc.RootElement.GetProperty("success").GetBoolean());

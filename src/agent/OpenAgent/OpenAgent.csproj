@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenAgent.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="config\**" />
     <Compile Remove="data\**" />
     <Compile Remove="logs\**" />
@@ -31,6 +35,7 @@
     <ProjectReference Include="..\OpenAgent.Channel.WhatsApp\OpenAgent.Channel.WhatsApp.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.Expand\OpenAgent.Tools.Expand.csproj" />
     <ProjectReference Include="..\OpenAgent.Compaction\OpenAgent.Compaction.csproj" />
+    <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
     <ProjectReference Include="..\OpenAgent.Terminal\OpenAgent.Terminal.csproj" />
   </ItemGroup>
 

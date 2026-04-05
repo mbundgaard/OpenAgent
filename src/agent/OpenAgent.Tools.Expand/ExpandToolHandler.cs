@@ -35,7 +35,7 @@ internal sealed class ExpandTool(IConversationStore store) : ITool
         }
     };
 
-    public Task<string> ExecuteAsync(string arguments, CancellationToken ct = default)
+    public Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
         var args = JsonSerializer.Deserialize<ExpandArgs>(arguments);
         if (args?.MessageIds is null or { Count: 0 })

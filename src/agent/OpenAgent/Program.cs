@@ -15,6 +15,7 @@ using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.Expand;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
+using OpenAgent.Skills;
 using OpenAgent.Tools.Shell;
 using OpenAgent.Tools.WebFetch;
 using Serilog;
@@ -32,6 +33,19 @@ Directory.CreateDirectory(environment.DataPath);
 DataDirectoryBootstrap.Run(environment.DataPath);
 
 builder.Services.AddSingleton(environment);
+
+// Skill catalog — discover skills from {dataPath}/skills/
+builder.Services.AddSingleton<SkillCatalog>(sp =>
+    new SkillCatalog(
+        Path.Combine(environment.DataPath, "skills"),
+        sp.GetRequiredService<ILogger<SkillCatalog>>()));
+// SkillToolHandler registered as IToolHandler — AgentLogic aggregates all IToolHandler
+// registrations via IEnumerable<IToolHandler> (see AgentLogic.cs:14-18)
+builder.Services.AddSingleton<IToolHandler>(sp =>
+    new SkillToolHandler(
+        sp.GetRequiredService<SkillCatalog>(),
+        sp.GetRequiredService<IConversationStore>(),
+        sp.GetRequiredService<ILogger<SkillToolHandler>>()));
 
 var loggingConfig = new LoggingConfig();
 

@@ -25,7 +25,7 @@ public sealed class FileAppendTool(string basePath, Encoding encoding) : ITool
         }
     };
 
-    public async Task<string> ExecuteAsync(string arguments, CancellationToken ct = default)
+    public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
         var args = JsonDocument.Parse(arguments).RootElement;
         var path = args.GetProperty("path").GetString()

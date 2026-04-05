@@ -85,4 +85,12 @@ public sealed class Conversation
     [JsonPropertyName("last_activity")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DateTimeOffset? LastActivity { get; set; }
+
+    /// <summary>
+    /// Names of skills currently active in this conversation.
+    /// Active skill instructions are appended to the system prompt.
+    /// </summary>
+    [JsonPropertyName("active_skills")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? ActiveSkills { get; set; }
 }

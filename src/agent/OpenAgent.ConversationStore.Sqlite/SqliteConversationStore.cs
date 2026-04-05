@@ -92,6 +92,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Messages", "PromptTokens", "INTEGER");
         TryAddColumn(connection, "Messages", "CompletionTokens", "INTEGER");
         TryAddColumn(connection, "Messages", "ElapsedMs", "INTEGER");
+        TryAddColumn(connection, "Conversations", "ActiveSkills", "TEXT");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
@@ -117,8 +118,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT OR IGNORE INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model)
-            VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model)
+            INSERT OR IGNORE INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model, ActiveSkills)
+            VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills)
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
         cmd.Parameters.AddWithValue("@source", conversation.Source);
@@ -128,6 +129,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@voiceSessionOpen", conversation.VoiceSessionOpen ? 1 : 0);
         cmd.Parameters.AddWithValue("@provider", conversation.Provider);
         cmd.Parameters.AddWithValue("@model", conversation.Model);
+        cmd.Parameters.AddWithValue("@activeSkills",
+            conversation.ActiveSkills is not null
+                ? (object)JsonSerializer.Serialize(conversation.ActiveSkills)
+                : DBNull.Value);
         cmd.ExecuteNonQuery();
 
         // Re-read in case of a race (INSERT OR IGNORE means another thread may have created it)
@@ -138,7 +143,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity FROM Conversations ORDER BY CreatedAt DESC";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills FROM Conversations ORDER BY CreatedAt DESC";
 
         using var reader = cmd.ExecuteReader();
         var list = new List<Conversation>();
@@ -152,7 +157,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity FROM Conversations WHERE Id = @id";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -170,7 +175,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 Context = @context, CompactedUpToRowId = @compactedUpToRowId,
                 CompactionRunning = @compactionRunning, Provider = @provider, Model = @model,
                 TotalPromptTokens = @totalPromptTokens, TotalCompletionTokens = @totalCompletionTokens,
-                TurnCount = @turnCount, LastActivity = @lastActivity
+                TurnCount = @turnCount, LastActivity = @lastActivity, ActiveSkills = @activeSkills
             WHERE Id = @id
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
@@ -188,6 +193,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@totalCompletionTokens", conversation.TotalCompletionTokens);
         cmd.Parameters.AddWithValue("@turnCount", conversation.TurnCount);
         cmd.Parameters.AddWithValue("@lastActivity", (object?)conversation.LastActivity?.ToString("O") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@activeSkills",
+            conversation.ActiveSkills is not null
+                ? (object)JsonSerializer.Serialize(conversation.ActiveSkills)
+                : DBNull.Value);
         cmd.ExecuteNonQuery();
 
         TryStartCompaction(conversation);
@@ -449,7 +458,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             TotalPromptTokens = reader.GetInt64(12),
             TotalCompletionTokens = reader.GetInt64(13),
             TurnCount = reader.GetInt32(14),
-            LastActivity = reader.IsDBNull(15) ? null : DateTimeOffset.Parse(reader.GetString(15))
+            LastActivity = reader.IsDBNull(15) ? null : DateTimeOffset.Parse(reader.GetString(15)),
+            ActiveSkills = reader.IsDBNull(16) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(16))
         };
     }
 

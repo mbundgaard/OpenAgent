@@ -18,7 +18,7 @@ public class ExpandToolTests
         var handler = new ExpandToolHandler(store);
         var tool = handler.Tools[0];
 
-        var result = await tool.ExecuteAsync("""{"message_ids": ["msg1", "msg3"]}""");
+        var result = await tool.ExecuteAsync("""{"message_ids": ["msg1", "msg3"]}""", "");
 
         Assert.Contains("hello", result);
         Assert.Contains("bye", result);
@@ -32,7 +32,7 @@ public class ExpandToolTests
         var handler = new ExpandToolHandler(store);
         var tool = handler.Tools[0];
 
-        var result = await tool.ExecuteAsync("""{"message_ids": []}""");
+        var result = await tool.ExecuteAsync("""{"message_ids": []}""", "");
 
         Assert.Contains("error", result);
     }

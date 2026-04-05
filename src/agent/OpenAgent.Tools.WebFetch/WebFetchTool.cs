@@ -28,7 +28,7 @@ public sealed class WebFetchTool(HttpClient httpClient, IDnsResolver dnsResolver
         }
     };
 
-    public async Task<string> ExecuteAsync(string arguments, CancellationToken ct = default)
+    public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
         JsonElement args;
         try

@@ -95,7 +95,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         agentLogic.AddMessage(conversationId, userMessage);
 
         // Build the system prompt blocks and initial message list
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type);
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills);
         var systemBlocks = BuildSystemBlocks(systemPrompt);
         var messages = BuildMessages(conversation);
         var tools = BuildTools();
@@ -247,7 +247,9 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                     Type = "tool_use",
                     Id = tc.Id,
                     Name = tc.Function.Name,
-                    Input = JsonSerializer.Deserialize<JsonElement>(tc.Function.Arguments)
+                    Input = string.IsNullOrWhiteSpace(tc.Function.Arguments)
+                        ? JsonSerializer.Deserialize<JsonElement>("{}")
+                        : JsonSerializer.Deserialize<JsonElement>(tc.Function.Arguments)
                 }).ToList<AnthropicContentBlock>();
                 messages.Add(new AnthropicMessage { Role = "assistant", Content = toolUseBlocks });
 
@@ -459,7 +461,9 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                         Type = "tool_use",
                         Id = tc.Id,
                         Name = tc.Function.Name,
-                        Input = JsonSerializer.Deserialize<JsonElement>(tc.Function.Arguments)
+                        Input = string.IsNullOrWhiteSpace(tc.Function.Arguments)
+                        ? JsonSerializer.Deserialize<JsonElement>("{}")
+                        : JsonSerializer.Deserialize<JsonElement>(tc.Function.Arguments)
                     }).ToList<AnthropicContentBlock>();
                     result.Add(new AnthropicMessage { Role = "assistant", Content = toolUseBlocks });
 

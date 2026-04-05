@@ -29,7 +29,7 @@ public sealed class ShellExecTool(string workspacePath, ILogger<ShellExecTool> l
         }
     };
 
-    public async Task<string> ExecuteAsync(string arguments, CancellationToken ct = default)
+    public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
         var args = JsonDocument.Parse(arguments).RootElement;
         var command = args.GetProperty("command").GetString()

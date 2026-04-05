@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
+using OpenAgent.Skills;
 
 namespace OpenAgent;
 
@@ -13,6 +14,7 @@ internal sealed class SystemPromptBuilder
 {
     private readonly ILogger<SystemPromptBuilder> _logger;
     private readonly string _dataPath;
+    private readonly SkillCatalog _skillCatalog;
     private readonly Dictionary<string, string> _files = new();
 
     // Prompt files and which conversation types include them
@@ -23,14 +25,15 @@ internal sealed class SystemPromptBuilder
         ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
         ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
         ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("MEMORY.md", [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
+        ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
         ("VOICE.md",         [ConversationType.Voice]),
     ];
 
-    public SystemPromptBuilder(AgentEnvironment environment, ILogger<SystemPromptBuilder> logger)
+    public SystemPromptBuilder(AgentEnvironment environment, SkillCatalog skillCatalog, ILogger<SystemPromptBuilder> logger)
     {
         _logger = logger;
         _dataPath = environment.DataPath;
+        _skillCatalog = skillCatalog;
         LoadFiles(_dataPath);
     }
 
@@ -39,6 +42,7 @@ internal sealed class SystemPromptBuilder
     {
         _files.Clear();
         LoadFiles(_dataPath);
+        _skillCatalog.Reload();
     }
 
     /// <summary>Returns the data path where prompt files are stored.</summary>
@@ -48,7 +52,7 @@ internal sealed class SystemPromptBuilder
     /// Builds the system prompt for the given conversation type by concatenating
     /// the relevant files in order, separated by blank lines.
     /// </summary>
-    public string Build(ConversationType type)
+    public string Build(ConversationType type, IReadOnlyList<string>? activeSkills = null)
     {
         var sections = new List<string>();
 
@@ -66,6 +70,46 @@ internal sealed class SystemPromptBuilder
                 var today = DateTime.UtcNow.Date;
                 TryAppendFile(sections, Path.Combine("memory", $"{today.AddDays(-1):yyyy-MM-dd}.md"));
                 TryAppendFile(sections, Path.Combine("memory", $"{today:yyyy-MM-dd}.md"));
+            }
+        }
+
+        // Append skill catalog when skills are available
+        var catalogPrompt = _skillCatalog.BuildCatalogPrompt();
+        if (catalogPrompt.Length > 0)
+        {
+            var skillSection = """
+                The following skills provide specialized instructions for specific tasks.
+                When a task matches a skill's description, call the activate_skill tool
+                with the skill's name to load its full instructions. Use deactivate_skill
+                to remove a skill when you no longer need it. Use list_active_skills to
+                see which skills are currently active. Use activate_skill_resource to load
+                supporting files (scripts, references) from an active skill.
+
+                """ + catalogPrompt;
+            sections.Add(skillSection);
+        }
+
+        // Append active skill bodies — these are permanent in the system prompt
+        if (activeSkills is { Count: > 0 })
+        {
+            foreach (var skillName in activeSkills)
+            {
+                if (!_skillCatalog.TryGetSkill(skillName, out var skill))
+                    continue;
+
+                var resources = _skillCatalog.GetSkillResources(skillName);
+                var skillSection = $"<active_skill name=\"{skill!.Name}\">\n{skill.Body}";
+
+                if (resources.Count > 0)
+                {
+                    skillSection += "\n\n<skill_resources>";
+                    foreach (var resource in resources)
+                        skillSection += $"\n  <file>{resource}</file>";
+                    skillSection += "\n</skill_resources>";
+                }
+
+                skillSection += "\n</active_skill>";
+                sections.Add(skillSection);
             }
         }
 

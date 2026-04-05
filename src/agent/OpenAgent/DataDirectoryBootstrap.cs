@@ -15,7 +15,8 @@ public static class DataDirectoryBootstrap
         "repos",
         "memory",
         "config",
-        "connections"
+        "connections",
+        "skills"
     ];
 
     /// <summary>
@@ -32,6 +33,9 @@ public static class DataDirectoryBootstrap
         var assembly = Assembly.GetExecutingAssembly();
         var prefix = "OpenAgent.defaults.";
 
+        // If any personality file exists, this isn't a first run — don't re-create BOOTSTRAP.md
+        var isFirstRun = !File.Exists(Path.Combine(dataPath, "AGENTS.md"));
+
         foreach (var resourceName in assembly.GetManifestResourceNames())
         {
             if (!resourceName.StartsWith(prefix))
@@ -42,6 +46,10 @@ public static class DataDirectoryBootstrap
             var targetPath = Path.Combine(dataPath, fileName);
 
             if (File.Exists(targetPath))
+                continue;
+
+            // BOOTSTRAP.md is a first-run ritual — only create on fresh installs
+            if (fileName == "BOOTSTRAP.md" && !isFirstRun)
                 continue;
 
             using var stream = assembly.GetManifestResourceStream(resourceName)!;
