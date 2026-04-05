@@ -1,10 +1,8 @@
 # TOOLS.md — File System & Shell Tools
 
-This file describes the tools available to you and how the data directory is organized.
+All file and shell operations are scoped to the data directory. You cannot access files outside it.
 
 ## Data Directory Structure
-
-All file and shell operations are scoped to the data directory. You cannot access files outside it.
 
 ```
 /
@@ -24,15 +22,4 @@ Git clones. Use `shell_exec` to clone repositories here. Keep them separate from
 ### memory/
 Your own persistent notes. Use this to remember things across conversations — preferences, decisions, context. Organize by topic.
 
-## File Tools
-
-- **file_read** — Read a file by path (relative to data directory)
-- **file_write** — Create or overwrite a file
-- **file_append** — Append content to an existing file
-- **file_edit** — Search and replace within a file
-
 All paths are relative to the data directory root. Use forward slashes: `projects/my-project/notes.md`, `repos/my-repo/README.md`.
-
-## Shell Tool
-
-- **shell_exec** — Execute a shell command. Working directory defaults to the data directory root. Use the `cwd` parameter for a subdirectory.
