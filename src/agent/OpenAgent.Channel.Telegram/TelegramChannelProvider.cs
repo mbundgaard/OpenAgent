@@ -38,6 +38,9 @@ public sealed class TelegramChannelProvider : IChannelProvider
     /// <summary>The webhook secret used to validate inbound webhook requests.</summary>
     public string? WebhookSecret => _webhookSecret;
 
+    /// <summary>The webhook ID for this connection, used in the webhook URL path.</summary>
+    public string? WebhookId => _options.WebhookId;
+
     public TelegramChannelProvider(
         TelegramOptions options,
         string connectionId,
@@ -76,20 +79,41 @@ public sealed class TelegramChannelProvider : IChannelProvider
 
         if (isWebhook)
         {
-            if (string.IsNullOrEmpty(_options.WebhookUrl))
+            if (string.IsNullOrEmpty(_options.BaseUrl))
                 throw new InvalidOperationException(
-                    "Telegram WebhookUrl is required when Mode is 'Webhook'.");
+                    "Telegram BaseUrl is required when Mode is 'Webhook'.");
+
+            // Generate webhookId if not yet persisted — first start for this connection
+            if (string.IsNullOrEmpty(_options.WebhookId))
+            {
+                _options.WebhookId = Guid.NewGuid().ToString("N");
+
+                // Persist webhookId back to connection config so it survives restarts
+                var connection = _connectionStore.Load(_connectionId);
+                if (connection is not null)
+                {
+                    var configDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(connection.Config) ?? [];
+                    configDict["webhookId"] = _options.WebhookId;
+                    connection.Config = System.Text.Json.JsonSerializer.SerializeToElement(configDict);
+                    _connectionStore.Save(connection);
+                    _logger.LogInformation("Telegram: generated webhookId {WebhookId} for connection {ConnectionId}", _options.WebhookId, _connectionId);
+                }
+            }
+
+            // Compute full webhook URL
+            var baseUrl = _options.BaseUrl!.TrimEnd('/');
+            var webhookUrl = $"{baseUrl}/api/webhook/telegram/{_options.WebhookId}";
 
             // Generate webhook secret if not configured
             _webhookSecret = _options.WebhookSecret ?? Guid.NewGuid().ToString("N");
 
             // Register webhook with Telegram
             await _botClient.SetWebhook(
-                _options.WebhookUrl,
+                webhookUrl,
                 secretToken: _webhookSecret,
                 cancellationToken: ct);
 
-            _logger.LogInformation("Telegram: webhook registered at {Url}", _options.WebhookUrl);
+            _logger.LogInformation("Telegram: webhook registered at {Url}", webhookUrl);
         }
         else
         {

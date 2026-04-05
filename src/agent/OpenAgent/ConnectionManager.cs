@@ -110,4 +110,8 @@ public sealed class ConnectionManager : IConnectionManager, IHostedService
     /// <summary>Returns the running provider for a connection, or null if not running.</summary>
     public IChannelProvider? GetProvider(string connectionId) =>
         _running.TryGetValue(connectionId, out var provider) ? provider : null;
+
+    /// <summary>Returns all running providers.</summary>
+    public IEnumerable<(string ConnectionId, IChannelProvider Provider)> GetProviders() =>
+        _running.Select(kv => (kv.Key, kv.Value));
 }

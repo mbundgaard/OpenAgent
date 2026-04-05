@@ -45,7 +45,8 @@ public class TelegramWebhookEndpointTests : IClassFixture<WebApplicationFactory<
         {
             botToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
             mode = "Webhook",
-            webhookUrl = $"https://example.com/api/connections/{TestConnectionId}/webhook/telegram",
+            baseUrl = "https://example.com",
+            webhookId = "test-webhook-id",
             webhookSecret = "test-secret"
         });
 
@@ -87,7 +88,7 @@ public class TelegramWebhookEndpointTests : IClassFixture<WebApplicationFactory<
     public async Task Webhook_NoRunningConnection_Returns404()
     {
         var client = _factory.CreateClient();
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/connections/{TestConnectionId}/webhook/telegram")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/webhook/telegram/nonexistent-id")
         {
             Content = CreateValidUpdateJson()
         };
@@ -102,7 +103,7 @@ public class TelegramWebhookEndpointTests : IClassFixture<WebApplicationFactory<
     public async Task Webhook_IsAnonymous_NoApiKeyNeeded()
     {
         var client = _factory.CreateClient();
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/connections/nonexistent/webhook/telegram")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/webhook/telegram/nonexistent-id")
         {
             Content = CreateValidUpdateJson()
         };

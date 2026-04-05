@@ -84,6 +84,9 @@ internal sealed class SystemPromptBuilder
                 to remove a skill when you no longer need it. Use list_active_skills to
                 see which skills are currently active. Use activate_skill_resource to load
                 supporting files (scripts, references) from an active skill.
+                Paths in skill instructions are relative to the skill directory. Each
+                active_skill tag includes a directory attribute — prefix relative paths
+                with it when using shell_exec (e.g. "{directory}/scripts/build.sh").
 
                 """ + catalogPrompt;
             sections.Add(skillSection);
@@ -98,7 +101,9 @@ internal sealed class SystemPromptBuilder
                     continue;
 
                 var resources = _skillCatalog.GetSkillResources(skillName);
-                var skillSection = $"<active_skill name=\"{skill!.Name}\">\n{skill.Body}";
+                var skillDir = Path.GetDirectoryName(skill!.Location)!;
+                var relativeSkillDir = Path.GetRelativePath(_dataPath, skillDir).Replace('\\', '/');
+                var skillSection = $"<active_skill name=\"{skill.Name}\" directory=\"{relativeSkillDir}\">\n{skill.Body}";
 
                 if (resources.Count > 0)
                 {

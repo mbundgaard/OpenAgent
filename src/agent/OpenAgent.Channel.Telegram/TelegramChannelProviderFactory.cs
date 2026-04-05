@@ -26,7 +26,7 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
     [
         new() { Key = "botToken", Label = "Bot Token", Type = "Secret", Required = true },
         new() { Key = "mode", Label = "Mode", Type = "Enum", DefaultValue = "Polling", Options = ["Polling", "Webhook"] },
-        new() { Key = "webhookUrl", Label = "Webhook URL", Type = "String" },
+        new() { Key = "baseUrl", Label = "Base URL", Type = "String" },
         new() { Key = "streamResponses", Label = "Stream Responses", Type = "Enum", DefaultValue = "true", Options = ["true", "false"] },
     ];
 
@@ -80,8 +80,11 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
             if (connection.Config.TryGetProperty("mode", out var modeEl) && modeEl.ValueKind == JsonValueKind.String)
                 options.Mode = modeEl.GetString() ?? "Polling";
 
-            if (connection.Config.TryGetProperty("webhookUrl", out var urlEl) && urlEl.ValueKind == JsonValueKind.String)
-                options.WebhookUrl = urlEl.GetString();
+            if (connection.Config.TryGetProperty("baseUrl", out var baseUrlEl) && baseUrlEl.ValueKind == JsonValueKind.String)
+                options.BaseUrl = baseUrlEl.GetString();
+
+            if (connection.Config.TryGetProperty("webhookId", out var webhookIdEl) && webhookIdEl.ValueKind == JsonValueKind.String)
+                options.WebhookId = webhookIdEl.GetString();
 
             if (connection.Config.TryGetProperty("webhookSecret", out var secretEl) && secretEl.ValueKind == JsonValueKind.String)
                 options.WebhookSecret = secretEl.GetString();

@@ -20,9 +20,16 @@ public sealed class TelegramOptions
     public string Mode { get; set; } = "Polling";
 
     /// <summary>
-    /// Public HTTPS URL for Telegram to send webhook updates to. Required when Mode is "Webhook".
+    /// Base URL of the OpenAgent instance (e.g. "https://openagent-comput.azurewebsites.net").
+    /// Required when Mode is "Webhook". The full webhook URL is computed automatically.
     /// </summary>
-    public string? WebhookUrl { get; set; }
+    public string? BaseUrl { get; set; }
+
+    /// <summary>
+    /// Auto-generated GUID identifying this connection's webhook endpoint.
+    /// Generated on first start and persisted in the connection config.
+    /// </summary>
+    public string? WebhookId { get; set; }
 
     /// <summary>
     /// Secret token for webhook validation. Auto-generated if not set.

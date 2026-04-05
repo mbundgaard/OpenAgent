@@ -17,4 +17,7 @@ public interface IConnectionManager
 
     /// <summary>Stops a running connection by ID.</summary>
     Task StopConnectionAsync(string connectionId, CancellationToken ct);
+
+    /// <summary>Returns all running providers.</summary>
+    IEnumerable<(string ConnectionId, IChannelProvider Provider)> GetProviders();
 }

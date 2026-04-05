@@ -60,7 +60,7 @@ public class SkillIntegrationTests : IDisposable
             Microsoft.Extensions.Logging.Abstractions.NullLogger<SystemPromptBuilder>.Instance);
         var prompt = promptBuilder.Build(ConversationType.Text, conversation.ActiveSkills);
         Assert.Contains("# Git Workflow", prompt);
-        Assert.Contains("<active_skill name=\"git-workflow\">", prompt);
+        Assert.Contains("<active_skill name=\"git-workflow\" directory=", prompt);
 
         // Deactivate
         await deactivate.ExecuteAsync("""{"name": "git-workflow"}""", "conv1");
