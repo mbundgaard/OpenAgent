@@ -201,6 +201,16 @@ export function ConversationsApp() {
                   </div>
                 )}
               </div>
+
+              {/* Active Skills */}
+              {detail.active_skills && detail.active_skills.length > 0 && (
+                <div className={styles.activeSkills}>
+                  <span className={styles.activeSkillsLabel}>Skills:</span>
+                  {detail.active_skills.map(skill => (
+                    <span key={skill} className={styles.skillTag}>{skill}</span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Messages */}

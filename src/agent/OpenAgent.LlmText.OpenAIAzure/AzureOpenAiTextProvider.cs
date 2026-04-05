@@ -240,13 +240,14 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             });
 
-            // Update conversation with token usage and turn stats
-            conversation.LastPromptTokens = promptTokens;
-            conversation.TotalPromptTokens += promptTokens ?? 0;
-            conversation.TotalCompletionTokens += completionTokens ?? 0;
-            conversation.TurnCount++;
-            conversation.LastActivity = DateTimeOffset.UtcNow;
-            agentLogic.UpdateConversation(conversation);
+            // Re-read conversation — tools may have modified it mid-request (e.g. ActiveSkills)
+            var fresh = agentLogic.GetConversation(conversationId) ?? conversation;
+            fresh.LastPromptTokens = promptTokens;
+            fresh.TotalPromptTokens += promptTokens ?? 0;
+            fresh.TotalCompletionTokens += completionTokens ?? 0;
+            fresh.TurnCount++;
+            fresh.LastActivity = DateTimeOffset.UtcNow;
+            agentLogic.UpdateConversation(fresh);
 
             logger.LogDebug("Conversation {ConversationId}: {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",
                 conversationId, promptTokens, completionTokens, stopwatch.ElapsedMilliseconds);

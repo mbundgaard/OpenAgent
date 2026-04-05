@@ -11,6 +11,7 @@ export interface ConversationSummary {
   total_completion_tokens: number;
   turn_count: number;
   last_activity: string | null;
+  active_skills: string[] | null;
 }
 
 export interface ConversationDetail extends ConversationSummary {

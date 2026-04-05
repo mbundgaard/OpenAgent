@@ -303,13 +303,14 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             });
 
-            // Update conversation with token usage and turn stats
-            conversation.LastPromptTokens = inputTokens;
-            conversation.TotalPromptTokens += inputTokens ?? 0;
-            conversation.TotalCompletionTokens += outputTokens ?? 0;
-            conversation.TurnCount++;
-            conversation.LastActivity = DateTimeOffset.UtcNow;
-            agentLogic.UpdateConversation(conversation);
+            // Re-read conversation — tools may have modified it mid-request (e.g. ActiveSkills)
+            var fresh = agentLogic.GetConversation(conversationId) ?? conversation;
+            fresh.LastPromptTokens = inputTokens;
+            fresh.TotalPromptTokens += inputTokens ?? 0;
+            fresh.TotalCompletionTokens += outputTokens ?? 0;
+            fresh.TurnCount++;
+            fresh.LastActivity = DateTimeOffset.UtcNow;
+            agentLogic.UpdateConversation(fresh);
 
             logger.LogDebug("Conversation {ConversationId}: {InputTokens} input, {OutputTokens} output tokens, {ElapsedMs}ms",
                 conversationId, inputTokens, outputTokens, stopwatch.ElapsedMilliseconds);

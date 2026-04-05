@@ -37,6 +37,10 @@ public sealed class ConversationListItemResponse
 
     [JsonPropertyName("last_activity")]
     public DateTimeOffset? LastActivity { get; init; }
+
+    [JsonPropertyName("active_skills")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? ActiveSkills { get; init; }
 }
 
 /// <summary>
@@ -83,6 +87,10 @@ public sealed class ConversationDetailResponse
 
     [JsonPropertyName("compaction_running")]
     public bool CompactionRunning { get; init; }
+
+    [JsonPropertyName("active_skills")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? ActiveSkills { get; init; }
 }
 
 /// <summary>

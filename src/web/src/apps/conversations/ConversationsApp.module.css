@@ -209,6 +209,29 @@
   text-transform: uppercase;
 }
 
+.activeSkills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  flex-wrap: wrap;
+}
+
+.activeSkillsLabel {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+
+.skillTag {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 3px;
+  background: rgba(var(--color-accent-rgb, 100, 149, 237), 0.15);
+  color: var(--color-accent, cornflowerblue);
+  border: 1px solid rgba(var(--color-accent-rgb, 100, 149, 237), 0.3);
+}
+
 .editInput {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--color-border);

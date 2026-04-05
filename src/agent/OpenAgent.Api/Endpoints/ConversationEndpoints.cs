@@ -32,7 +32,8 @@ public static class ConversationEndpoints
                 TotalPromptTokens = c.TotalPromptTokens,
                 TotalCompletionTokens = c.TotalCompletionTokens,
                 TurnCount = c.TurnCount,
-                LastActivity = c.LastActivity
+                LastActivity = c.LastActivity,
+                ActiveSkills = c.ActiveSkills
             }));
         });
 
@@ -56,7 +57,8 @@ public static class ConversationEndpoints
                 LastActivity = conversation.LastActivity,
                 VoiceSessionId = conversation.VoiceSessionId,
                 VoiceSessionOpen = conversation.VoiceSessionOpen,
-                CompactionRunning = conversation.CompactionRunning
+                CompactionRunning = conversation.CompactionRunning,
+                ActiveSkills = conversation.ActiveSkills
             });
         });
 
@@ -99,7 +101,8 @@ public static class ConversationEndpoints
                 LastActivity = conversation.LastActivity,
                 VoiceSessionId = conversation.VoiceSessionId,
                 VoiceSessionOpen = conversation.VoiceSessionOpen,
-                CompactionRunning = conversation.CompactionRunning
+                CompactionRunning = conversation.CompactionRunning,
+                ActiveSkills = conversation.ActiveSkills
             });
         });
 
