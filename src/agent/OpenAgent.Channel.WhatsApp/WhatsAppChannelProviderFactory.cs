@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Connections;
 using OpenAgent.Models.Providers;
 
@@ -13,9 +14,8 @@ public sealed class WhatsAppChannelProviderFactory : IChannelProviderFactory
 {
     private readonly IConversationStore _store;
     private readonly IConnectionStore _connectionStore;
-    private readonly ILlmTextProvider _textProvider;
-    private readonly string _providerKey;
-    private readonly string _model;
+    private readonly Func<string, ILlmTextProvider> _textProviderResolver;
+    private readonly AgentConfig _agentConfig;
     private readonly AgentEnvironment _environment;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -35,29 +35,18 @@ public sealed class WhatsAppChannelProviderFactory : IChannelProviderFactory
         Endpoint = "/api/connections/{id}/whatsapp/qr"
     };
 
-    /// <summary>
-    /// Creates a new WhatsAppChannelProviderFactory.
-    /// </summary>
-    /// <param name="store">Conversation store for persistence.</param>
-    /// <param name="textProvider">LLM text provider for completions.</param>
-    /// <param name="providerKey">Provider key (e.g. "azure-openai-text").</param>
-    /// <param name="model">Model name (e.g. "gpt-5.2-chat").</param>
-    /// <param name="environment">Agent environment with data path.</param>
-    /// <param name="loggerFactory">Logger factory for creating typed loggers.</param>
     public WhatsAppChannelProviderFactory(
         IConversationStore store,
         IConnectionStore connectionStore,
-        ILlmTextProvider textProvider,
-        string providerKey,
-        string model,
+        Func<string, ILlmTextProvider> textProviderResolver,
+        AgentConfig agentConfig,
         AgentEnvironment environment,
         ILoggerFactory loggerFactory)
     {
         _store = store;
         _connectionStore = connectionStore;
-        _textProvider = textProvider;
-        _providerKey = providerKey;
-        _model = model;
+        _textProviderResolver = textProviderResolver;
+        _agentConfig = agentConfig;
         _environment = environment;
         _loggerFactory = loggerFactory;
     }
@@ -98,9 +87,8 @@ public sealed class WhatsAppChannelProviderFactory : IChannelProviderFactory
             authDir,
             _store,
             _connectionStore,
-            _textProvider,
-            _providerKey,
-            _model,
+            _textProviderResolver,
+            _agentConfig,
             _loggerFactory);
     }
 }

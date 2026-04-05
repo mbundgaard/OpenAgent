@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -28,10 +29,9 @@ public sealed class TelegramMessageHandler
 
     private readonly IConversationStore _store;
     private readonly IConnectionStore _connectionStore;
-    private readonly ILlmTextProvider _textProvider;
+    private readonly Func<string, ILlmTextProvider> _textProviderResolver;
     private readonly string _connectionId;
-    private readonly string _provider;
-    private readonly string _model;
+    private readonly AgentConfig _agentConfig;
     private readonly bool _streamResponses;
     private readonly bool _showThinking;
     private readonly ILogger<TelegramMessageHandler>? _logger;
@@ -39,19 +39,17 @@ public sealed class TelegramMessageHandler
     public TelegramMessageHandler(
         IConversationStore store,
         IConnectionStore connectionStore,
-        ILlmTextProvider textProvider,
+        Func<string, ILlmTextProvider> textProviderResolver,
         string connectionId,
-        string provider,
-        string model,
+        AgentConfig agentConfig,
         TelegramOptions options,
         ILogger<TelegramMessageHandler>? logger = null)
     {
         _store = store;
         _connectionStore = connectionStore;
-        _textProvider = textProvider;
+        _textProviderResolver = textProviderResolver;
         _connectionId = connectionId;
-        _provider = provider;
-        _model = model;
+        _agentConfig = agentConfig;
         _streamResponses = options.StreamResponses;
         _showThinking = options.ShowThinking;
         _logger = logger;
@@ -110,8 +108,13 @@ public sealed class TelegramMessageHandler
 
         _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
 
+        // Resolve provider and model from current config (lazy — picks up changes without restart)
+        var providerKey = _agentConfig.TextProvider;
+        var model = _agentConfig.TextModel;
+        var textProvider = _textProviderResolver(providerKey);
+
         // Get or create conversation
-        var conversation = _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, _provider, _model);
+        var conversation = _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, providerKey, model);
 
         // Build user message with Telegram message ID and optional reply-to reference
         var userMessage = new Models.Conversations.Message
@@ -125,7 +128,7 @@ public sealed class TelegramMessageHandler
         };
 
         // Get LLM completion events
-        var events = _textProvider.CompleteAsync(conversation, userMessage, ct);
+        var events = textProvider.CompleteAsync(conversation, userMessage, ct);
 
         // Route to streaming or batch based on config
         var mode = _streamResponses ? "streaming" : "batch";

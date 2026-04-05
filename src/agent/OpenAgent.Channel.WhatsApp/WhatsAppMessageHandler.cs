@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 
 namespace OpenAgent.Channel.WhatsApp;
@@ -19,10 +20,9 @@ public sealed class WhatsAppMessageHandler
 
     private readonly IConversationStore _store;
     private readonly IConnectionStore _connectionStore;
-    private readonly ILlmTextProvider _textProvider;
+    private readonly Func<string, ILlmTextProvider> _textProviderResolver;
     private readonly string _connectionId;
-    private readonly string _provider;
-    private readonly string _model;
+    private readonly AgentConfig _agentConfig;
     private readonly ILogger<WhatsAppMessageHandler>? _logger;
 
     // Dedup: message ID -> time first seen
@@ -34,18 +34,16 @@ public sealed class WhatsAppMessageHandler
     public WhatsAppMessageHandler(
         IConversationStore store,
         IConnectionStore connectionStore,
-        ILlmTextProvider textProvider,
+        Func<string, ILlmTextProvider> textProviderResolver,
         string connectionId,
-        string providerKey,
-        string model,
+        AgentConfig agentConfig,
         ILogger<WhatsAppMessageHandler>? logger = null)
     {
         _store = store;
         _connectionStore = connectionStore;
-        _textProvider = textProvider;
+        _textProviderResolver = textProviderResolver;
         _connectionId = connectionId;
-        _provider = providerKey;
-        _model = model;
+        _agentConfig = agentConfig;
         _logger = logger;
     }
 
@@ -106,8 +104,13 @@ public sealed class WhatsAppMessageHandler
 
         _logger?.LogInformation("Message from chat {ChatId}: {Text}", chatId, message.Text);
 
+        // Resolve provider and model from current config (lazy — picks up changes without restart)
+        var providerKey = _agentConfig.TextProvider;
+        var model = _agentConfig.TextModel;
+        var textProvider = _textProviderResolver(providerKey);
+
         // Get or create conversation
-        var conversation = _store.GetOrCreate(derivedConversationId, "whatsapp", ConversationType.Text, _provider, _model);
+        var conversation = _store.GetOrCreate(derivedConversationId, "whatsapp", ConversationType.Text, providerKey, model);
 
         // For group messages, prefix user text with sender name
         var userText = message.Text;
@@ -132,7 +135,7 @@ public sealed class WhatsAppMessageHandler
         try
         {
             var sb = new StringBuilder();
-            var events = _textProvider.CompleteAsync(conversation, userMessage, ct);
+            var events = textProvider.CompleteAsync(conversation, userMessage, ct);
             await foreach (var evt in events.WithCancellation(ct))
             {
                 switch (evt)

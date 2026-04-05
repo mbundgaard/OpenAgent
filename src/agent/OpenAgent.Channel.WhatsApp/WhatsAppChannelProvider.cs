@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 
 namespace OpenAgent.Channel.WhatsApp;
 
@@ -32,9 +33,8 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
     private readonly string _connectionId;
     private readonly string _authDir;
     private readonly IConversationStore _store;
-    private readonly ILlmTextProvider _textProvider;
-    private readonly string _providerKey;
-    private readonly string _model;
+    private readonly Func<string, ILlmTextProvider> _textProviderResolver;
+    private readonly AgentConfig _agentConfig;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<WhatsAppChannelProvider> _logger;
 
@@ -60,38 +60,28 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
     /// <summary>
     /// Creates a new WhatsAppChannelProvider.
     /// </summary>
-    /// <param name="options">WhatsApp channel configuration (allowlist, etc.).</param>
-    /// <param name="connectionId">Unique connection identifier.</param>
-    /// <param name="authDir">Directory for WhatsApp authentication state files.</param>
-    /// <param name="store">Conversation store for persistence.</param>
-    /// <param name="textProvider">LLM text provider for completions.</param>
-    /// <param name="providerKey">Provider key (e.g. "azure-openai-text").</param>
-    /// <param name="model">Model name (e.g. "gpt-5.2-chat").</param>
-    /// <param name="loggerFactory">Logger factory for creating typed loggers.</param>
     public WhatsAppChannelProvider(
         WhatsAppOptions options,
         string connectionId,
         string authDir,
         IConversationStore store,
         IConnectionStore connectionStore,
-        ILlmTextProvider textProvider,
-        string providerKey,
-        string model,
+        Func<string, ILlmTextProvider> textProviderResolver,
+        AgentConfig agentConfig,
         ILoggerFactory loggerFactory)
     {
         _options = options;
         _connectionId = connectionId;
         _authDir = authDir;
         _store = store;
-        _textProvider = textProvider;
-        _providerKey = providerKey;
-        _model = model;
+        _textProviderResolver = textProviderResolver;
+        _agentConfig = agentConfig;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<WhatsAppChannelProvider>();
 
         // Create the message handler -- it handles dedup, conversation gating, LLM calls
         _handler = new WhatsAppMessageHandler(
-            store, connectionStore, textProvider, connectionId, providerKey, model,
+            store, connectionStore, textProviderResolver, connectionId, agentConfig,
             loggerFactory.CreateLogger<WhatsAppMessageHandler>());
     }
 

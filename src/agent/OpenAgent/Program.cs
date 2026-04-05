@@ -93,32 +93,20 @@ builder.Services.AddApiKeyAuth(builder.Configuration);
 // Connections — channel providers created per-connection at runtime
 builder.Services.AddSingleton<IConnectionStore, FileConnectionStore>();
 builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
-{
-    var cfg = sp.GetRequiredService<AgentConfig>();
-    ILlmTextProvider? textProvider = !string.IsNullOrEmpty(cfg.TextProvider)
-        ? sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider) : null;
-    return new TelegramChannelProviderFactory(
+    new TelegramChannelProviderFactory(
         sp.GetRequiredService<IConversationStore>(),
         sp.GetRequiredService<IConnectionStore>(),
-        textProvider!,
-        cfg.TextProvider,
-        cfg.TextModel,
-        sp.GetRequiredService<ILoggerFactory>());
-});
+        sp.GetRequiredService<Func<string, ILlmTextProvider>>(),
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
-{
-    var cfg = sp.GetRequiredService<AgentConfig>();
-    ILlmTextProvider? textProvider = !string.IsNullOrEmpty(cfg.TextProvider)
-        ? sp.GetRequiredKeyedService<ILlmTextProvider>(cfg.TextProvider) : null;
-    return new WhatsAppChannelProviderFactory(
+    new WhatsAppChannelProviderFactory(
         sp.GetRequiredService<IConversationStore>(),
         sp.GetRequiredService<IConnectionStore>(),
-        textProvider!,
-        cfg.TextProvider,
-        cfg.TextModel,
+        sp.GetRequiredService<Func<string, ILlmTextProvider>>(),
+        sp.GetRequiredService<AgentConfig>(),
         sp.GetRequiredService<AgentEnvironment>(),
-        sp.GetRequiredService<ILoggerFactory>());
-});
+        sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<ConnectionManager>();
 builder.Services.AddSingleton<IConnectionManager>(sp => sp.GetRequiredService<ConnectionManager>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionManager>());

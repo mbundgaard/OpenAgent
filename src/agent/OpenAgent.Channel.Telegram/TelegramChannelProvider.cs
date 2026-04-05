@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
@@ -17,9 +18,8 @@ public sealed class TelegramChannelProvider : IChannelProvider
     private readonly string _connectionId;
     private readonly IConversationStore _store;
     private readonly IConnectionStore _connectionStore;
-    private readonly ILlmTextProvider _textProvider;
-    private readonly string _providerKey;
-    private readonly string _model;
+    private readonly Func<string, ILlmTextProvider> _textProviderResolver;
+    private readonly AgentConfig _agentConfig;
     private readonly ILogger<TelegramChannelProvider> _logger;
     private readonly ILogger<TelegramMessageHandler> _handlerLogger;
 
@@ -43,9 +43,8 @@ public sealed class TelegramChannelProvider : IChannelProvider
         string connectionId,
         IConversationStore store,
         IConnectionStore connectionStore,
-        ILlmTextProvider textProvider,
-        string providerKey,
-        string model,
+        Func<string, ILlmTextProvider> textProviderResolver,
+        AgentConfig agentConfig,
         ILogger<TelegramChannelProvider> logger,
         ILogger<TelegramMessageHandler> handlerLogger)
     {
@@ -53,9 +52,8 @@ public sealed class TelegramChannelProvider : IChannelProvider
         _connectionId = connectionId;
         _store = store;
         _connectionStore = connectionStore;
-        _textProvider = textProvider;
-        _providerKey = providerKey;
-        _model = model;
+        _textProviderResolver = textProviderResolver;
+        _agentConfig = agentConfig;
         _logger = logger;
         _handlerLogger = handlerLogger;
     }
@@ -74,7 +72,7 @@ public sealed class TelegramChannelProvider : IChannelProvider
         // Initialize bot client, sender, and handler
         _botClient = new TelegramBotClient(_options.BotToken);
         _sender = new TelegramBotClientSender(_botClient, _options.BotToken);
-        _handler = new TelegramMessageHandler(_store, _connectionStore, _textProvider, _connectionId, _providerKey, _model, _options, _handlerLogger);
+        _handler = new TelegramMessageHandler(_store, _connectionStore, _textProviderResolver, _connectionId, _agentConfig, _options, _handlerLogger);
 
         if (isWebhook)
         {

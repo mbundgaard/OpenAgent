@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Connections;
 using OpenAgent.Models.Providers;
 
@@ -13,9 +14,8 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
 {
     private readonly IConversationStore _store;
     private readonly IConnectionStore _connectionStore;
-    private readonly ILlmTextProvider _textProvider;
-    private readonly string _providerKey;
-    private readonly string _model;
+    private readonly Func<string, ILlmTextProvider> _textProviderResolver;
+    private readonly AgentConfig _agentConfig;
     private readonly ILoggerFactory _loggerFactory;
 
     public string Type => "telegram";
@@ -35,16 +35,14 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
     public TelegramChannelProviderFactory(
         IConversationStore store,
         IConnectionStore connectionStore,
-        ILlmTextProvider textProvider,
-        string providerKey,
-        string model,
+        Func<string, ILlmTextProvider> textProviderResolver,
+        AgentConfig agentConfig,
         ILoggerFactory loggerFactory)
     {
         _store = store;
         _connectionStore = connectionStore;
-        _textProvider = textProvider;
-        _providerKey = providerKey;
-        _model = model;
+        _textProviderResolver = textProviderResolver;
+        _agentConfig = agentConfig;
         _loggerFactory = loggerFactory;
     }
 
@@ -109,9 +107,8 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
             connection.Id,
             _store,
             _connectionStore,
-            _textProvider,
-            _providerKey,
-            _model,
+            _textProviderResolver,
+            _agentConfig,
             _loggerFactory.CreateLogger<TelegramChannelProvider>(),
             _loggerFactory.CreateLogger<TelegramMessageHandler>());
     }
