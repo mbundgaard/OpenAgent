@@ -173,11 +173,13 @@ public sealed class TelegramMessageHandler
             return;
         }
 
-        // Create the conversation
+        // Create the conversation and lock new conversations
         var providerKey = _agentConfig.TextProvider;
         var model = _agentConfig.TextModel;
         _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, providerKey, model);
-        _logger?.LogInformation("Created conversation for group {ChatId} (bot added)", chatId);
+        connection.AllowNewConversations = false;
+        _connectionStore.Save(connection);
+        _logger?.LogInformation("Created conversation for group {ChatId} (bot added), auto-locked new conversations", chatId);
 
         // Send a greeting
         try
