@@ -499,6 +499,10 @@ public sealed class TelegramMessageHandler
     private async Task SendFinalResponseAsync(
         ITelegramSender sender, long chatId, string replyText, string? assistantMessageId, CancellationToken ct)
     {
+        // Guard against empty responses — tool-only turns can produce no text
+        if (string.IsNullOrWhiteSpace(replyText))
+            replyText = "OK!";
+
         var chunks = TelegramMarkdownConverter.ChunkMarkdown(replyText, TelegramMaxMessageLength);
 
         int? telegramMessageId = null;
