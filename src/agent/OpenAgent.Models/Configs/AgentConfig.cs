@@ -25,6 +25,10 @@ public sealed class AgentConfig
     [JsonPropertyName("voiceModel")]
     public string VoiceModel { get; set; } = "";
 
+    /// <summary>Number of recent daily memory files to include in the system prompt.</summary>
+    [JsonPropertyName("memoryDays")]
+    public int MemoryDays { get; set; } = 3;
+
     /// <summary>Provider key used for compaction summarization.</summary>
     [JsonPropertyName("compactionProvider")]
     public string CompactionProvider { get; set; } = "";

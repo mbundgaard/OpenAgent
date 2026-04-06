@@ -57,6 +57,7 @@ public class SkillIntegrationTests : IDisposable
         var promptBuilder = new SystemPromptBuilder(
             new AgentEnvironment { DataPath = _tempDir },
             catalog,
+            new OpenAgent.Models.Configs.AgentConfig(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<SystemPromptBuilder>.Instance);
         var prompt = promptBuilder.Build(ConversationType.Text, conversation.ActiveSkills);
         Assert.Contains("# Git Workflow", prompt);

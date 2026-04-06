@@ -8,6 +8,7 @@ export function AgentConfigForm() {
     textProvider: '', textModel: '',
     voiceProvider: '', voiceModel: '',
     compactionProvider: '', compactionModel: '',
+    memoryDays: '3',
   });
   const [providers, setProviders] = useState<string[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
@@ -29,7 +30,7 @@ export function AgentConfigForm() {
 
       // Load current values
       const vals: Record<string, string> = {};
-      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel']) {
+      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays']) {
         const v = agentValues[key];
         vals[key] = typeof v === 'string' ? v : '';
       }
@@ -111,6 +112,19 @@ export function AgentConfigForm() {
       {renderSlot('Text', 'textProvider', 'textModel', textProviders)}
       {renderSlot('Voice', 'voiceProvider', 'voiceModel', voiceProviders)}
       {renderSlot('Compaction', 'compactionProvider', 'compactionModel', textProviders)}
+      <div className={styles.form} style={{ marginBottom: 12 }}>
+        <label className={styles.field}>
+          <span className={styles.label}>Memory Days</span>
+          <input
+            type="number"
+            className={styles.input}
+            min={0}
+            max={30}
+            value={values.memoryDays}
+            onChange={e => setValues(v => ({ ...v, memoryDays: e.target.value }))}
+          />
+        </label>
+      </div>
       <div className={styles.actions}>
         <button className={styles.saveButton} onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}

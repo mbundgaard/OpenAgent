@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Skills;
 
@@ -15,6 +16,7 @@ internal sealed class SystemPromptBuilder
     private readonly ILogger<SystemPromptBuilder> _logger;
     private readonly string _dataPath;
     private readonly SkillCatalog _skillCatalog;
+    private readonly AgentConfig _agentConfig;
     private readonly Dictionary<string, string> _files = new();
 
     // Prompt files and which conversation types include them
@@ -29,11 +31,12 @@ internal sealed class SystemPromptBuilder
         ("VOICE.md",         [ConversationType.Voice]),
     ];
 
-    public SystemPromptBuilder(AgentEnvironment environment, SkillCatalog skillCatalog, ILogger<SystemPromptBuilder> logger)
+    public SystemPromptBuilder(AgentEnvironment environment, SkillCatalog skillCatalog, AgentConfig agentConfig, ILogger<SystemPromptBuilder> logger)
     {
         _logger = logger;
         _dataPath = environment.DataPath;
         _skillCatalog = skillCatalog;
+        _agentConfig = agentConfig;
         LoadFiles(_dataPath);
     }
 
@@ -64,12 +67,19 @@ internal sealed class SystemPromptBuilder
             if (_files.TryGetValue(filePath, out var content))
                 sections.Add(content);
 
-            // After MEMORY.md, append yesterday's and today's daily memory
+            // After MEMORY.md, append the most recent daily memory files
             if (filePath == "MEMORY.md")
             {
-                var today = DateTime.UtcNow.Date;
-                TryAppendFile(sections, Path.Combine("memory", $"{today.AddDays(-1):yyyy-MM-dd}.md"));
-                TryAppendFile(sections, Path.Combine("memory", $"{today:yyyy-MM-dd}.md"));
+                var memoryDir = Path.Combine(_dataPath, "memory");
+                if (Directory.Exists(memoryDir))
+                {
+                    var days = Math.Max(1, _agentConfig.MemoryDays);
+                    var recentFiles = Directory.GetFiles(memoryDir, "????-??-??.md")
+                        .OrderByDescending(f => Path.GetFileName(f))
+                        .Take(days);
+                    foreach (var file in recentFiles)
+                        TryAppendFile(sections, Path.Combine("memory", Path.GetFileName(file)));
+                }
             }
         }
 
