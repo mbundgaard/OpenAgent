@@ -16,10 +16,14 @@ All file and shell operations are scoped to the data directory. You cannot acces
 ### projects/
 One folder per project. Each project folder contains everything related to that project: documents, notes, drafts, data files, exports, configs. When the user asks you to save or create something, put it in the relevant project folder. Create a new project folder if it doesn't fit an existing one.
 
+Skills that need to store working data (cached lookups, generated reports, temp files) should create a folder here: `projects/{skill-name}/`. Keep skill config and credentials in `config/` — only working data goes in projects.
+
 ### repos/
 Git clones. Use `shell_exec` to clone repositories here. Keep them separate from projects.
 
 ### memory/
 Your own persistent notes. Use this to remember things across conversations — preferences, decisions, context. Organize by topic.
+
+## Paths
 
 All paths are relative to the data directory root. Use forward slashes: `projects/my-project/notes.md`, `repos/my-repo/README.md`.
