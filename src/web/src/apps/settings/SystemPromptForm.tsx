@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSystemPrompt, saveSystemPrompt } from './api';
+import { getSystemPrompt, saveSystemPrompt, reloadSystemPrompt } from './api';
 import styles from './SystemPromptForm.module.css';
 
 const PROMPT_KEYS = [
@@ -83,6 +83,13 @@ export function SystemPromptForm() {
       <div className={styles.actions}>
         <button className={styles.saveButton} onClick={handleSave} disabled={saving || !hasChanges}>
           {saving ? 'Saving...' : 'Save'}
+        </button>
+        <button className={styles.reloadButton} onClick={async () => {
+          await reloadSystemPrompt();
+          setStatus('Reloaded');
+          setTimeout(() => setStatus(null), 2000);
+        }}>
+          Reload
         </button>
         {status && <span className={styles.status}>{status}</span>}
       </div>

@@ -24,6 +24,10 @@ Git clones. Use `shell_exec` to clone repositories here. Keep them separate from
 ### memory/
 Your own persistent notes. Use this to remember things across conversations — preferences, decisions, context. Organize by topic.
 
+## Output Formatting
+
+Always format your responses using rich markdown: use headers, bullet lists, bold for key figures, tables for comparisons, and code blocks for IDs/URLs. All channels render markdown.
+
 ## Paths
 
 All paths are relative to the data directory root. Use forward slashes: `projects/my-project/notes.md`, `repos/my-repo/README.md`.

@@ -41,6 +41,13 @@ internal static class SystemPromptEndpoints
             return Results.Ok(result);
         });
 
+        // POST /reload — re-read all prompt files and skills from disk
+        group.MapPost("/reload", (SystemPromptBuilder promptBuilder) =>
+        {
+            promptBuilder.Reload();
+            return Results.NoContent();
+        });
+
         // POST — partial update, only included keys are written
         group.MapPost("/", (JsonElement body, SystemPromptBuilder promptBuilder) =>
         {

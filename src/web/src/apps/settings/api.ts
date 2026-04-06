@@ -57,6 +57,11 @@ export async function saveSystemPrompt(data: Record<string, string>): Promise<vo
   });
 }
 
+/** Reload system prompt files and skills from disk. */
+export async function reloadSystemPrompt(): Promise<void> {
+  await apiFetch('/api/admin/system-prompt/reload', { method: 'POST' });
+}
+
 // --- Connections ---
 
 export interface ConnectionInfo {
