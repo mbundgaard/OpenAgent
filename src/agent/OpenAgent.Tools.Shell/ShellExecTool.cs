@@ -15,7 +15,7 @@ public sealed class ShellExecTool(string workspacePath, ILogger<ShellExecTool> l
     public AgentToolDefinition Definition { get; } = new()
     {
         Name = "shell_exec",
-        Description = "Execute a shell command in the workspace. Output is tail-truncated to the last 2000 lines or 50KB. Errors and results appear at the end of output.",
+        Description = BuildDescription(),
         Parameters = new
         {
             type = "object",
@@ -28,6 +28,29 @@ public sealed class ShellExecTool(string workspacePath, ILogger<ShellExecTool> l
             required = new[] { "command" }
         }
     };
+
+    private static string BuildDescription()
+    {
+        var desc = "Execute a shell command in the workspace. Output is tail-truncated to the last 2000 lines or 50KB. Errors and results appear at the end of output.";
+
+        if (OperatingSystem.IsWindows())
+        {
+            var (shell, _) = GetShellConfig();
+            var isGitBash = shell.Contains("bash", StringComparison.OrdinalIgnoreCase);
+
+            if (isGitBash)
+                desc += "\n\nEnvironment: Git Bash on Windows."
+                    + " Use 'python' not 'python3'."
+                    + " /dev/stdin does not exist — pipe directly (e.g. curl ... | jq '.field') instead of reading from /dev/stdin."
+                    + " Use jq for JSON parsing, not python or node with stdin."
+                    + " Do not use Windows commands (findstr, dir) — use bash equivalents (grep, ls).";
+            else
+                desc += "\n\nEnvironment: cmd.exe on Windows."
+                    + " Use Windows commands (findstr, dir, type)."
+                    + " Use 'python' not 'python3'.";
+        }
+        return desc;
+    }
 
     public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
