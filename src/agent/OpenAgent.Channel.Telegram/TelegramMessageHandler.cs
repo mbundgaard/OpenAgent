@@ -61,6 +61,14 @@ public sealed class TelegramMessageHandler
     /// </summary>
     public async Task HandleUpdateAsync(ITelegramSender sender, Update update, CancellationToken ct)
     {
+        // Handle bot-added-to-group: create conversation so future messages are accepted
+        if (update.Message is { NewChatMembers: { } newMembers, Chat.Type: ChatType.Group or ChatType.Supergroup } groupMsg
+            && newMembers.Any(m => m.IsBot))
+        {
+            await HandleBotAddedToGroupAsync(sender, groupMsg, ct);
+            return;
+        }
+
         // Filter: handle text messages in private, group, and supergroup chats from known users
         if (update.Message is not { Text: not null, From: not null } message
             || message.Chat.Type is not (ChatType.Private or ChatType.Group or ChatType.Supergroup))
@@ -138,6 +146,48 @@ public sealed class TelegramMessageHandler
             await StreamResponseAsync(sender, chatId, events, ct);
         else
             await CollectAndSendAsync(sender, chatId, events, ct);
+    }
+
+    /// <summary>
+    /// Handles the bot being added to a group chat. Creates the conversation
+    /// so future messages from this group are accepted.
+    /// </summary>
+    private async Task HandleBotAddedToGroupAsync(ITelegramSender sender, global::Telegram.Bot.Types.Message groupMsg, CancellationToken ct)
+    {
+        var chatId = groupMsg.Chat.Id;
+        var derivedConversationId = $"telegram:{_connectionId}:{chatId}";
+
+        // Check if conversation already exists
+        var existing = _store.Get(derivedConversationId);
+        if (existing is not null)
+        {
+            _logger?.LogDebug("Bot added to group {ChatId} but conversation already exists", chatId);
+            return;
+        }
+
+        // Check if new conversations are allowed
+        var connection = _connectionStore.Load(_connectionId);
+        if (connection is null || !connection.AllowNewConversations)
+        {
+            _logger?.LogInformation("Bot added to group {ChatId} but new conversations not allowed", chatId);
+            return;
+        }
+
+        // Create the conversation
+        var providerKey = _agentConfig.TextProvider;
+        var model = _agentConfig.TextModel;
+        _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, providerKey, model);
+        _logger?.LogInformation("Created conversation for group {ChatId} (bot added)", chatId);
+
+        // Send a greeting
+        try
+        {
+            await sender.SendTextAsync(chatId, "Hey! I'm here. What's up?", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to send greeting to group {ChatId}", chatId);
+        }
     }
 
     /// <summary>
