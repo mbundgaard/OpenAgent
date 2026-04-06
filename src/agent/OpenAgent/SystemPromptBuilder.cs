@@ -100,10 +100,13 @@ internal sealed class SystemPromptBuilder
                 if (!_skillCatalog.TryGetSkill(skillName, out var skill))
                     continue;
 
+                // Read skill body fresh from disk each time — picks up changes without restart
+                var body = _skillCatalog.ReadSkillBody(skillName) ?? skill!.Body;
+
                 var resources = _skillCatalog.GetSkillResources(skillName);
                 var skillDir = Path.GetDirectoryName(skill!.Location)!;
                 var relativeSkillDir = Path.GetRelativePath(_dataPath, skillDir).Replace('\\', '/');
-                var skillSection = $"<active_skill name=\"{skill.Name}\" directory=\"{relativeSkillDir}\">\n{skill.Body}";
+                var skillSection = $"<active_skill name=\"{skill.Name}\" directory=\"{relativeSkillDir}\">\n{body}";
 
                 if (resources.Count > 0)
                 {

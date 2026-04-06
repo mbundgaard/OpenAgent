@@ -60,6 +60,28 @@ public sealed class SkillCatalog
     }
 
     /// <summary>
+    /// Reads the skill body fresh from disk. Returns null if the file is missing or invalid.
+    /// Used by SystemPromptBuilder to pick up SKILL.md changes without restart.
+    /// </summary>
+    public string? ReadSkillBody(string skillName)
+    {
+        if (!_skills.TryGetValue(skillName, out var skill))
+            return null;
+
+        try
+        {
+            var content = File.ReadAllText(skill.Location);
+            var parsed = SkillFrontmatterParser.Parse(content);
+            return parsed.IsValid ? parsed.Body : null;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to re-read skill {Name} from disk", skillName);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Lists files in scripts/, references/, and assets/ subdirectories for a skill.
     /// Returns paths relative to the skill directory using forward slashes.
     /// </summary>
