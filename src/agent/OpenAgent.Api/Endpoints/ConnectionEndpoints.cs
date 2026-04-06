@@ -101,6 +101,7 @@ public static class ConnectionEndpoints
             existing.Name = request.Name ?? existing.Name;
             existing.Type = request.Type ?? existing.Type;
             existing.Enabled = request.Enabled ?? existing.Enabled;
+            existing.AllowNewConversations = request.AllowNewConversations ?? existing.AllowNewConversations;
             existing.ConversationId = request.ConversationId ?? existing.ConversationId;
             if (request.Config.ValueKind != JsonValueKind.Undefined)
                 existing.Config = request.Config;
@@ -162,6 +163,7 @@ public static class ConnectionEndpoints
         Name = connection.Name,
         Type = connection.Type,
         Enabled = connection.Enabled,
+        AllowNewConversations = connection.AllowNewConversations,
         ConversationId = connection.ConversationId,
         Config = connection.Config,
         Status = connectionManager.IsRunning(connection.Id) ? "running" : "stopped",
@@ -182,6 +184,9 @@ public sealed class ConnectionResponse
 
     [JsonPropertyName("enabled")]
     public bool Enabled { get; init; }
+
+    [JsonPropertyName("allowNewConversations")]
+    public bool AllowNewConversations { get; init; }
 
     [JsonPropertyName("conversationId")]
     public required string ConversationId { get; init; }
@@ -223,6 +228,9 @@ public sealed class UpdateConnectionRequest
 
     [JsonPropertyName("enabled")]
     public bool? Enabled { get; init; }
+
+    [JsonPropertyName("allowNewConversations")]
+    public bool? AllowNewConversations { get; init; }
 
     [JsonPropertyName("conversationId")]
     public string? ConversationId { get; init; }

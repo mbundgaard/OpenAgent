@@ -7,6 +7,7 @@ import {
   stopConnection,
   getConnectionTypes,
   createConnection,
+  updateConnection,
 } from './api';
 import { QrCodeDisplay } from './QrCodeDisplay';
 import styles from './ConnectionsForm.module.css';
@@ -282,6 +283,15 @@ export function ConnectionsForm() {
               <span className={styles.type}>{conn.type}</span>
             </div>
             <div className={styles.headerRight}>
+              {!conn.allowNewConversations && (
+                <button
+                  className={styles.actionButton}
+                  onClick={async e => { e.stopPropagation(); await updateConnection(conn.id, { allowNewConversations: true }); refresh(); }}
+                  title="Allow new conversations from this connection"
+                >
+                  Unlock
+                </button>
+              )}
               <button
                 className={`${styles.actionButton} ${conn.status === 'running' ? styles.stopButton : styles.startButton}`}
                 onClick={e => { e.stopPropagation(); handleToggle(conn); }}

@@ -64,6 +64,7 @@ export interface ConnectionInfo {
   name: string;
   type: string;
   enabled: boolean;
+  allowNewConversations: boolean;
   conversationId: string;
   config: Record<string, unknown>;
   status: string;

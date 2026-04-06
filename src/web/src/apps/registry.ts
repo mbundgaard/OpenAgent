@@ -47,7 +47,7 @@ const apps: AppDefinition[] = [
     title: 'Settings',
     icon: 'admin-icon',
     component: SettingsApp,
-    defaultSize: { width: 650, height: 500 },
+    defaultSize: { width: 800, height: 500 },
   },
 ];
 
