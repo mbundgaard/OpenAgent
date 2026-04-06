@@ -124,7 +124,16 @@ When `OpenAgent.Api` needs a type from the host project, extract an interface in
 
 ### Git
 - Commit frequently — after each logical change, not in accumulated batches
+- Separate features get separate commits, then push once
 - Concise commit messages focused on "why"
+
+### Skills
+- Skills are instructions, not tooling — they teach the agent how to use existing tools (shell_exec, file_read, etc.)
+- No wrapper scripts (.sh, .py) — the agent calls curl/jq directly via shell_exec
+- Skill config (API keys, credentials) lives in `{dataPath}/config/{name}.json`
+- Working data goes in `{dataPath}/projects/{skill-name}/`
+- API specs should be inline in SKILL.md — don't use progressive disclosure for small files (<10KB)
+- Separate GET response schemas from POST/PUT request schemas — response-only fields (index, id, timestamps) must not appear in request examples
 
 ## Build and Test
 
