@@ -138,14 +138,28 @@ public sealed class TelegramMessageHandler
         // Get LLM completion events
         var events = textProvider.CompleteAsync(conversation, userMessage, ct);
 
-        // Route to streaming or batch based on config
-        var mode = _streamResponses ? "streaming" : "batch";
+        // Route to streaming or batch — drafts only work in private chats
+        var isGroup = chatId < 0;
+        var useStreaming = _streamResponses && !isGroup;
+        var mode = useStreaming ? "streaming" : "batch";
         _logger?.LogInformation("Starting {Mode} response for chat {ChatId}", mode, chatId);
 
-        if (_streamResponses)
-            await StreamResponseAsync(sender, chatId, events, ct);
-        else
-            await CollectAndSendAsync(sender, chatId, events, ct);
+        // Keep typing indicator alive while processing
+        using var typingCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var typingTask = KeepTypingAsync(sender, chatId, typingCts.Token);
+
+        try
+        {
+            if (useStreaming)
+                await StreamResponseAsync(sender, chatId, events, ct);
+            else
+                await CollectAndSendAsync(sender, chatId, events, ct);
+        }
+        finally
+        {
+            await typingCts.CancelAsync();
+            try { await typingTask; } catch (OperationCanceledException) { }
+        }
     }
 
     /// <summary>
@@ -190,6 +204,23 @@ public sealed class TelegramMessageHandler
         {
             _logger?.LogWarning(ex, "Failed to send greeting to group {ChatId}", chatId);
         }
+    }
+
+    /// <summary>
+    /// Sends typing indicator every 4 seconds until cancelled.
+    /// </summary>
+    private async Task KeepTypingAsync(ITelegramSender sender, long chatId, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(4000, ct);
+                await sender.SendTypingAsync(chatId, ct);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { /* best-effort */ }
     }
 
     /// <summary>
