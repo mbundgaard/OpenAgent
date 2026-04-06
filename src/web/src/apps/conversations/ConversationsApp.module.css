@@ -184,6 +184,14 @@
   color: var(--color-text-muted);
 }
 
+.detailId {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+  font-family: monospace;
+  margin-top: 2px;
+}
+
 .stats {
   display: flex;
   gap: 16px;
@@ -328,6 +336,15 @@
 
 .deleteButton:hover {
   background: rgba(233, 69, 96, 0.1);
+}
+
+.toggleLabel {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
 }
 
 .messages {

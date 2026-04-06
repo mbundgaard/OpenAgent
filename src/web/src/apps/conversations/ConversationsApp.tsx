@@ -17,6 +17,7 @@ export function ConversationsApp() {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showToolCalls, setShowToolCalls] = useState(false);
 
   // Editing state
   const [editing, setEditing] = useState(false);
@@ -30,7 +31,8 @@ export function ConversationsApp() {
   const refresh = useCallback(() => {
     setLoading(true);
     listConversations()
-      .then(setConversations)
+      .then(convs => setConversations(convs.sort((a, b) =>
+        (b.last_activity ?? b.created_at).localeCompare(a.last_activity ?? a.created_at))))
       .finally(() => setLoading(false));
   }, []);
 
@@ -94,6 +96,7 @@ export function ConversationsApp() {
   };
 
   const availableModels = modelsByProvider[editProvider] ?? [];
+  const lastPromptTokens = [...messages].reverse().find(m => m.prompt_tokens != null)?.prompt_tokens ?? 0;
 
   return (
     <div className={styles.container}>
@@ -116,11 +119,9 @@ export function ConversationsApp() {
             >
               <div className={styles.itemTop}>
                 <span className={styles.source}>{c.source}</span>
-                <span className={styles.type}>{c.type}</span>
               </div>
               <div className={styles.itemMeta}>
                 <span>{c.model}</span>
-                <span>{c.turn_count} turns</span>
               </div>
               <div className={styles.itemId}>{c.id.slice(0, 8)}...</div>
             </button>
@@ -167,7 +168,10 @@ export function ConversationsApp() {
                   </>
                 ) : (
                   <>
-                    <span className={styles.detailLabel}>{detail.provider} / {detail.model} / {detail.source}</span>
+                    <div>
+                      <span className={styles.detailLabel}>{detail.provider} / {detail.model} / {detail.source}</span>
+                      <div className={styles.detailId}>{detail.id}</div>
+                    </div>
                     <div className={styles.detailActions}>
                       <button className={styles.editButton} onClick={startEditing}>Edit</button>
                       <button className={styles.deleteButton} onClick={() => handleDelete(selected)}>Delete</button>
@@ -179,20 +183,8 @@ export function ConversationsApp() {
               {/* Stats */}
               <div className={styles.stats}>
                 <div className={styles.stat}>
-                  <span className={styles.statValue}>{detail.turn_count}</span>
-                  <span className={styles.statLabel}>Turns</span>
-                </div>
-                <div className={styles.stat}>
-                  <span className={styles.statValue}>{formatTokens(detail.total_prompt_tokens)}</span>
-                  <span className={styles.statLabel}>Prompt</span>
-                </div>
-                <div className={styles.stat}>
-                  <span className={styles.statValue}>{formatTokens(detail.total_completion_tokens)}</span>
-                  <span className={styles.statLabel}>Completion</span>
-                </div>
-                <div className={styles.stat}>
-                  <span className={styles.statValue}>{formatTokens(detail.total_prompt_tokens + detail.total_completion_tokens)}</span>
-                  <span className={styles.statLabel}>Total</span>
+                  <span className={styles.statValue}>{formatTokens(lastPromptTokens)}</span>
+                  <span className={styles.statLabel}>Last Prompt</span>
                 </div>
                 {detail.last_activity && (
                   <div className={styles.stat}>
@@ -200,22 +192,32 @@ export function ConversationsApp() {
                     <span className={styles.statLabel}>Last Active</span>
                   </div>
                 )}
-              </div>
-
-              {/* Active Skills */}
-              {detail.active_skills && detail.active_skills.length > 0 && (
-                <div className={styles.activeSkills}>
-                  <span className={styles.activeSkillsLabel}>Skills:</span>
-                  {detail.active_skills.map(skill => (
-                    <span key={skill} className={styles.skillTag}>{skill}</span>
-                  ))}
+                <div className={styles.stat}>
+                  <span className={styles.statValue}>
+                    <input type="checkbox" checked={showToolCalls}
+                      onChange={e => setShowToolCalls(e.target.checked)} />
+                  </span>
+                  <span className={styles.statLabel}>Tool Calls</span>
                 </div>
-              )}
+                {detail.active_skills && detail.active_skills.length > 0 && (
+                  <div className={styles.stat}>
+                    <span className={styles.statValue}>
+                      {detail.active_skills.map(skill => (
+                        <span key={skill} className={styles.skillTag}>{skill}</span>
+                      ))}
+                    </span>
+                    <span className={styles.statLabel}>Skills</span>
+                  </div>
+                )}
+              </div>
             </div>
-
-            {/* Messages */}
             <div className={styles.messages}>
-              {messages.filter(m => m.role !== 'system').map(msg => (
+              {messages
+                .filter(m => m.role !== 'system')
+                .filter(m => showToolCalls || m.channel_message_id != null)
+                .slice(-50)
+                .reverse()
+                .map(msg => (
                 <div key={msg.id} className={`${styles.message} ${styles[msg.role] ?? ''}`}>
                   <div className={styles.messageHeader}>
                     <span className={styles.role}>{msg.role}</span>

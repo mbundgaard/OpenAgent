@@ -28,6 +28,7 @@ export interface ConversationMessage {
   created_at: string;
   tool_calls: string | null;
   tool_call_id: string | null;
+  channel_message_id: string | null;
   prompt_tokens: number | null;
   completion_tokens: number | null;
   elapsed_ms: number | null;
