@@ -26,7 +26,7 @@ internal sealed class ScheduledTaskStore
     /// <summary>All tasks currently in memory.</summary>
     public IReadOnlyList<ScheduledTask> Tasks => _tasks;
 
-    /// <summary>Loads tasks from disk into memory. Creates empty file if missing.</summary>
+    /// <summary>Loads tasks from disk into memory. Handles missing or locked files gracefully.</summary>
     public void Load()
     {
         if (!File.Exists(_filePath))
@@ -35,12 +35,20 @@ internal sealed class ScheduledTaskStore
             return;
         }
 
-        var json = File.ReadAllText(_filePath);
-        var file = JsonSerializer.Deserialize<ScheduledTaskFile>(json, JsonOptions);
-        _tasks = file?.Tasks ?? [];
+        try
+        {
+            var json = File.ReadAllText(_filePath);
+            var file = JsonSerializer.Deserialize<ScheduledTaskFile>(json, JsonOptions);
+            _tasks = file?.Tasks ?? [];
+        }
+        catch (IOException)
+        {
+            // File locked by another process (e.g. parallel test runners) — start with empty list
+            _tasks = [];
+        }
     }
 
-    /// <summary>Persists current in-memory state to disk.</summary>
+    /// <summary>Persists current in-memory state to disk. Handles locked files gracefully.</summary>
     public void Save()
     {
         var dir = Path.GetDirectoryName(_filePath);
@@ -49,7 +57,15 @@ internal sealed class ScheduledTaskStore
 
         var file = new ScheduledTaskFile { Tasks = _tasks };
         var json = JsonSerializer.Serialize(file, JsonOptions);
-        File.WriteAllText(_filePath, json);
+
+        try
+        {
+            File.WriteAllText(_filePath, json);
+        }
+        catch (IOException)
+        {
+            // File locked by another process — skip this write, state remains in memory
+        }
     }
 
     /// <summary>Returns a task by ID, or null if not found.</summary>
