@@ -54,7 +54,7 @@ public sealed class ScheduledTask
 
 ### ScheduleConfig
 
-Exactly one property is set per task.
+Exactly one of `Cron`, `IntervalMs`, or `At` must be set. Validation rejects tasks with zero or multiple schedule properties set. `Timezone` is an optional modifier for `Cron` schedules.
 
 ```csharp
 public sealed class ScheduleConfig
@@ -73,13 +73,25 @@ public sealed class ScheduleConfig
 }
 ```
 
+### DeliveryMode Enum
+
+```csharp
+[JsonConverter(typeof(JsonStringEnumConverter<DeliveryMode>))]
+public enum DeliveryMode
+{
+    Silent,
+    Channel,
+    Webhook
+}
+```
+
 ### DeliveryConfig
 
 ```csharp
 public sealed class DeliveryConfig
 {
     [JsonPropertyName("mode")]
-    public string Mode { get; set; } = "silent";       // "silent" | "channel" | "webhook"
+    public DeliveryMode Mode { get; set; } = DeliveryMode.Silent;
 
     [JsonPropertyName("connectionId")]
     public string? ConnectionId { get; set; }          // Channel connection to deliver through
@@ -111,6 +123,17 @@ public sealed class AgentTurnConfig
 }
 ```
 
+### TaskRunStatus Enum
+
+```csharp
+[JsonConverter(typeof(JsonStringEnumConverter<TaskRunStatus>))]
+public enum TaskRunStatus
+{
+    Success,
+    Error
+}
+```
+
 ### ScheduledTaskState
 
 Runtime state, updated by the engine only. Not editable via API.
@@ -125,7 +148,7 @@ public sealed class ScheduledTaskState
     public DateTimeOffset? LastRunAt { get; set; }
 
     [JsonPropertyName("lastStatus")]
-    public string? LastStatus { get; set; }            // "success" | "error"
+    public TaskRunStatus? LastStatus { get; set; }
 
     [JsonPropertyName("lastError")]
     public string? LastError { get; set; }
@@ -143,7 +166,7 @@ public sealed class ScheduledTaskState
 
 1. Load tasks from `scheduled-tasks.json`
 2. Compute `NextRunAt` for all enabled tasks
-3. Check for missed runs (tasks where `NextRunAt < now`) — execute with staggered delays
+3. Check for missed runs (tasks where `NextRunAt < now`) — execute at most one catch-up run per task (the most recent missed occurrence only), with 2-second stagger between tasks
 4. Arm the timer
 
 ### Timer Loop
@@ -157,14 +180,14 @@ public sealed class ScheduledTaskState
 
 For each due task:
 
-1. Resolve conversation via `IConversationStore.GetOrCreate("scheduledtask:{taskId}", "scheduledtask", ConversationType.ScheduledTask)`
+1. Resolve conversation via `IConversationStore.GetOrCreate("scheduledtask:{taskId}", "scheduledtask", ConversationType.ScheduledTask)`. These conversations use the same compaction as regular conversations — the provider's `BuildChatMessages` already handles long histories. Frequently-running tasks naturally stay bounded by compaction.
 2. Build user message: `new Message { Role = "user", Content = task.Prompt }`
 3. Resolve text provider via `Func<string, ILlmTextProvider>` using `AgentConfig.TextProvider`
 4. Call `provider.CompleteAsync(conversation, message, ct)`
 5. Collect `CompletionEvent` stream — extract full assistant response text
 6. Route to `DeliveryRouter` based on `task.Delivery.Mode`
-7. Update task state: `LastRunAt = now`, `LastStatus = "success"`, `ConsecutiveErrors = 0`, recompute `NextRunAt`
-8. If `DeleteAfterRun == true`, remove the task
+7. Update task state: `LastRunAt = now`, `LastStatus = Success`, `ConsecutiveErrors = 0`, recompute `NextRunAt`
+8. If `DeleteAfterRun == true`, remove the task definition. The conversation (`scheduledtask:{taskId}`) is intentionally kept as an audit trail — viewable in the web UI
 
 ### Error Handling
 
@@ -185,7 +208,7 @@ All mutations called by both agent tools and API endpoints:
 | `Get(string id)` | Return single task |
 | `RunNow(string id)` | Execute immediately regardless of schedule |
 
-All mutations persist the full task list to JSON and rearm the timer.
+All mutations are serialized through a `SemaphoreSlim(1, 1)` lock to prevent concurrent write corruption. State updates from concurrent task executions also go through this lock. After each mutation: persist the full task list to JSON and rearm the timer.
 
 ## Delivery System
 
@@ -224,6 +247,8 @@ public interface IOutboundSender
 
 Implemented by `TelegramChannelProvider` (via `ITelegramBotClient.SendMessage`) and `WhatsAppChannelProvider` (via Baileys bridge `sendMessage` command). Channel providers that don't support outbound simply don't implement the interface.
 
+This interface is intentionally minimal (text-only). It will likely grow to support markdown formatting, images, or structured messages — but that's a future enhancement. Text is sufficient for the initial implementation.
+
 ## Agent Tools
 
 `ScheduledTaskToolHandler : IToolHandler` exposes four tools:
@@ -258,13 +283,13 @@ All in `ScheduledTaskEndpoints.cs` in `OpenAgent.Api/Endpoints/`:
 | `PUT` | `/api/scheduled-tasks/{taskId}` | Update task |
 | `DELETE` | `/api/scheduled-tasks/{taskId}` | Delete task |
 | `POST` | `/api/scheduled-tasks/{taskId}/run` | Execute immediately |
-| `POST` | `/api/webhooks/{taskId}` | Trigger from external event |
+| `POST` | `/api/scheduled-tasks/{taskId}/trigger` | Trigger from external webhook event |
 
 All endpoints require API key authentication.
 
 ### Webhook Trigger
 
-`POST /api/webhooks/{taskId}` accepts an optional JSON body. The body is serialized and appended to the task's prompt as context:
+`POST /api/scheduled-tasks/{taskId}/trigger` accepts an optional JSON body. The body is serialized and appended to the task's prompt as context:
 
 ```
 {original task prompt}
