@@ -55,6 +55,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.LlmText.Anthropic
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.Skills", "OpenAgent.Skills\OpenAgent.Skills.csproj", "{6B9F7FC7-AC5D-491C-B61A-3A69BFB85943}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAgent.ScheduledTasks", "OpenAgent.ScheduledTasks\OpenAgent.ScheduledTasks.csproj", "{6E221C7A-C178-4F64-BC1D-993C7540456C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -305,6 +307,18 @@ Global
 		{6B9F7FC7-AC5D-491C-B61A-3A69BFB85943}.Release|x64.Build.0 = Release|Any CPU
 		{6B9F7FC7-AC5D-491C-B61A-3A69BFB85943}.Release|x86.ActiveCfg = Release|Any CPU
 		{6B9F7FC7-AC5D-491C-B61A-3A69BFB85943}.Release|x86.Build.0 = Release|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Debug|x64.Build.0 = Debug|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Debug|x86.Build.0 = Debug|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Release|x64.ActiveCfg = Release|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Release|x64.Build.0 = Release|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Release|x86.ActiveCfg = Release|Any CPU
+		{6E221C7A-C178-4F64-BC1D-993C7540456C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
