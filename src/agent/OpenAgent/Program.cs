@@ -15,6 +15,7 @@ using OpenAgent.Security.ApiKey;
 using OpenAgent.Tools.Expand;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
+using OpenAgent.ScheduledTasks;
 using OpenAgent.Skills;
 using OpenAgent.Tools.Shell;
 using OpenAgent.Tools.WebFetch;
@@ -68,6 +69,8 @@ builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
+
+builder.Services.AddScheduledTasks(environment.DataPath);
 
 builder.Services.AddSingleton(new CompactionConfig());
 
@@ -162,6 +165,7 @@ app.MapConnectionEndpoints();
 app.MapFileExplorerEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapWhatsAppEndpoints();
+app.MapScheduledTaskEndpoints();
 
 // SPA fallback — serve index.html for unmatched routes (client-side routing)
 app.MapFallbackToFile("index.html");

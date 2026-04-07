@@ -37,6 +37,7 @@
     <ProjectReference Include="..\OpenAgent.Compaction\OpenAgent.Compaction.csproj" />
     <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
     <ProjectReference Include="..\OpenAgent.Terminal\OpenAgent.Terminal.csproj" />
+    <ProjectReference Include="..\OpenAgent.ScheduledTasks\OpenAgent.ScheduledTasks.csproj" />
   </ItemGroup>
 
   <ItemGroup>

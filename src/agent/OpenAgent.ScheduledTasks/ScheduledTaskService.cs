@@ -47,9 +47,10 @@ public sealed class ScheduledTaskService : IHostedService, IDisposable
         _store.Load();
         _logger.LogInformation("Loaded {Count} scheduled tasks", _store.Tasks.Count);
 
-        // Recompute all next run times and persist
+        // Recompute all next run times and persist (skip write when empty — nothing changed)
         RecomputeAllNextRuns();
-        _store.Save();
+        if (_store.Tasks.Count > 0)
+            _store.Save();
 
         // Run any missed tasks before arming the timer
         await RunMissedTasksAsync(cancellationToken);
