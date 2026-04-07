@@ -28,7 +28,7 @@ internal enum ConversationType
 {
     Text,
     Voice,
-    Cron,
+    ScheduledTask,
     WebHook
 }
 
