@@ -30,28 +30,28 @@ export function JsonlViewer({ content }: Props) {
 
   const totalCount = lines.length;
   const startIndex = Math.max(0, totalCount - visibleCount);
-  const visibleLines = lines.slice(startIndex);
+  const visibleLines = lines.slice(startIndex).reverse();
   const hasMore = startIndex > 0;
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
         <span className={styles.count}>
-          {totalCount} entries{hasMore && ` (showing last ${visibleLines.length})`}
+          {totalCount} entries{hasMore && ` (showing newest ${visibleLines.length})`}
         </span>
       </div>
       <div className={styles.entries}>
+        {visibleLines.map(({ line, raw }) => (
+          <LogEntryRow key={line} line={line} raw={raw} />
+        ))}
         {hasMore && (
           <button
             className={styles.loadMore}
             onClick={() => setVisibleCount(v => v + PAGE_SIZE)}
           >
-            Load {Math.min(PAGE_SIZE, startIndex)} more entries
+            Load {Math.min(PAGE_SIZE, startIndex)} older entries
           </button>
         )}
-        {visibleLines.map(({ line, raw }) => (
-          <LogEntryRow key={line} line={line} raw={raw} />
-        ))}
       </div>
     </div>
   );
