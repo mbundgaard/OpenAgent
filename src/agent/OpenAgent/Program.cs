@@ -160,6 +160,7 @@ app.MapAdminEndpoints();
 app.MapSystemPromptEndpoints();
 app.MapConnectionEndpoints();
 app.MapFileExplorerEndpoints();
+app.MapLogEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 
