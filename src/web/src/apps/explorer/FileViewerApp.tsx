@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import Markdown from 'react-markdown';
 import { readFile } from './api';
 import styles from './FileViewerApp.module.css';
 
@@ -31,7 +32,13 @@ export function FileViewerApp({ filePath }: Props) {
       </div>
       {loading && <div className={styles.status}>Loading...</div>}
       {error && <div className={styles.error}>{error}</div>}
-      {!loading && !error && <pre className={styles.content}>{content}</pre>}
+      {!loading && !error && (
+        filePath.endsWith('.md') ? (
+          <div className={styles.markdown}><Markdown>{content ?? ''}</Markdown></div>
+        ) : (
+          <pre className={styles.content}>{content}</pre>
+        )
+      )}
     </div>
   );
 }
