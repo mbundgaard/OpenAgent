@@ -201,6 +201,8 @@ cd src/agent && dotnet build
 cd src/agent && dotnet test
 ```
 
+- Windows: use `python` not `python3` (python3 is not aliased on this machine)
+
 ## CI/CD
 
 GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image and pushes to `ghcr.io/mbundgaard/open-agent:latest` + `:sha` on every push to master. Azure App Services pull the image independently — restart to pick up a new version. The Dockerfile runs tests during build (`dotnet test`), so broken code never gets pushed as an image.
