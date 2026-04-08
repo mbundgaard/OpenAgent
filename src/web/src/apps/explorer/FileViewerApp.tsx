@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import Markdown from 'react-markdown';
 import { readFile } from './api';
+import { TextViewer } from './viewers/TextViewer';
+import { MarkdownViewer } from './viewers/MarkdownViewer';
+import { JsonlViewer } from './viewers/JsonlViewer';
 import styles from './FileViewerApp.module.css';
 
 interface Props {
   filePath: string;
 }
 
-/** Read-only text file viewer — opened in its own window from the Explorer. */
+/** Read-only file viewer — delegates to a format-specific viewer based on file extension. */
 export function FileViewerApp({ filePath }: Props) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,18 +34,13 @@ export function FileViewerApp({ filePath }: Props) {
       </div>
       {loading && <div className={styles.status}>Loading...</div>}
       {error && <div className={styles.error}>{error}</div>}
-      {!loading && !error && (
-        filePath.endsWith('.md') ? (
-          <div className={styles.markdown}><Markdown>{content ?? ''}</Markdown></div>
-        ) : (
-          <div className={styles.codeView}>
-            <pre className={styles.lineNumbers} aria-hidden="true">
-              {content?.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
-            </pre>
-            <pre className={styles.content}>{content}</pre>
-          </div>
-        )
-      )}
+      {!loading && !error && content !== null && renderViewer(filePath, content)}
     </div>
   );
+}
+
+function renderViewer(filePath: string, content: string) {
+  if (filePath.endsWith('.md')) return <MarkdownViewer content={content} />;
+  if (filePath.endsWith('.jsonl')) return <JsonlViewer content={content} />;
+  return <TextViewer content={content} />;
 }

@@ -1,0 +1,110 @@
+.container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.count {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.entries {
+  flex: 1;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.row.expanded {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  line-height: 1.5;
+}
+
+.lineNum {
+  color: var(--color-text-muted);
+  opacity: 0.4;
+  min-width: 3em;
+  text-align: right;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.chevron {
+  font-size: 8px;
+  color: var(--color-text-muted);
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.timestamp {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.level {
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 3em;
+}
+
+.levelInformation { color: #6a9fb5; }
+.levelDebug { color: #7c8b9e; }
+.levelWarning { color: #d4a843; }
+.levelError { color: #c75050; }
+.levelFatal { color: #c75050; font-weight: 800; }
+.levelVerbose { color: #7c8b9e; opacity: 0.7; }
+
+.message {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.json {
+  margin: 0;
+  padding: 6px 10px 8px 52px;
+  font-size: 11px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.rawLine {
+  margin: 0;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
