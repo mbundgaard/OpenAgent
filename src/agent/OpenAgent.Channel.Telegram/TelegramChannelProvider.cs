@@ -136,27 +136,29 @@ public sealed class TelegramChannelProvider : IChannelProvider
     }
 
     /// <summary>
-    /// Stops the Telegram channel: deletes the webhook or cancels polling.
+    /// Stops the Telegram channel: cancels polling. Webhook mode leaves the webhook
+    /// registered — Telegram retries failed deliveries, and StartAsync re-registers
+    /// on the next startup anyway.
     /// </summary>
-    public async Task StopAsync(CancellationToken ct)
+    public Task StopAsync(CancellationToken ct)
     {
-        var isWebhook = string.Equals(_options.Mode, "Webhook", StringComparison.OrdinalIgnoreCase);
-
         if (_botClient is null)
-            return;
+            return Task.CompletedTask;
 
-        if (isWebhook)
-        {
-            await _botClient.DeleteWebhook(cancellationToken: ct);
-            _logger.LogInformation("Telegram: webhook deleted");
-        }
-        else
+        var isWebhook = string.Equals(_options.Mode, "Webhook", StringComparison.OrdinalIgnoreCase);
+        if (!isWebhook)
         {
             _pollingCts?.Cancel();
             _pollingCts?.Dispose();
             _pollingCts = null;
             _logger.LogInformation("Telegram: polling stopped");
         }
+        else
+        {
+            _logger.LogInformation("Telegram: webhook left registered for seamless restart");
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>Returns the cached <see cref="ITelegramSender"/> backed by the current bot client.</summary>
