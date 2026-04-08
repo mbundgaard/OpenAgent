@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import styles from './JsonlViewer.module.css';
 
+const PAGE_SIZE = 200;
+
 interface Props {
   content: string;
 }
@@ -11,66 +13,83 @@ interface LogEntry {
   parsed: Record<string, unknown> | null;
 }
 
-/** Renders .jsonl files as structured log entries. Supports Serilog compact JSON format. */
+/** Renders .jsonl files as structured log entries. Shows last 200 entries by default. */
 export function JsonlViewer({ content }: Props) {
-  const entries = useMemo(() => {
-    return content
-      .split('\n')
-      .map((raw, i): LogEntry => {
-        const trimmed = raw.trim();
-        if (!trimmed) return { line: i + 1, raw, parsed: null };
-        try {
-          return { line: i + 1, raw: trimmed, parsed: JSON.parse(trimmed) };
-        } catch {
-          return { line: i + 1, raw: trimmed, parsed: null };
-        }
-      })
-      .filter(e => e.raw.trim().length > 0);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Split lines once, keep as raw strings — don't parse until needed
+  const lines = useMemo(() => {
+    const result: { line: number; raw: string }[] = [];
+    const parts = content.split('\n');
+    for (let i = 0; i < parts.length; i++) {
+      const trimmed = parts[i].trim();
+      if (trimmed) result.push({ line: i + 1, raw: trimmed });
+    }
+    return result;
   }, [content]);
+
+  const totalCount = lines.length;
+  const startIndex = Math.max(0, totalCount - visibleCount);
+  const visibleLines = lines.slice(startIndex);
+  const hasMore = startIndex > 0;
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <span className={styles.count}>{entries.length} entries</span>
+        <span className={styles.count}>
+          {totalCount} entries{hasMore && ` (showing last ${visibleLines.length})`}
+        </span>
       </div>
       <div className={styles.entries}>
-        {entries.map(entry => (
-          <LogEntryRow key={entry.line} entry={entry} />
+        {hasMore && (
+          <button
+            className={styles.loadMore}
+            onClick={() => setVisibleCount(v => v + PAGE_SIZE)}
+          >
+            Load {Math.min(PAGE_SIZE, startIndex)} more entries
+          </button>
+        )}
+        {visibleLines.map(({ line, raw }) => (
+          <LogEntryRow key={line} line={line} raw={raw} />
         ))}
       </div>
     </div>
   );
 }
 
-function LogEntryRow({ entry }: { entry: LogEntry }) {
+function LogEntryRow({ line, raw }: { line: number; raw: string }) {
   const [expanded, setExpanded] = useState(false);
 
-  if (!entry.parsed) {
+  // Parse lazily on first render
+  const parsed = useMemo<Record<string, unknown> | null>(() => {
+    try { return JSON.parse(raw); }
+    catch { return null; }
+  }, [raw]);
+
+  if (!parsed) {
     return (
       <div className={styles.row}>
-        <span className={styles.lineNum}>{entry.line}</span>
-        <pre className={styles.rawLine}>{entry.raw}</pre>
+        <span className={styles.lineNum}>{line}</span>
+        <pre className={styles.rawLine}>{raw}</pre>
       </div>
     );
   }
 
-  const obj = entry.parsed;
-  // Serilog compact JSON: @t = timestamp, @l = level, @mt = message template, @m = rendered message
-  const timestamp = formatTimestamp(obj['@t'] as string | undefined);
-  const level = (obj['@l'] as string | undefined) ?? 'Information';
-  const message = (obj['@m'] as string | undefined) ?? (obj['@mt'] as string | undefined) ?? '';
+  const timestamp = formatTimestamp(parsed['@t'] as string | undefined);
+  const level = (parsed['@l'] as string | undefined) ?? 'Information';
+  const message = (parsed['@m'] as string | undefined) ?? (parsed['@mt'] as string | undefined) ?? '';
 
   return (
     <div className={`${styles.row} ${expanded ? styles.expanded : ''}`}>
       <div className={styles.summary} onClick={() => setExpanded(!expanded)}>
-        <span className={styles.lineNum}>{entry.line}</span>
+        <span className={styles.lineNum}>{line}</span>
         <span className={styles.chevron}>{expanded ? '\u25BC' : '\u25B6'}</span>
         <span className={styles.timestamp}>{timestamp}</span>
         <span className={`${styles.level} ${styles[`level${level}`] ?? ''}`}>{levelAbbr(level)}</span>
         <span className={styles.message}>{message}</span>
       </div>
       {expanded && (
-        <pre className={styles.json}>{JSON.stringify(obj, null, 2)}</pre>
+        <pre className={styles.json}>{JSON.stringify(parsed, null, 2)}</pre>
       )}
     </div>
   );
