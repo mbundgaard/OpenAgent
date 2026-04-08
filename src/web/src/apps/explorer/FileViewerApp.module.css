@@ -38,10 +38,35 @@
   color: var(--color-text);
 }
 
-.content {
+.codeView {
   flex: 1;
+  display: flex;
   overflow: auto;
   scrollbar-width: none;
+}
+
+.lineNumbers {
+  margin: 0;
+  padding: 10px 0;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  line-height: 1.5;
+  text-align: right;
+  color: var(--color-text-muted);
+  opacity: 0.5;
+  user-select: none;
+  border-right: 1px solid var(--color-border);
+  flex-shrink: 0;
+  min-width: 3em;
+}
+
+.lineNumbers span {
+  display: block;
+  padding: 0 8px;
+}
+
+.content {
+  flex: 1;
   margin: 0;
   padding: 10px;
   font-size: 12px;
@@ -50,6 +75,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--color-text);
+  overflow: visible;
 }
 
 .markdown {

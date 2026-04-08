@@ -36,7 +36,12 @@ export function FileViewerApp({ filePath }: Props) {
         filePath.endsWith('.md') ? (
           <div className={styles.markdown}><Markdown>{content ?? ''}</Markdown></div>
         ) : (
-          <pre className={styles.content}>{content}</pre>
+          <div className={styles.codeView}>
+            <pre className={styles.lineNumbers} aria-hidden="true">
+              {content?.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
+            </pre>
+            <pre className={styles.content}>{content}</pre>
+          </div>
         )
       )}
     </div>
