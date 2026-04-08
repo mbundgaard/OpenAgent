@@ -7,12 +7,6 @@ interface Props {
   content: string;
 }
 
-interface LogEntry {
-  line: number;
-  raw: string;
-  parsed: Record<string, unknown> | null;
-}
-
 /** Renders .jsonl files as structured log entries. Shows last 200 entries by default. */
 export function JsonlViewer({ content }: Props) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
