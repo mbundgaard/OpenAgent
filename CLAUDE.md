@@ -25,7 +25,7 @@ src/agent/
       ChatEndpoints.cs                    Text completion (REST) — returns CompletionEvent JSON array
       WebSocketVoiceEndpoints.cs          Bidirectional voice streaming (WebSocket)
       WebSocketTextEndpoints.cs           Bidirectional text chat (WebSocket) — streams CompletionEvents
-  OpenAgent.Contracts/                    Interfaces — IAgentLogic, IConversationStore, ILlmTextProvider, ILlmVoiceProvider, IVoiceSessionManager, ITool, IToolHandler
+  OpenAgent.Contracts/                    Interfaces — IAgentLogic, IConversationStore, ILlmTextProvider, ILlmVoiceProvider, IVoiceSessionManager, ITool, IToolHandler, IOutboundSender
   OpenAgent.Models/                       Shared models — Conversation, Message, ConversationType, voice events
     Common/                               CompletionEvent hierarchy (TextDelta, ToolCallEvent, ToolResultEvent)
   OpenAgent.ConversationStore.Sqlite/     SQLite persistent store (conversations.db) with schema migration
@@ -34,16 +34,19 @@ src/agent/
   OpenAgent.LlmVoice.OpenAIAzure/        Azure OpenAI Realtime voice provider
   OpenAgent.Tools.FileSystem/             File tools (read, write, append, edit) — scoped to dataPath, UTF-8 no BOM
   OpenAgent.Security.ApiKey/              API key authentication — AddApiKeyAuth() extension
-  OpenAgent.Channel.Telegram/             Telegram bot channel — polling/webhook modes, streaming drafts
-  OpenAgent.Channel.WhatsApp/             WhatsApp channel — Baileys Node.js bridge, QR pairing, reconnect
+  OpenAgent.Channel.Telegram/             Telegram bot channel — polling/webhook modes, streaming drafts, IOutboundSender
+  OpenAgent.Channel.WhatsApp/             WhatsApp channel — Baileys Node.js bridge, QR pairing, reconnect, IOutboundSender
     node/                                 Baileys bridge script (baileys-bridge.js) + package.json
   OpenAgent.Tools.Shell/                  Shell exec tool — timeout, process tree kill, merged stdout/stderr
   OpenAgent.Skills/                        Agent Skills (agentskills.io spec) — discovery, catalog, activation
+  OpenAgent.ScheduledTasks/                Scheduled tasks — cron, interval, one-shot, webhook triggers (feature/scheduled-tasks branch)
   OpenAgent.Tests/                        Integration tests
 src/chat-cli/
   OpenAgent.ChatCli/                      Spectre.Console interactive CLI — uses .env for API key, dev key for localhost
 src/web/                                  React frontend — desktop UI with windowed apps
   src/apps/settings/                      Settings app — vertical sidebar, dynamic provider/connection forms
+  src/apps/explorer/                      File explorer — browse dataPath, open files
+    viewers/                              Format-specific viewers: TextViewer (line numbers), MarkdownViewer (frontmatter + rendered md), JsonlViewer (structured log entries)
 docs/plans/                               Design docs and implementation plans
 ```
 
@@ -209,7 +212,7 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 
 ## Key Design Decisions
 
-- ConversationType drives system prompt selection — the agent behaves differently for voice vs text vs cron
+- ConversationType drives system prompt selection — the agent behaves differently for voice vs text vs scheduledtask
 - WebSocket is just transport — which LLM a WebSocket endpoint uses depends on the route, not the protocol
 - VoiceSessionManager is pure session lifecycle (create, track, close) — no conversation state updates
 - Text provider has a tool call loop with a 10-round safety cap
@@ -231,6 +234,10 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 - Skill resources loaded via activate_skill_resource are ephemeral tool results — the compactor can strip them safely, the agent re-requests if needed.
 - GetSystemPrompt takes activeSkills parameter so the system prompt is per-conversation, not just per-type.
 - ITool.ExecuteAsync takes conversationId — providers already pass it through AgentLogic. Existing tools ignore it; skill tools use it to modify conversation state.
+- Telegram webhook mode does NOT delete the webhook on stop — avoids message loss during container restarts. `StartAsync` always re-registers (idempotent).
+- IOutboundSender interface enables proactive messaging — channel providers that support outbound implement it. Used by scheduled tasks for delivery.
+- File explorer reads with `FileShare.ReadWrite` so Serilog-locked log files can be opened.
+- Log files (Serilog compact JSON) stored at `{dataPath}/logs/log-{date}.jsonl` with daily rolling. Queryable via `/api/logs` endpoints with level, time range, search, and tail filters.
 
 ## Memory
 
