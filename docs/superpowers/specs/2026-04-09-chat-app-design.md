@@ -18,7 +18,12 @@ The new app coexists with the existing `text`, `voice`, and `conversations` apps
 - **Frontend is type-agnostic** — the new app does not read or write `Conversation.Type`. The text WebSocket endpoint and voice WebSocket endpoint are responsible for setting the conversation's type to match their modality on each call.
 - **Voice transcripts stream into the message list live** — the assistant's spoken words appear as a streaming markdown message in the conversation in real time, just like text streaming. When the voice session ends, these messages are already persisted.
 - **Action button is adaptive** — single button to the right of the input field, content depends on state: mic icon (empty input, idle), send icon (input has text, idle), stop icon (voice session running, red).
-- **Voice status strip** — when a voice session is running, a thin colored strip above the input shows `Listening...` / `Speaking...` / `Thinking...`. Disappears when idle.
+- **Voice status strip** — when a voice session is running, a thin colored strip above the input shows a label derived from the hook's `state`:
+  - `listening` → `Listening...`
+  - `userSpeaking` → `Listening...` (the agent is listening to the user — the strip is the agent's POV, not the user's)
+  - `thinking` → `Thinking...`
+  - `assistantSpeaking` → `Speaking...`
+  - `idle` → strip is hidden
 - **Input disabled during voice** — text field is dimmed and non-interactive while voice is running.
 - **Conversation row actions** — click to select, hover to reveal a delete button. No editing or model switching in the sidebar.
 - **Minimal main view header** — source label (e.g. `app`, `telegram`) and a delete button. No provider/model picker, no stats; that lives in the existing Conversations app.
@@ -42,7 +47,7 @@ Add a new column to the `messages` table via the existing `TryAddColumn` migrati
 ```csharp
 public enum MessageModality
 {
-    Text,   // Default for existing rows and any message that doesn't specify
+    Text,
     Voice
 }
 
@@ -51,38 +56,64 @@ public sealed class Message
     // ... existing fields ...
 
     [JsonPropertyName("modality")]
-    public MessageModality Modality { get; set; } = MessageModality.Text;
+    [JsonConverter(typeof(JsonStringEnumConverter<MessageModality>))]
+    public MessageModality Modality { get; init; } = MessageModality.Text;
 }
 ```
 
-- Stored as `TEXT` column with values `"text"` or `"voice"` (lowercase, for forward-compat with future modalities).
-- Existing rows get the default `text` on migration.
-- Set by whichever endpoint produces the message:
-  - Text WebSocket endpoint sets `modality = Text` on user and assistant messages it persists
-  - Voice WebSocket endpoint sets `modality = Voice` on user and assistant transcripts it persists
-- Channel providers (Telegram, WhatsApp) continue to default to `Text` — they can adopt voice modality later if they ever transcribe voice messages.
+- `init`-only, matching the rest of `Message`.
+- **JSON wire format:** lowercase string (`"text"` / `"voice"`) via `JsonStringEnumConverter<MessageModality>` — consistent with how `ConversationType` is serialized in `Conversation.cs:21`.
+- **SQLite storage:** `INTEGER` column (cast `(int)message.Modality` on insert, cast back on read), matching the pattern used for `Conversation.Type` in `SqliteConversationStore.cs:129`. Migration via `TryAddColumn("Messages", "Modality", "INTEGER NOT NULL DEFAULT 0")`. Default value `0` = `Text`, so existing rows get the right answer for free.
+- Channel providers (Telegram, WhatsApp) and scheduled tasks default to `Text` — they can adopt voice modality later if they ever transcribe voice messages.
 
-### 2. Voice transcript persistence as Messages
+### 2. Stamp `Modality` on existing message-construction sites
 
-Verify that the voice WebSocket endpoint already persists user and assistant transcripts as `Message` rows on the conversation. If it does not, add this:
+Voice transcripts are already persisted as `Message` rows in `AzureOpenAiVoiceSession.cs:282-292` on `TranscriptDone` (both user and assistant, correct roles). Text user messages are constructed in `WebSocketTextEndpoints.cs:91`, and assistant messages are persisted by the text provider's tool-call loop.
 
-- On `transcript_done` events from the voice provider, write a `Message` to the conversation store with `modality = Voice` and the appropriate role.
-- This is the same persistence path the text WebSocket uses; voice just sets a different modality.
+The change in this section is just to stamp `Modality` on every site that constructs a `Message`:
 
-If verification reveals voice transcripts are already persisted, the only change in this section is the modality field assignment.
+- `AzureOpenAiVoiceSession.cs:285` — set `Modality = MessageModality.Voice` on the AddMessage call.
+- `WebSocketTextEndpoints.cs:91` — set `Modality = MessageModality.Text` on the user message.
+- `AzureOpenAiTextProvider` and `AnthropicSubscriptionTextProvider` — set `Modality = MessageModality.Text` wherever they persist the assistant message and any tool-call/tool-result rows.
+- Channel providers (Telegram, WhatsApp) — leave them unchanged; the `Text` default applies.
+
+No new persistence path. No new logic. Just an init-only field set at the existing construction points.
 
 ### 3. Conversation type reconciliation on endpoint hit
 
-The new chat app does not pass conversation type when creating a conversation. The text and voice WebSocket endpoints must set the type implicitly:
+Today, `IConversationStore.GetOrCreate` (`SqliteConversationStore.cs:103-108`) early-returns the existing row unchanged if it already exists, which means both `WebSocketTextEndpoints.cs:42` and `WebSocketVoiceEndpoints.cs:39` are no-ops on existing conversations. And `Conversation.Type` is `init`-only (`Conversation.cs:22`), so it can't be mutated as written. Two changes are required:
 
-- Text WebSocket endpoint: on first message to a new conversation, create with `Type = Text`. On a subsequent message to a conversation that exists with `Type = Voice`, update it to `Type = Text` before processing.
-- Voice WebSocket endpoint: same logic for `Type = Voice`.
+**3a. Relax `Conversation.Type` to `{ get; set; }`.**
 
-Type drives system prompt selection at message-build time, so flipping the type between calls means the next response uses the appropriate prompt. Existing message history is preserved across type changes — the conversation is one continuous thread.
+```csharp
+[JsonPropertyName("type")]
+[JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
+public required ConversationType Type { get; set; }
+```
 
-This is a behavior change for the existing TextApp/VoiceApp too, but it's backwards compatible: a conversation that's only ever used by one transport never sees a type change.
+**3b. Add `IConversationStore.UpdateType(string conversationId, ConversationType type)`.**
 
-### 4. No new endpoints
+A focused, lightweight method — single-row `UPDATE Conversations SET Type = @type WHERE Id = @id`. Implemented in `SqliteConversationStore`. No-op if the row doesn't exist.
+
+The text WebSocket endpoint calls `store.UpdateType(conversationId, ConversationType.Text)` immediately after `GetOrCreate`. The voice WebSocket endpoint calls `store.UpdateType(conversationId, ConversationType.Voice)` likewise. Both calls are idempotent — flipping a Text conversation to Text is a no-op write. Type drives system prompt selection at message-build time, so the next response uses the appropriate prompt. Existing message history is preserved across type changes — the conversation is one continuous thread.
+
+I'd prefer this over folding the side effect into `GetOrCreate`, which would be surprising — the name says "get or create", not "get or create or mutate".
+
+**Cross-app side effect (call out explicitly):** After this change, opening an existing conversation in the **old** TextApp will set `Type = Text`, and opening it in the **old** VoiceApp will set `Type = Voice`. In normal use, users don't cross-hit a single conversation from both old apps (each old app generates its own GUID per session), so the practical impact is nil. But the behavior is technically observable — call it out so nobody is surprised by a type flip in `conversations.db` after the new app ships.
+
+### 4. Sort conversation list by last activity
+
+Requirement says the sidebar is sorted by last activity (newest first). Today `SqliteConversationStore.GetAll()` (`SqliteConversationStore.cs:222`) does `ORDER BY CreatedAt DESC`. Change to:
+
+```sql
+ORDER BY COALESCE(LastActivity, CreatedAt) DESC
+```
+
+`LastActivity` already exists on `Conversation` (`Conversation.cs:85`) and is populated by message inserts. The `COALESCE` falls back to `CreatedAt` for any conversation that has never had activity recorded.
+
+Backend-side sort, not client-side — keeps the API response order canonical and avoids re-sorting in every consumer.
+
+### 5. No new endpoints
 
 The new app uses existing endpoints exclusively:
 
@@ -135,6 +166,11 @@ function useConversation(conversationId: string): {
   appendMessage: (msg: ConversationMessage) => void;
   updateLastAssistantMessage: (content: string) => void;
 };
+// 404 from GET /api/conversations/{id} is treated as "empty conversation" — the
+// hook returns an empty messages array and clears any error state, instead of
+// surfacing the 404 as an error. This handles the new-conversation flow where
+// the frontend has generated a GUID but no row exists in the backend yet.
+// Any other HTTP error (5xx, network failure) still surfaces as an error.
 
 function useTextStream(conversationId: string): {
   send: (content: string) => void;
@@ -171,11 +207,10 @@ Text input is disabled when `voiceState !== 'idle'` OR `textStreaming === true`.
 3. WebSocket opens to `/ws/conversations/{conversationId}/voice`.
 4. State transitions to `listening`. Composer status strip appears with the current state.
 5. User speaks. PCM frames stream out. Assistant audio streams in and plays via the playback queue.
-6. As `transcript_delta` events arrive, the user/assistant transcript is buffered in the hook.
-7. As `transcript_delta` events arrive (the existing voice WS endpoint already emits these per the current VoiceApp implementation), the assistant message in the list streams character-by-character — same UX as text streaming.
-8. On `transcript_done`, the message is committed (modality=voice) by the backend.
-9. User clicks the stop button. `useVoiceSession.stop()` closes the WebSocket, stops the mic, tears down the AudioContext, sets state to `idle`.
-10. Status strip disappears. Action button reverts to mic.
+6. As `transcript_delta` events arrive (the voice WS endpoint already emits these per the current `VoiceApp` implementation), the hook forwards them to `useConversation.updateLastAssistantMessage` (for assistant deltas) or appends a user message (on the first user delta of a turn). The result: live character-by-character streaming in the message list, same UX as text streaming.
+7. On `transcript_done`, the backend persists the final message (`Modality = Voice`). The frontend's optimistic streaming message is already in place; on the next conversation refresh the persisted row replaces it.
+8. User clicks the stop button. `useVoiceSession.stop()` closes the WebSocket, stops the mic, tears down the AudioContext, sets state to `idle`.
+9. Status strip disappears. Action button reverts to mic.
 
 ### Text send flow in this app
 
@@ -198,7 +233,7 @@ The text WebSocket is long-lived per conversation, matching the existing TextApp
 ### Registry and icon
 
 - `src/apps/registry.ts`: add a new entry with `id: 'chat'`, `title: 'Chat'`, `icon: 'chat-icon'`, `component: ChatApp`, `defaultSize: { width: 900, height: 600 }`.
-- `src/web/public/icons.svg`: add a new `<symbol id="chat-icon">` (a chat bubble — re-using the design that was just removed when `chat-icon` was renamed to `text-icon` is fine).
+- `src/web/public/icons.svg`: `text-icon` (`icons.svg:2`) is already a chat bubble. Add a new `<symbol id="chat-icon">` whose body is `<use href="#text-icon"/>`, or duplicate the path. Either way the visual is the bubble. (If we ever want them visually distinct, this is the place to change it.)
 
 ## Visual Reference
 
@@ -219,7 +254,7 @@ See `.superpowers/brainstorm/1107-1775766884/content/layout.html` for the wirefr
 - **Microphone denied**: voice session error shows under the composer in red, action button reverts to mic. No retry button — user must click mic again.
 - **Text WebSocket connection failure**: streaming flag clears, an error toast appears under the message list, the partial assistant message is left in place.
 - **Voice WebSocket connection failure**: same — error shown, voice state reverts to idle.
-- **Conversation load failure** (clicking a row that 404s): main view shows error state, sidebar refreshes.
+- **Conversation load failure** (clicking a row whose detail GET fails with 5xx or network error): main view shows error state, sidebar refreshes. (404 is not an error — it's treated as an empty conversation per the `useConversation` contract.)
 - **Delete conversation failure**: row stays in sidebar, error toast.
 
 No retry logic, no exponential backoff. The user can retry manually.
