@@ -2,6 +2,12 @@ using System.Text.Json.Serialization;
 
 namespace OpenAgent.Models.Conversations;
 
+public enum MessageModality
+{
+    Text,
+    Voice
+}
+
 /// <summary>
 /// A single message within a conversation (user or assistant), with role, content, and timestamp.
 /// </summary>
@@ -17,6 +23,14 @@ public sealed class Message
     public string? Content { get; init; }
     [JsonPropertyName("created_at")]
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Whether this message originated as text input or as a voice transcript.
+    /// Defaults to Text — voice provider sites set Voice explicitly.
+    /// </summary>
+    [JsonPropertyName("modality")]
+    [JsonConverter(typeof(JsonStringEnumConverter<MessageModality>))]
+    public MessageModality Modality { get; init; } = MessageModality.Text;
 
     /// <summary>
     /// Serialized JSON array of tool calls (only for assistant messages that invoke tools).
