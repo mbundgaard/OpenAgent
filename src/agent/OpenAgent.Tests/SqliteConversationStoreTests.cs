@@ -176,6 +176,40 @@ public class SqliteConversationStoreTests : IDisposable
         Assert.Equal(MessageModality.Voice, messages[1].Modality);
     }
 
+    [Fact]
+    public void UpdateType_changes_existing_conversation_type()
+    {
+        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+
+        _store.UpdateType("conv1", ConversationType.Voice);
+
+        var conv = _store.Get("conv1");
+        Assert.NotNull(conv);
+        Assert.Equal(ConversationType.Voice, conv.Type);
+    }
+
+    [Fact]
+    public void UpdateType_is_noop_when_type_already_matches()
+    {
+        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+
+        // Calling with the same type should not throw and should not change anything
+        _store.UpdateType("conv1", ConversationType.Text);
+
+        var conv = _store.Get("conv1");
+        Assert.NotNull(conv);
+        Assert.Equal(ConversationType.Text, conv.Type);
+    }
+
+    [Fact]
+    public void UpdateType_does_nothing_when_conversation_does_not_exist()
+    {
+        // Should not throw even if the conversation does not exist
+        _store.UpdateType("does-not-exist", ConversationType.Voice);
+
+        Assert.Null(_store.Get("does-not-exist"));
+    }
+
     private sealed class FakeCompactionSummarizer(string context) : ICompactionSummarizer
     {
         public IReadOnlyList<Message>? LastMessages { get; private set; }

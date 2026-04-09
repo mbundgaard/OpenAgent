@@ -19,7 +19,7 @@ public sealed class Conversation
     public required string Source { get; set; }
     [JsonPropertyName("type")]
     [JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
-    public required ConversationType Type { get; init; }
+    public required ConversationType Type { get; set; }
 
     /// <summary>Provider key used for this conversation (e.g. "azure-openai-text").</summary>
     [JsonPropertyName("provider")]

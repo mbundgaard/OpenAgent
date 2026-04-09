@@ -82,6 +82,12 @@ public sealed class InMemoryConversationStore : IConversationStore
     public void Update(Conversation conversation) =>
         _conversations[conversation.Id] = conversation;
 
+    public void UpdateType(string conversationId, ConversationType type)
+    {
+        if (_conversations.TryGetValue(conversationId, out var conv) && conv.Type != type)
+            conv.Type = type;
+    }
+
     public bool Delete(string conversationId) =>
         _conversations.Remove(conversationId) | _messages.Remove(conversationId);
 

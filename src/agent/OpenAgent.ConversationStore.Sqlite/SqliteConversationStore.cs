@@ -283,6 +283,16 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryStartCompaction(conversation);
     }
 
+    public void UpdateType(string conversationId, ConversationType type)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE Conversations SET Type = @type WHERE Id = @id AND Type != @type";
+        cmd.Parameters.AddWithValue("@id", conversationId);
+        cmd.Parameters.AddWithValue("@type", (int)type);
+        cmd.ExecuteNonQuery();
+    }
+
     public bool Delete(string conversationId)
     {
         using var connection = Open();

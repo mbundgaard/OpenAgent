@@ -39,6 +39,9 @@ public interface IConversationStore : IConfigurable
     /// <summary>Persists changes to an existing conversation.</summary>
     void Update(Conversation conversation);
 
+    /// <summary>Updates the conversation's Type. No-op if the conversation does not exist or already has this type.</summary>
+    void UpdateType(string conversationId, ConversationType type);
+
     /// <summary>Removes the conversation. Returns true if it existed.</summary>
     bool Delete(string conversationId);
 
