@@ -20,7 +20,10 @@ public static class ToolResultSummary
         try
         {
             using var doc = JsonDocument.Parse(result);
-            if (doc.RootElement.TryGetProperty("error", out var errorProp))
+            // Only object roots can carry an "error" field — arrays (e.g. list_scheduled_tasks)
+            // and primitives are normal successful results
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("error", out var errorProp))
             {
                 isError = true;
                 errorMessage = errorProp.GetString();
