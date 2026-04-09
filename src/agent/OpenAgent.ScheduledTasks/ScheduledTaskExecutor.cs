@@ -34,7 +34,11 @@ internal sealed class ScheduledTaskExecutor(
     public async Task<string> ExecuteAsync(ScheduledTask task, string? promptOverride, CancellationToken ct)
     {
         var conversationId = $"scheduledtask:{task.Id}";
-        var prompt = promptOverride ?? task.Prompt;
+        var rawPrompt = promptOverride ?? task.Prompt;
+
+        // Prefix the prompt so the LLM can distinguish task-triggered turns from real user messages.
+        // This matters most in shared conversations, but we apply it everywhere for consistency.
+        var prompt = $"[Scheduled task: {task.Name}]\n{rawPrompt}";
 
         // Get or create the dedicated conversation for this task
         var conversation = conversationStore.GetOrCreate(
