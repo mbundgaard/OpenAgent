@@ -1,6 +1,6 @@
 import type { AppDefinition } from './types';
 import { SettingsApp } from './settings/SettingsApp';
-import { ChatApp } from './chat/ChatApp';
+import { TextApp } from './text/TextApp';
 import { VoiceApp } from './voice/VoiceApp';
 import { ConversationsApp } from './conversations/ConversationsApp';
 import { ExplorerApp } from './explorer/ExplorerApp';
@@ -8,10 +8,10 @@ import { TerminalApp } from './terminal/TerminalApp';
 
 const apps: AppDefinition[] = [
   {
-    id: 'chat',
-    title: 'Chat',
-    icon: 'chat-icon',
-    component: ChatApp,
+    id: 'text',
+    title: 'Text',
+    icon: 'text-icon',
+    component: TextApp,
     defaultSize: { width: 500, height: 600 },
   },
   {

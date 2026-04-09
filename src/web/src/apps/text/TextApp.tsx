@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { getToken } from '../../auth/token';
-import styles from './ChatApp.module.css';
+import styles from './TextApp.module.css';
 
-interface ChatMessage {
+interface TextMessage {
   role: 'user' | 'assistant';
   content: string;
 }
@@ -29,8 +29,8 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function ChatApp() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export function TextApp() {
+  const [messages, setMessages] = useState<TextMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
@@ -126,7 +126,7 @@ export function ChatApp() {
   };
 
   return (
-    <div className={styles.chat}>
+    <div className={styles.text}>
       <div className={styles.messages}>
         {messages.length === 0 && (
           <div className={styles.empty}>Start a conversation...</div>
