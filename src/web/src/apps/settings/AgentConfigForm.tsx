@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { getProviderValues, getProviderModels, saveProviderConfig, listProviders } from './api';
+import { listConversations, type ConversationSummary } from '../conversations/api';
 import styles from './ProviderForm.module.css';
+
+function formatConversationLabel(conv: ConversationSummary): string {
+  if (conv.channel_type && conv.channel_chat_id) {
+    return `${conv.channel_type}: ${conv.channel_chat_id}`;
+  }
+  return `${conv.source} (${conv.id.slice(0, 8)})`;
+}
 
 /** Agent config form with model dropdowns populated from provider model lists. */
 export function AgentConfigForm() {
@@ -9,9 +17,11 @@ export function AgentConfigForm() {
     voiceProvider: '', voiceModel: '',
     compactionProvider: '', compactionModel: '',
     memoryDays: '3',
+    mainConversationId: '',
   });
   const [providers, setProviders] = useState<string[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,14 +33,17 @@ export function AgentConfigForm() {
     Promise.all([
       listProviders(),
       getProviderValues('agent'),
-    ]).then(async ([providerKeys, agentValues]) => {
+      listConversations(),
+    ]).then(async ([providerKeys, agentValues, convs]) => {
       if (cancelled) return;
 
       setProviders(providerKeys);
+      setConversations(convs.sort((a, b) =>
+        (b.last_activity ?? b.created_at).localeCompare(a.last_activity ?? a.created_at)));
 
       // Load current values
       const vals: Record<string, string> = {};
-      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays']) {
+      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays', 'mainConversationId']) {
         const v = agentValues[key];
         vals[key] = typeof v === 'string' ? v : '';
       }
@@ -123,6 +136,21 @@ export function AgentConfigForm() {
             value={values.memoryDays}
             onChange={e => setValues(v => ({ ...v, memoryDays: e.target.value }))}
           />
+        </label>
+      </div>
+      <div className={styles.form} style={{ marginBottom: 12 }}>
+        <label className={styles.field}>
+          <span className={styles.label}>Main Conversation</span>
+          <select
+            className={styles.input}
+            value={values.mainConversationId}
+            onChange={e => setValues(v => ({ ...v, mainConversationId: e.target.value }))}
+          >
+            <option value="">(none — silent fallback for scheduled tasks)</option>
+            {conversations.map(c => (
+              <option key={c.id} value={c.id}>{formatConversationLabel(c)}</option>
+            ))}
+          </select>
         </label>
       </div>
       <div className={styles.actions}>

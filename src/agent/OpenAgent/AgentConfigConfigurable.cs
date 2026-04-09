@@ -20,7 +20,9 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
         new() { Key = "voiceProvider", Label = "Voice Provider", Type = "String", Required = true },
         new() { Key = "voiceModel", Label = "Voice Model", Type = "String", Required = true },
         new() { Key = "compactionProvider", Label = "Compaction Provider", Type = "String", Required = true },
-        new() { Key = "compactionModel", Label = "Compaction Model", Type = "String", Required = true }
+        new() { Key = "compactionModel", Label = "Compaction Model", Type = "String", Required = true },
+        new() { Key = "memoryDays", Label = "Memory Days", Type = "String", Required = false },
+        new() { Key = "mainConversationId", Label = "Main Conversation", Type = "String", Required = false }
     ];
 
     public void Configure(JsonElement configuration)
@@ -37,5 +39,18 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
             agentConfig.CompactionProvider = cp.GetString()!;
         if (configuration.TryGetProperty("compactionModel", out var cm))
             agentConfig.CompactionModel = cm.GetString()!;
+        if (configuration.TryGetProperty("memoryDays", out var md))
+        {
+            // Accept both string and number — the admin UI sends strings
+            if (md.ValueKind == JsonValueKind.String && int.TryParse(md.GetString(), out var mdInt))
+                agentConfig.MemoryDays = mdInt;
+            else if (md.ValueKind == JsonValueKind.Number)
+                agentConfig.MemoryDays = md.GetInt32();
+        }
+        if (configuration.TryGetProperty("mainConversationId", out var mc))
+        {
+            var value = mc.GetString();
+            agentConfig.MainConversationId = string.IsNullOrEmpty(value) ? null : value;
+        }
     }
 }
