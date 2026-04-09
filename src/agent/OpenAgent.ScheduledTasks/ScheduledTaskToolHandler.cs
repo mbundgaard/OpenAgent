@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.ScheduledTasks.Models;
 
 namespace OpenAgent.ScheduledTasks;
@@ -10,18 +11,22 @@ namespace OpenAgent.ScheduledTasks;
 /// its own proactive work — during a conversation you can say "remind me tomorrow at 9am" and
 /// the agent will call create_scheduled_task directly, rather than you having to hit an API.
 ///
-/// The four tools mirror the service's CRUD API 1:1. CreateScheduledTaskTool defaults
-/// conversationId to the current conversation so a task created from a Telegram chat
-/// automatically runs in (and delivers back to) that same chat.
+/// The four tools mirror the service's CRUD API 1:1. CreateScheduledTaskTool resolves the
+/// target conversation with a fallback chain: explicit arg → current conversation (if channel-bound)
+/// → configured MainConversationId → error.
 /// </summary>
 public sealed class ScheduledTaskToolHandler : IToolHandler
 {
     public IReadOnlyList<ITool> Tools { get; }
 
-    public ScheduledTaskToolHandler(ScheduledTaskService service, ILogger<ScheduledTaskToolHandler> logger)
+    public ScheduledTaskToolHandler(
+        ScheduledTaskService service,
+        IConversationStore conversationStore,
+        AgentConfig agentConfig,
+        ILogger<ScheduledTaskToolHandler> logger)
     {
         Tools = [
-            new CreateScheduledTaskTool(service, logger),
+            new CreateScheduledTaskTool(service, conversationStore, agentConfig, logger),
             new ListScheduledTasksTool(service),
             new UpdateScheduledTaskTool(service, logger),
             new DeleteScheduledTaskTool(service, logger)
@@ -30,19 +35,26 @@ public sealed class ScheduledTaskToolHandler : IToolHandler
 }
 
 /// <summary>
-/// Creates a new scheduled task. Defaults the task's conversation to the current one,
-/// so a task created from a Telegram chat runs inside that chat and delivers naturally.
+/// Creates a new scheduled task. Resolves the target conversation with a fallback chain:
+/// explicit conversationId arg → current conversation (if channel-bound) → MainConversationId
+/// from AgentConfig → error (so the agent can tell the user to configure a main conversation).
 /// </summary>
-internal sealed class CreateScheduledTaskTool(ScheduledTaskService service, ILogger logger) : ITool
+internal sealed class CreateScheduledTaskTool(
+    ScheduledTaskService service,
+    IConversationStore conversationStore,
+    AgentConfig agentConfig,
+    ILogger logger) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
         Name = "create_scheduled_task",
         Description = "Create a new scheduled task that runs an LLM prompt on a schedule. " +
                       "Specify cron, intervalMs, or at for one-time. " +
-                      "The task runs in the current conversation by default, so if you're talking " +
-                      "via Telegram it will deliver back to that chat. Pass conversationId to route " +
-                      "the task elsewhere, or pass an empty string to run it in a new private conversation.",
+                      "Delivery is determined by the conversation the task runs in: if that conversation " +
+                      "is bound to a channel (e.g. Telegram), the task output is delivered there; otherwise " +
+                      "it's silent. By default the task runs in the current conversation if it's channel-bound, " +
+                      "or falls back to the user's configured main conversation. Pass conversationId explicitly " +
+                      "to override, or an empty string to force a new silent private conversation.",
         Parameters = new
         {
             type = "object",
@@ -84,19 +96,40 @@ internal sealed class CreateScheduledTaskTool(ScheduledTaskService service, ILog
             var description = args.TryGetProperty("description", out var descEl) ? descEl.GetString() : null;
             var deleteAfterRun = args.TryGetProperty("deleteAfterRun", out var darEl) && darEl.GetBoolean();
 
-            // Conversation resolution:
-            //  - omitted → default to the current conversation (task runs in this chat)
-            //  - empty string → null, so the executor creates a new private conversation on first run
-            //  - explicit value → use that conversation ID
+            // Conversation resolution fallback chain:
+            //  1. Explicit conversationId arg (including empty string → force new private conversation)
+            //  2. Current conversation, IF it's channel-bound (delivers to the channel)
+            //  3. AgentConfig.MainConversationId (the user's configured fallback)
+            //  4. Error — tell the agent to ask the user to configure a main conversation
             string? taskConversationId;
             if (args.TryGetProperty("conversationId", out var convEl))
             {
+                // Explicit override wins — empty string becomes null (force new private conversation)
                 var value = convEl.GetString();
                 taskConversationId = string.IsNullOrEmpty(value) ? null : value;
             }
             else
             {
-                taskConversationId = conversationId;
+                var current = conversationStore.Get(conversationId);
+                if (current?.ChannelType is not null)
+                {
+                    // Current conversation is channel-bound — run the task here so it delivers to that channel
+                    taskConversationId = conversationId;
+                }
+                else if (!string.IsNullOrEmpty(agentConfig.MainConversationId))
+                {
+                    // Fallback to the configured main conversation
+                    taskConversationId = agentConfig.MainConversationId;
+                }
+                else
+                {
+                    return JsonSerializer.Serialize(new
+                    {
+                        error = "No delivery target: the current conversation is not bound to a channel " +
+                                "and no main conversation is configured. Ask the user to set MainConversationId " +
+                                "in AgentConfig, or pass an explicit conversationId (or empty string for a silent task)."
+                    });
+                }
             }
 
             var task = new ScheduledTask

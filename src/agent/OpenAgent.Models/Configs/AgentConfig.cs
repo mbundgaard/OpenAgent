@@ -36,4 +36,14 @@ public sealed class AgentConfig
     /// <summary>Model/deployment used for compaction summarization.</summary>
     [JsonPropertyName("compactionModel")]
     public string CompactionModel { get; set; } = "";
+
+    /// <summary>
+    /// Fallback conversation for scheduled tasks created from an unbound conversation (e.g. a new
+    /// web UI chat). When the agent is asked "remind me tomorrow" from a conversation with no
+    /// channel binding, the task is routed here — typically the user's primary channel chat
+    /// (e.g. their Telegram conversation). Null means no fallback: the tool will return an error
+    /// and the agent should ask the user to configure one.
+    /// </summary>
+    [JsonPropertyName("mainConversationId")]
+    public string? MainConversationId { get; set; }
 }
