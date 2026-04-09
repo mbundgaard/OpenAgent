@@ -18,12 +18,7 @@ The new app coexists with the existing `text`, `voice`, and `conversations` apps
 - **Frontend is type-agnostic** — the new app does not read or write `Conversation.Type`. The text WebSocket endpoint and voice WebSocket endpoint are responsible for setting the conversation's type to match their modality on each call.
 - **Voice transcripts stream into the message list live** — the assistant's spoken words appear as a streaming markdown message in the conversation in real time, just like text streaming. When the voice session ends, these messages are already persisted.
 - **Action button is adaptive** — single button to the right of the input field, content depends on state: mic icon (empty input, idle), send icon (input has text, idle), stop icon (voice session running, red).
-- **Voice status strip** — when a voice session is running, a thin colored strip above the input shows a label derived from the hook's `state`:
-  - `listening` → `Listening...`
-  - `userSpeaking` → `Listening...` (the agent is listening to the user — the strip is the agent's POV, not the user's)
-  - `thinking` → `Thinking...`
-  - `assistantSpeaking` → `Speaking...`
-  - `idle` → strip is hidden
+- **Voice status strip** — when a voice session is running, a thin colored strip above the input shows the agent's current state (`Listening...`, `Thinking...`, `Speaking...`). State-to-label mapping in the Composer state machine section.
 - **Input disabled during voice** — text field is dimmed and non-interactive while voice is running.
 - **Conversation row actions** — click to select, hover to reveal a delete button. No editing or model switching in the sidebar.
 - **Minimal main view header** — source label (e.g. `app`, `telegram`) and a delete button. No provider/model picker, no stats; that lives in the existing Conversations app.
@@ -93,7 +88,7 @@ public required ConversationType Type { get; set; }
 
 **3b. Add `IConversationStore.UpdateType(string conversationId, ConversationType type)`.**
 
-A focused, lightweight method — single-row `UPDATE Conversations SET Type = @type WHERE Id = @id`. Implemented in `SqliteConversationStore`. No-op if the row doesn't exist.
+A focused, lightweight method — single-row `UPDATE Conversations SET Type = @type WHERE Id = @id AND Type != @type`. The `AND Type != @type` clause makes the common case (where the conversation already has the right type) a true no-op at the storage layer instead of a write that touches the row. Implemented in `SqliteConversationStore`. Returns nothing; no-op if the row doesn't exist or the type already matches.
 
 The text WebSocket endpoint calls `store.UpdateType(conversationId, ConversationType.Text)` immediately after `GetOrCreate`. The voice WebSocket endpoint calls `store.UpdateType(conversationId, ConversationType.Voice)` likewise. Both calls are idempotent — flipping a Text conversation to Text is a no-op write. Type drives system prompt selection at message-build time, so the next response uses the appropriate prompt. Existing message history is preserved across type changes — the conversation is one continuous thread.
 
@@ -164,7 +159,7 @@ function useConversations(refreshTrigger: number): {
 function useConversation(conversationId: string): {
   messages: ConversationMessage[];
   appendMessage: (msg: ConversationMessage) => void;
-  updateLastAssistantMessage: (content: string) => void;
+  updateLastMessageContent: (content: string) => void;
 };
 // 404 from GET /api/conversations/{id} is treated as "empty conversation" — the
 // hook returns an empty messages array and clears any error state, instead of
@@ -200,6 +195,16 @@ The composer's action button has four visible states derived from inputs:
 
 Text input is disabled when `voiceState !== 'idle'` OR `textStreaming === true`.
 
+The voice status strip is rendered above the composer when `voiceState !== 'idle'`. Its label is derived from the same `voiceState`:
+
+| Voice state | Strip label |
+|-------------|-------------|
+| `listening` | `Listening...` |
+| `userSpeaking` | `Listening...` (the agent is listening to the user) |
+| `thinking` | `Thinking...` |
+| `assistantSpeaking` | `Speaking...` |
+| `idle` | (strip hidden) |
+
 ### Voice session lifecycle in this app
 
 1. User clicks the mic action button. `useVoiceSession.start()` runs.
@@ -207,8 +212,8 @@ Text input is disabled when `voiceState !== 'idle'` OR `textStreaming === true`.
 3. WebSocket opens to `/ws/conversations/{conversationId}/voice`.
 4. State transitions to `listening`. Composer status strip appears with the current state.
 5. User speaks. PCM frames stream out. Assistant audio streams in and plays via the playback queue.
-6. As `transcript_delta` events arrive (the voice WS endpoint already emits these per the current `VoiceApp` implementation), the hook forwards them to `useConversation.updateLastAssistantMessage` (for assistant deltas) or appends a user message (on the first user delta of a turn). The result: live character-by-character streaming in the message list, same UX as text streaming.
-7. On `transcript_done`, the backend persists the final message (`Modality = Voice`). The frontend's optimistic streaming message is already in place; on the next conversation refresh the persisted row replaces it.
+6. Each `transcript_delta` is routed by its `source` field. The hook tracks the last seen source: when the source flips (or on the first delta after a `transcript_done`), it calls `appendMessage({ role, content: "" })` to open a new bubble. Every delta then calls `updateLastMessageContent(accumulated)`. User deltas grow the last user bubble, assistant deltas grow the last assistant bubble — same streaming UX as text.
+7. On `transcript_done`, the backend persists the final message (`Modality = Voice`). The frontend's optimistic streaming message is already in place; the next sidebar/conversation refresh reconciles with the persisted row.
 8. User clicks the stop button. `useVoiceSession.stop()` closes the WebSocket, stops the mic, tears down the AudioContext, sets state to `idle`.
 9. Status strip disappears. Action button reverts to mic.
 
@@ -265,4 +270,5 @@ No retry logic, no exponential backoff. The user can retry manually.
 - **Composer**: visual test of action button state combinations (input empty/has text × voice idle/running × text streaming on/off).
 - **Backend modality persistence**: integration test that sending a message via the text WS results in `modality=text`, sending via voice WS results in `modality=voice`.
 - **Backend type reconciliation**: integration test that hitting the text endpoint on a `Type=Voice` conversation flips it to `Type=Text`.
+- **Backend list ordering**: integration test that `GET /api/conversations` returns rows ordered by `LastActivity` (newest first), with `CreatedAt` as fallback for conversations that have never been touched.
 - **No e2e mic test**: voice session integration testing is not feasible in CI without a mic stub. Manual smoke-test only.
