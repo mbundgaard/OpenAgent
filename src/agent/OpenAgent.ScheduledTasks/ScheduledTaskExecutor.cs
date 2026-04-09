@@ -9,15 +9,19 @@ using System.Text;
 namespace OpenAgent.ScheduledTasks;
 
 /// <summary>
-/// Runs ONE task's LLM turn. Kept deliberately thin: resolve the dedicated conversation,
+/// Runs ONE task's LLM turn. Kept deliberately thin: resolve the conversation,
 /// inject the prompt as a user message, stream the completion, collect the final text.
 /// Has no knowledge of scheduling, state updates, or delivery — those are the service's job.
 /// This separation makes the execution path trivially testable (just pass a fake provider)
 /// and keeps the service focused on timing and persistence.
 ///
-/// Each task owns its own conversation (scheduledtask:{taskId}) so history accumulates across
-/// runs. The conversation uses ConversationType.ScheduledTask which selects the right system
-/// prompt template. Compaction handles long-running tasks naturally — no special pruning needed.
+/// Conversation resolution: a task's ConversationId is null on create and gets assigned a
+/// fresh GUID on first run. Subsequent runs reuse the same conversation so history accumulates
+/// across runs. A task's ConversationId can also be explicitly set to an existing conversation
+/// (e.g. a Telegram chat) so the task runs inside that chat and replies flow naturally.
+/// The prompt is prefixed with "[Scheduled task: name]" so the LLM can distinguish it from
+/// real user messages — important in shared conversations.
+///
 /// The promptOverride parameter is used by webhook triggers to inject event context without
 /// mutating the stored task prompt.
 /// </summary>
@@ -28,21 +32,29 @@ internal sealed class ScheduledTaskExecutor(
     ILogger<ScheduledTaskExecutor> logger)
 {
     /// <summary>
-    /// Executes the task's prompt as a user message against a dedicated conversation.
+    /// Executes the task's prompt against its conversation (auto-creating one on first run).
+    /// Mutates task.ConversationId on first run — caller is responsible for persisting the task.
     /// Returns the collected assistant response text.
     /// </summary>
     public async Task<string> ExecuteAsync(ScheduledTask task, string? promptOverride, CancellationToken ct)
     {
-        var conversationId = $"scheduledtask:{task.Id}";
         var rawPrompt = promptOverride ?? task.Prompt;
 
         // Prefix the prompt so the LLM can distinguish task-triggered turns from real user messages.
-        // This matters most in shared conversations, but we apply it everywhere for consistency.
         var prompt = $"[Scheduled task: {task.Name}]\n{rawPrompt}";
 
-        // Get or create the dedicated conversation for this task
+        // First run: generate a fresh GUID and write it back to the task.
+        // Subsequent runs: reuse the existing ConversationId.
+        if (string.IsNullOrEmpty(task.ConversationId))
+        {
+            task.ConversationId = Guid.NewGuid().ToString();
+            logger.LogInformation("First run of task '{Name}' ({Id}) — assigned conversation {ConversationId}",
+                task.Name, task.Id, task.ConversationId);
+        }
+
+        // Find or create the conversation — GetOrCreate is idempotent on the ID
         var conversation = conversationStore.GetOrCreate(
-            conversationId,
+            task.ConversationId,
             "scheduledtask",
             ConversationType.ScheduledTask,
             agentConfig.TextProvider,
@@ -52,7 +64,7 @@ internal sealed class ScheduledTaskExecutor(
         var userMessage = new Message
         {
             Id = Guid.NewGuid().ToString(),
-            ConversationId = conversationId,
+            ConversationId = conversation.Id,
             Role = "user",
             Content = prompt
         };

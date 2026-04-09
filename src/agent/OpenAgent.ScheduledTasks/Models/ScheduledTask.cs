@@ -38,6 +38,15 @@ public sealed class ScheduledTask
     [JsonPropertyName("delivery")]
     public DeliveryConfig? Delivery { get; set; }
 
+    /// <summary>
+    /// Conversation this task runs in. Null on create → executor generates a fresh
+    /// GUID on first run and writes it back here. Can be set explicitly to an existing
+    /// conversation ID (e.g. a Telegram chat) so the task runs "inside" that chat and
+    /// has full context for replies.
+    /// </summary>
+    [JsonPropertyName("conversationId")]
+    public string? ConversationId { get; set; }
+
     [JsonPropertyName("state")]
     public ScheduledTaskState State { get; set; } = new();
 }
