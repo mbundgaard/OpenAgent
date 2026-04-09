@@ -202,3 +202,87 @@
   color: var(--color-text-muted);
   font-size: 13px;
 }
+
+.statusStrip {
+  padding: 6px 14px;
+  background: rgba(91, 108, 255, 0.12);
+  border-top: 1px solid rgba(91, 108, 255, 0.25);
+  font-size: 11px;
+  color: #a8b2ff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5b6cff;
+}
+
+.composer {
+  padding: 10px 14px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text);
+  outline: none;
+  resize: none;
+  font-family: inherit;
+  line-height: 1.4;
+  min-height: 36px;
+}
+
+.input:focus {
+  border-color: var(--color-accent);
+}
+
+.input:disabled {
+  opacity: 0.5;
+}
+
+.actionButton {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: var(--color-accent);
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.actionButton:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.actionButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.actionButton.stop {
+  background: #ff5b5b;
+}
+
+.composerError {
+  padding: 6px 14px;
+  font-size: 11px;
+  color: #ff8080;
+}
