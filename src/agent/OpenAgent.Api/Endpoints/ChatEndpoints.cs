@@ -37,6 +37,8 @@ public static class ChatEndpoints
             CancellationToken ct) =>
         {
             var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
+            store.UpdateType(conversationId, ConversationType.Text);
+            conversation.Type = ConversationType.Text;
             var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
 
             var userMessage = new Message
