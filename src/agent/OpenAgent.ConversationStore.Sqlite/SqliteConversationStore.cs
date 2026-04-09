@@ -96,6 +96,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Conversations", "ChannelType", "TEXT");
         TryAddColumn(connection, "Conversations", "ConnectionId", "TEXT");
         TryAddColumn(connection, "Conversations", "ChannelChatId", "TEXT");
+        TryAddColumn(connection, "Messages", "Modality", "INTEGER NOT NULL DEFAULT 0");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
@@ -304,8 +305,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO Messages (Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs)
-            VALUES (@id, @conversationId, @role, @content, @createdAt, @toolCalls, @toolCallId, @channelMessageId, @replyToChannelMessageId, @promptTokens, @completionTokens, @elapsedMs)
+            INSERT INTO Messages (Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality)
+            VALUES (@id, @conversationId, @role, @content, @createdAt, @toolCalls, @toolCallId, @channelMessageId, @replyToChannelMessageId, @promptTokens, @completionTokens, @elapsedMs, @modality)
             """;
         cmd.Parameters.AddWithValue("@id", message.Id);
         cmd.Parameters.AddWithValue("@conversationId", message.ConversationId);
@@ -319,6 +320,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@promptTokens", (object?)message.PromptTokens ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@completionTokens", (object?)message.CompletionTokens ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@elapsedMs", (object?)message.ElapsedMs ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@modality", (int)message.Modality);
         cmd.ExecuteNonQuery();
     }
 
@@ -361,7 +363,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var cmd = connection.CreateCommand();
 
         var paramNames = messageIds.Select((_, i) => $"@id{i}").ToList();
-        cmd.CommandText = $"SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs FROM Messages WHERE Id IN ({string.Join(", ", paramNames)}) ORDER BY rowid";
+        cmd.CommandText = $"SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality FROM Messages WHERE Id IN ({string.Join(", ", paramNames)}) ORDER BY rowid";
 
         for (var i = 0; i < messageIds.Count; i++)
             cmd.Parameters.AddWithValue(paramNames[i], messageIds[i]);
@@ -472,12 +474,12 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
         if (afterRowId is not null)
         {
-            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs FROM Messages WHERE ConversationId = @id AND rowid > @cutoff ORDER BY rowid";
+            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality FROM Messages WHERE ConversationId = @id AND rowid > @cutoff ORDER BY rowid";
             cmd.Parameters.AddWithValue("@cutoff", afterRowId.Value);
         }
         else
         {
-            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs FROM Messages WHERE ConversationId = @id ORDER BY rowid";
+            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality FROM Messages WHERE ConversationId = @id ORDER BY rowid";
         }
         cmd.Parameters.AddWithValue("@id", conversationId);
 
@@ -562,7 +564,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             ReplyToChannelMessageId = reader.IsDBNull(9) ? null : reader.GetString(9),
             PromptTokens = reader.IsDBNull(10) ? null : reader.GetInt32(10),
             CompletionTokens = reader.IsDBNull(11) ? null : reader.GetInt32(11),
-            ElapsedMs = reader.IsDBNull(12) ? null : reader.GetInt64(12)
+            ElapsedMs = reader.IsDBNull(12) ? null : reader.GetInt64(12),
+            Modality = (MessageModality)reader.GetInt32(13)
         };
     }
 }

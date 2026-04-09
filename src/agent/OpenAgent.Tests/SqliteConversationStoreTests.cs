@@ -153,6 +153,29 @@ public class SqliteConversationStoreTests : IDisposable
         Assert.Equal("msg1", summarizer.LastMessages[0].Id);
     }
 
+    [Fact]
+    public void AddMessage_persists_and_reads_back_Modality()
+    {
+        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+
+        _store.AddMessage("conv1", new Message
+        {
+            Id = "msg-text", ConversationId = "conv1", Role = "user",
+            Content = "typed", Modality = MessageModality.Text
+        });
+        _store.AddMessage("conv1", new Message
+        {
+            Id = "msg-voice", ConversationId = "conv1", Role = "user",
+            Content = "spoken", Modality = MessageModality.Voice
+        });
+
+        var messages = _store.GetMessages("conv1");
+
+        Assert.Equal(2, messages.Count);
+        Assert.Equal(MessageModality.Text, messages[0].Modality);
+        Assert.Equal(MessageModality.Voice, messages[1].Modality);
+    }
+
     private sealed class FakeCompactionSummarizer(string context) : ICompactionSummarizer
     {
         public IReadOnlyList<Message>? LastMessages { get; private set; }
