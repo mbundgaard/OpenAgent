@@ -59,5 +59,40 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
+    [Fact]
+    public async Task ListConversations_OrdersByLastActivity()
+    {
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+
+        // Create 3 conversations with distinct unique IDs we can identify
+        var idA = $"order-test-A-{Guid.NewGuid()}";
+        var idB = $"order-test-B-{Guid.NewGuid()}";
+        var idC = $"order-test-C-{Guid.NewGuid()}";
+
+        var convA = store.GetOrCreate(idA, "app", ConversationType.Text, "test-provider", "test-model");
+        var convB = store.GetOrCreate(idB, "app", ConversationType.Text, "test-provider", "test-model");
+        var convC = store.GetOrCreate(idC, "app", ConversationType.Text, "test-provider", "test-model");
+
+        // Set distinct LastActivity values: B newest, A middle, C oldest
+        convA.LastActivity = DateTimeOffset.UtcNow.AddMinutes(-5);
+        convB.LastActivity = DateTimeOffset.UtcNow;
+        convC.LastActivity = DateTimeOffset.UtcNow.AddMinutes(-10);
+        store.Update(convA);
+        store.Update(convB);
+        store.Update(convC);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+
+        var response = await client.GetAsync("/api/conversations");
+        response.EnsureSuccessStatusCode();
+        var list = await response.Content.ReadFromJsonAsync<List<ConversationResponse>>();
+        Assert.NotNull(list);
+
+        // Filter to just our 3 conversations and assert their relative order
+        var ours = list.Where(c => c.Id == idA || c.Id == idB || c.Id == idC).Select(c => c.Id).ToList();
+        Assert.Equal(new[] { idB, idA, idC }, ours);
+    }
+
     private record ConversationResponse(string Id);
 }
