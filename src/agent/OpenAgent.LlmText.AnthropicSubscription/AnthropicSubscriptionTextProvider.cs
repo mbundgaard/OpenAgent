@@ -238,7 +238,8 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                     Id = Guid.NewGuid().ToString(),
                     ConversationId = conversationId,
                     Role = "assistant",
-                    ToolCalls = JsonSerializer.Serialize(assembledToolCalls)
+                    ToolCalls = JsonSerializer.Serialize(assembledToolCalls),
+                    Modality = MessageModality.Text
                 });
 
                 // Add assistant tool_use message to in-memory context
@@ -272,7 +273,8 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, result),
-                        ToolCallId = id
+                        ToolCallId = id,
+                        Modality = MessageModality.Text
                     });
 
                     toolResultBlocks.Add(new AnthropicContentBlock
@@ -300,7 +302,8 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                 Content = fullContent.ToString(),
                 PromptTokens = inputTokens,
                 CompletionTokens = outputTokens,
-                ElapsedMs = stopwatch.ElapsedMilliseconds
+                ElapsedMs = stopwatch.ElapsedMilliseconds,
+                Modality = MessageModality.Text
             });
 
             // Re-read conversation — tools may have modified it mid-request (e.g. ActiveSkills)

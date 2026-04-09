@@ -232,7 +232,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                 Id = Guid.NewGuid().ToString(),
                 ConversationId = conversationId,
                 Role = "assistant",
-                ToolCalls = toolCalls
+                ToolCalls = toolCalls,
+                Modality = MessageModality.Voice
             });
 
             _ = Task.Run(async () =>
@@ -249,7 +250,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, result),
-                        ToolCallId = callId
+                        ToolCallId = callId,
+                        Modality = MessageModality.Voice
                     });
 
                     await SendToolResultAndContinueAsync(callId, result, ct);
@@ -266,7 +268,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, errorResult),
-                        ToolCallId = callId
+                        ToolCallId = callId,
+                        Modality = MessageModality.Voice
                     });
 
                     await SendToolResultAndContinueAsync(callId, errorResult, ct);
@@ -287,7 +290,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                     Id = Guid.NewGuid().ToString(),
                     ConversationId = _conversation.Id,
                     Role = role,
-                    Content = td.Text
+                    Content = td.Text,
+                    Modality = MessageModality.Voice
                 });
             }
 

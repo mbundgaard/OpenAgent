@@ -187,7 +187,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     Id = Guid.NewGuid().ToString(),
                     ConversationId = conversationId,
                     Role = "assistant",
-                    ToolCalls = JsonSerializer.Serialize(assembledToolCalls)
+                    ToolCalls = JsonSerializer.Serialize(assembledToolCalls),
+                    Modality = MessageModality.Text
                 });
                 request.Messages.Add(new ChatMessage
                 {
@@ -213,7 +214,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, result),
-                        ToolCallId = id
+                        ToolCallId = id,
+                        Modality = MessageModality.Text
                     });
                     request.Messages.Add(new ChatMessage
                     {
@@ -237,7 +239,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 Content = fullContent.ToString(),
                 PromptTokens = promptTokens,
                 CompletionTokens = completionTokens,
-                ElapsedMs = stopwatch.ElapsedMilliseconds
+                ElapsedMs = stopwatch.ElapsedMilliseconds,
+                Modality = MessageModality.Text
             });
 
             // Re-read conversation — tools may have modified it mid-request (e.g. ActiveSkills)

@@ -44,7 +44,8 @@ public static class ChatEndpoints
                 Id = Guid.NewGuid().ToString(),
                 ConversationId = conversationId,
                 Role = "user",
-                Content = request.Content
+                Content = request.Content,
+                Modality = MessageModality.Text
             };
 
             // Collect all completion events

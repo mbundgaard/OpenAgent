@@ -93,7 +93,8 @@ public static class WebSocketTextEndpoints
                 Id = Guid.NewGuid().ToString(),
                 ConversationId = conversationId,
                 Role = "user",
-                Content = request.Content
+                Content = request.Content,
+                Modality = MessageModality.Text
             };
 
             await foreach (var evt in textProvider.CompleteAsync(conversation, userMessage, ct))
