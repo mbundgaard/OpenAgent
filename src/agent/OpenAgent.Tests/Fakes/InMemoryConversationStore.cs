@@ -38,6 +38,42 @@ public sealed class InMemoryConversationStore : IConversationStore
         return conversation;
     }
 
+    public Conversation? FindChannelConversation(string channelType, string connectionId, string channelChatId) =>
+        _conversations.Values.FirstOrDefault(c =>
+            c.ChannelType == channelType &&
+            c.ConnectionId == connectionId &&
+            c.ChannelChatId == channelChatId);
+
+    public Conversation FindOrCreateChannelConversation(
+        string channelType,
+        string connectionId,
+        string channelChatId,
+        string source,
+        ConversationType type,
+        string provider,
+        string model)
+    {
+        var existing = FindChannelConversation(channelType, connectionId, channelChatId);
+        if (existing is not null)
+            return existing;
+
+        var conversation = new Conversation
+        {
+            Id = Guid.NewGuid().ToString(),
+            Source = source,
+            Type = type,
+            Provider = provider,
+            Model = model,
+            ChannelType = channelType,
+            ConnectionId = connectionId,
+            ChannelChatId = channelChatId
+        };
+
+        _conversations[conversation.Id] = conversation;
+        _messages[conversation.Id] = [];
+        return conversation;
+    }
+
     public IReadOnlyList<Conversation> GetAll() => _conversations.Values.ToList();
 
     public Conversation? Get(string conversationId) =>

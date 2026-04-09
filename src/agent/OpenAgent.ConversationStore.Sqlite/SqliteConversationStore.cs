@@ -145,6 +145,76 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         return Get(conversationId) ?? conversation;
     }
 
+    public Conversation? FindChannelConversation(string channelType, string connectionId, string channelChatId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId FROM Conversations
+            WHERE ChannelType = @channelType AND ConnectionId = @connectionId AND ChannelChatId = @channelChatId
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("@channelType", channelType);
+        cmd.Parameters.AddWithValue("@connectionId", connectionId);
+        cmd.Parameters.AddWithValue("@channelChatId", channelChatId);
+
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? ReadConversation(reader) : null;
+    }
+
+    public Conversation FindOrCreateChannelConversation(
+        string channelType,
+        string connectionId,
+        string channelChatId,
+        string source,
+        ConversationType type,
+        string provider,
+        string model)
+    {
+        // Look up by channel binding first
+        var existing = FindChannelConversation(channelType, connectionId, channelChatId);
+        if (existing is not null)
+            return existing;
+
+        // Not found — create a new one with a fresh GUID
+        var conversation = new Conversation
+        {
+            Id = Guid.NewGuid().ToString(),
+            Source = source,
+            Type = type,
+            Provider = provider,
+            Model = model,
+            ChannelType = channelType,
+            ConnectionId = connectionId,
+            ChannelChatId = channelChatId,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        using (var connection = Open())
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model, ActiveSkills, ChannelType, ConnectionId, ChannelChatId)
+                VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId)
+                """;
+            cmd.Parameters.AddWithValue("@id", conversation.Id);
+            cmd.Parameters.AddWithValue("@source", conversation.Source);
+            cmd.Parameters.AddWithValue("@type", (int)conversation.Type);
+            cmd.Parameters.AddWithValue("@createdAt", conversation.CreatedAt.ToString("O"));
+            cmd.Parameters.AddWithValue("@voiceSessionId", DBNull.Value);
+            cmd.Parameters.AddWithValue("@voiceSessionOpen", 0);
+            cmd.Parameters.AddWithValue("@provider", conversation.Provider);
+            cmd.Parameters.AddWithValue("@model", conversation.Model);
+            cmd.Parameters.AddWithValue("@activeSkills", DBNull.Value);
+            cmd.Parameters.AddWithValue("@channelType", channelType);
+            cmd.Parameters.AddWithValue("@connectionId", connectionId);
+            cmd.Parameters.AddWithValue("@channelChatId", channelChatId);
+            cmd.ExecuteNonQuery();
+        }
+
+        return conversation;
+    }
+
     public IReadOnlyList<Conversation> GetAll()
     {
         using var connection = Open();

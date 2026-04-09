@@ -78,11 +78,13 @@ public class TelegramMessageHandlerTests
 
         await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
 
-        var expectedId = $"telegram:{ConnectionId}:{ChatId}";
-        var conversation = store.Get(expectedId);
+        var conversation = store.FindChannelConversation("telegram", ConnectionId, ChatId.ToString());
         Assert.NotNull(conversation);
         Assert.Equal("telegram", conversation.Source);
         Assert.Equal(Models.Conversations.ConversationType.Text, conversation.Type);
+        Assert.Equal("telegram", conversation.ChannelType);
+        Assert.Equal(ConnectionId, conversation.ConnectionId);
+        Assert.Equal(ChatId.ToString(), conversation.ChannelChatId);
     }
 
     [Fact]
@@ -137,8 +139,7 @@ public class TelegramMessageHandlerTests
 
         await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
 
-        var expectedId = $"telegram:{ConnectionId}:{groupChatId}";
-        var conversation = store.Get(expectedId);
+        var conversation = store.FindChannelConversation("telegram", ConnectionId, groupChatId.ToString());
         Assert.NotNull(conversation);
     }
 

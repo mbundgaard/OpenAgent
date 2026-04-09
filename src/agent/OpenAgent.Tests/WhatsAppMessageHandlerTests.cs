@@ -140,7 +140,7 @@ public class WhatsAppMessageHandlerTests
     }
 
     [Fact]
-    public async Task CreatesConversation_WithDerivedId()
+    public async Task CreatesConversation_WithChannelBinding()
     {
         var store = new InMemoryConversationStore();
         var provider = new FakeTelegramTextProvider("reply");
@@ -151,11 +151,13 @@ public class WhatsAppMessageHandlerTests
 
         await handler.HandleMessageAsync(sender, message, CancellationToken.None);
 
-        var expectedId = $"whatsapp:{ConnectionId}:{AllowedDmChatId}";
-        var conversation = store.Get(expectedId);
+        var conversation = store.FindChannelConversation("whatsapp", ConnectionId, AllowedDmChatId);
         Assert.NotNull(conversation);
         Assert.Equal("whatsapp", conversation.Source);
         Assert.Equal(Models.Conversations.ConversationType.Text, conversation.Type);
+        Assert.Equal("whatsapp", conversation.ChannelType);
+        Assert.Equal(ConnectionId, conversation.ConnectionId);
+        Assert.Equal(AllowedDmChatId, conversation.ChannelChatId);
     }
 
     /// <summary>
