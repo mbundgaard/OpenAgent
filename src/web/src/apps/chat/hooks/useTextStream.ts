@@ -1,0 +1,102 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getToken } from '../../../auth/token';
+import type { ConversationMessage } from '../../conversations/api';
+
+interface Callbacks {
+  onUserMessage: (msg: ConversationMessage) => void;
+  onAssistantStart: (msg: ConversationMessage) => void;
+  onAssistantDelta: (accumulatedContent: string) => void;
+  onDone: () => void;
+}
+
+/**
+ * Opens a long-lived text WebSocket for one conversation. Sends text messages
+ * via send(), streams responses through the callbacks. WS is closed and reopened
+ * when conversationId changes.
+ */
+export function useTextStream(conversationId: string, callbacks: Callbacks): {
+  send: (content: string) => void;
+  streaming: boolean;
+} {
+  const [streaming, setStreaming] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const streamContentRef = useRef('');
+  const callbacksRef = useRef(callbacks);
+
+  // Keep latest callbacks accessible without re-opening the WS
+  callbacksRef.current = callbacks;
+
+  useEffect(() => {
+    const token = getToken();
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${protocol}//${window.location.host}/ws/conversations/${conversationId}/text?api_key=${token}`;
+
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      switch (data.type) {
+        case 'delta':
+          streamContentRef.current += data.content;
+          callbacksRef.current.onAssistantDelta(streamContentRef.current);
+          break;
+        case 'done':
+          setStreaming(false);
+          streamContentRef.current = '';
+          callbacksRef.current.onDone();
+          break;
+      }
+    };
+
+    ws.onclose = () => {
+      setStreaming(false);
+    };
+
+    return () => { ws.close(); wsRef.current = null; };
+  }, [conversationId]);
+
+  const send = useCallback((content: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    // Optimistic user message
+    callbacksRef.current.onUserMessage({
+      id: crypto.randomUUID(),
+      conversation_id: conversationId,
+      role: 'user',
+      content: trimmed,
+      created_at: new Date().toISOString(),
+      tool_calls: null,
+      tool_call_id: null,
+      channel_message_id: null,
+      prompt_tokens: null,
+      completion_tokens: null,
+      elapsed_ms: null
+    });
+
+    // Open the assistant message that deltas will stream into
+    callbacksRef.current.onAssistantStart({
+      id: crypto.randomUUID(),
+      conversation_id: conversationId,
+      role: 'assistant',
+      content: '',
+      created_at: new Date().toISOString(),
+      tool_calls: null,
+      tool_call_id: null,
+      channel_message_id: null,
+      prompt_tokens: null,
+      completion_tokens: null,
+      elapsed_ms: null
+    });
+
+    setStreaming(true);
+    streamContentRef.current = '';
+    ws.send(JSON.stringify({ content: trimmed }));
+  }, [conversationId]);
+
+  return { send, streaming };
+}
