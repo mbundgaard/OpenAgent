@@ -12,6 +12,9 @@ export interface ConversationSummary {
   turn_count: number;
   last_activity: string | null;
   active_skills: string[] | null;
+  channel_type?: string | null;
+  connection_id?: string | null;
+  channel_chat_id?: string | null;
 }
 
 export interface ConversationDetail extends ConversationSummary {

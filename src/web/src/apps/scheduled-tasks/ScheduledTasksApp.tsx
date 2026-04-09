@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ScheduledTask, ScheduleConfig } from './api';
 import { listTasks, getTask, createTask, updateTask, deleteTask, runTaskNow } from './api';
+import { listConversations, type ConversationSummary } from '../conversations/api';
 import styles from './ScheduledTasksApp.module.css';
 
 type ScheduleKind = 'cron' | 'intervalMs' | 'at';
@@ -77,8 +78,25 @@ function formatTimestamp(iso: string | null | undefined): string {
   return new Date(iso).toLocaleString();
 }
 
+function formatConversationLabel(conv: ConversationSummary): string {
+  // Channel-bound: "telegram: chat 12345"
+  if (conv.channel_type && conv.channel_chat_id) {
+    return `${conv.channel_type}: ${conv.channel_chat_id}`;
+  }
+  // App/other: show source + short id
+  return `${conv.source} (${conv.id.slice(0, 8)})`;
+}
+
+function labelForConversationId(id: string | null | undefined, conversations: ConversationSummary[]): string {
+  if (!id) return '(auto-created on first run, silent)';
+  const conv = conversations.find(c => c.id === id);
+  if (!conv) return `${id} (not found)`;
+  return formatConversationLabel(conv);
+}
+
 export function ScheduledTasksApp() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ScheduledTask | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,8 +107,12 @@ export function ScheduledTasksApp() {
 
   const refresh = useCallback(() => {
     setLoading(true);
-    listTasks()
-      .then(ts => setTasks(ts.sort((a, b) => a.name.localeCompare(b.name))))
+    Promise.all([listTasks(), listConversations()])
+      .then(([ts, convs]) => {
+        setTasks(ts.sort((a, b) => a.name.localeCompare(b.name)));
+        setConversations(convs.sort((a, b) =>
+          (b.last_activity ?? b.created_at).localeCompare(a.last_activity ?? a.created_at)));
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -231,6 +253,7 @@ export function ScheduledTasksApp() {
           <TaskForm
             form={form}
             setForm={setForm}
+            conversations={conversations}
             mode={mode}
             saving={saving}
             error={error}
@@ -242,6 +265,7 @@ export function ScheduledTasksApp() {
         ) : (
           <TaskDetail
             task={detail}
+            conversations={conversations}
             error={error}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -254,9 +278,10 @@ export function ScheduledTasksApp() {
 }
 
 function TaskDetail({
-  task, error, onEdit, onDelete, onRunNow,
+  task, conversations, error, onEdit, onDelete, onRunNow,
 }: {
   task: ScheduledTask;
+  conversations: ConversationSummary[];
   error: string | null;
   onEdit: () => void;
   onDelete: () => void;
@@ -291,7 +316,7 @@ function TaskDetail({
         )}
         <Field label="Enabled" value={task.enabled ? 'yes' : 'no'} />
         <Field label="Delete after run" value={task.deleteAfterRun ? 'yes' : 'no'} />
-        <Field label="Conversation" value={task.conversationId ?? '(auto-created on first run)'} />
+        <Field label="Conversation" value={labelForConversationId(task.conversationId, conversations)} />
         <div className={styles.promptBlock}>
           <div className={styles.fieldLabel}>Prompt</div>
           <pre className={styles.promptContent}>{task.prompt}</pre>
@@ -311,10 +336,11 @@ function Field({ label, value, className }: { label: string; value: string; clas
 }
 
 function TaskForm({
-  form, setForm, mode, saving, error, onSave, onCancel,
+  form, setForm, conversations, mode, saving, error, onSave, onCancel,
 }: {
   form: FormState;
   setForm: (f: FormState) => void;
+  conversations: ConversationSummary[];
   mode: 'create' | 'edit';
   saving: boolean;
   error: string | null;
@@ -425,13 +451,17 @@ function TaskForm({
           </div>
         )}
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Conversation ID</label>
-          <input
-            className={styles.formInput}
+          <label className={styles.formLabel}>Conversation</label>
+          <select
+            className={styles.formSelect}
             value={form.conversationId}
             onChange={e => update('conversationId', e.target.value)}
-            placeholder="leave empty to auto-create (silent)"
-          />
+          >
+            <option value="">(auto-create new silent conversation)</option>
+            {conversations.map(c => (
+              <option key={c.id} value={c.id}>{formatConversationLabel(c)}</option>
+            ))}
+          </select>
         </div>
         <div className={styles.formRow}>
           <label className={styles.formLabel}>
