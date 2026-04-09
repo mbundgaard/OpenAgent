@@ -5,6 +5,7 @@ import { VoiceApp } from './voice/VoiceApp';
 import { ConversationsApp } from './conversations/ConversationsApp';
 import { ExplorerApp } from './explorer/ExplorerApp';
 import { TerminalApp } from './terminal/TerminalApp';
+import { ScheduledTasksApp } from './scheduled-tasks/ScheduledTasksApp';
 
 const apps: AppDefinition[] = [
   {
@@ -41,6 +42,13 @@ const apps: AppDefinition[] = [
     icon: 'terminal-icon',
     component: TerminalApp,
     defaultSize: { width: 800, height: 500 },
+  },
+  {
+    id: 'scheduled-tasks',
+    title: 'Scheduled Tasks',
+    icon: 'scheduled-tasks-icon',
+    component: ScheduledTasksApp,
+    defaultSize: { width: 900, height: 600 },
   },
   {
     id: 'admin',
