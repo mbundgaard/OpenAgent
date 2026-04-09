@@ -37,7 +37,8 @@ export function ConversationView({ conversationId, onDeleted, onActivity }: Prop
 
   const voice = useVoiceSession(conversationId, {
     onAppendMessage: appendMessage,
-    onUpdateLastMessageContent: updateLastMessageContent
+    onUpdateLastMessageContent: updateLastMessageContent,
+    onSessionEnd: onActivity
   });
 
   const handleDelete = async () => {

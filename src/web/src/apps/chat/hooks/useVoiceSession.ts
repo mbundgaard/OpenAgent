@@ -10,6 +10,7 @@ export type VoiceState = 'idle' | 'listening' | 'userSpeaking' | 'thinking' | 'a
 interface Callbacks {
   onAppendMessage: (msg: ConversationMessage) => void;
   onUpdateLastMessageContent: (content: string) => void;
+  onSessionEnd?: () => void;
 }
 
 /**
@@ -237,6 +238,7 @@ export function useVoiceSession(conversationId: string, callbacks: Callbacks): {
 
     flushPlayback();
     setState('idle');
+    callbacksRef.current.onSessionEnd?.();
   }, [flushPlayback]);
 
   // Cleanup on unmount or conversation change
