@@ -72,11 +72,8 @@ public sealed class WhatsAppMessageHandler
             return;
         }
 
-        // Derive conversation ID from connection + chat
-        var derivedConversationId = $"whatsapp:{_connectionId}:{chatId}";
-
         // Conversation gating -- check if conversation exists or if new ones are allowed
-        var existing = _store.Get(derivedConversationId);
+        var existing = _store.FindChannelConversation("whatsapp", _connectionId, chatId);
         if (existing is null)
         {
             var connection = _connectionStore.Load(_connectionId);
@@ -107,7 +104,9 @@ public sealed class WhatsAppMessageHandler
         // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
         var providerKey = _agentConfig.TextProvider;
         var model = _agentConfig.TextModel;
-        var conversation = _store.GetOrCreate(derivedConversationId, "whatsapp", ConversationType.Text, providerKey, model);
+        var conversation = _store.FindOrCreateChannelConversation(
+            "whatsapp", _connectionId, chatId,
+            "whatsapp", ConversationType.Text, providerKey, model);
 
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.Provider);
@@ -123,7 +122,7 @@ public sealed class WhatsAppMessageHandler
         var userMessage = new Message
         {
             Id = Guid.NewGuid().ToString(),
-            ConversationId = derivedConversationId,
+            ConversationId = conversation.Id,
             Role = "user",
             Content = userText,
             ChannelMessageId = message.Id

@@ -10,6 +10,26 @@ public interface IConversationStore : IConfigurable
     /// <summary>Returns the existing conversation or creates a new one stamped with provider and model.</summary>
     Conversation GetOrCreate(string conversationId, string source, ConversationType type, string provider, string model);
 
+    /// <summary>
+    /// Looks up a conversation bound to a specific external chat, or returns null if not found.
+    /// Used by channel handlers for gating checks before deciding whether to create a new conversation.
+    /// </summary>
+    Conversation? FindChannelConversation(string channelType, string connectionId, string channelChatId);
+
+    /// <summary>
+    /// Finds a conversation bound to a specific external chat, or creates a new one with a fresh GUID
+    /// and the channel binding fields set. Used by channel handlers to resolve inbound messages to
+    /// conversations without derived ID strings.
+    /// </summary>
+    Conversation FindOrCreateChannelConversation(
+        string channelType,
+        string connectionId,
+        string channelChatId,
+        string source,
+        ConversationType type,
+        string provider,
+        string model);
+
     /// <summary>Returns all conversations.</summary>
     IReadOnlyList<Conversation> GetAll();
 

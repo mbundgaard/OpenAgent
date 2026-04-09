@@ -84,11 +84,8 @@ public sealed class TelegramMessageHandler
 
         _logger?.LogDebug("Handler received message from user {UserId} in chat {ChatId}", userId, chatId);
 
-        // Derive conversation ID from connection + chat — each chat gets its own conversation
-        var derivedConversationId = $"telegram:{_connectionId}:{chatId}";
-
         // Conversation gating — check if conversation exists or if new ones are allowed
-        var existing = _store.Get(derivedConversationId);
+        var existing = _store.FindChannelConversation("telegram", _connectionId, chatId.ToString());
         if (existing is null)
         {
             var connection = _connectionStore.Load(_connectionId);
@@ -119,7 +116,9 @@ public sealed class TelegramMessageHandler
         // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
         var providerKey = _agentConfig.TextProvider;
         var model = _agentConfig.TextModel;
-        var conversation = _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, providerKey, model);
+        var conversation = _store.FindOrCreateChannelConversation(
+            "telegram", _connectionId, chatId.ToString(),
+            "telegram", ConversationType.Text, providerKey, model);
 
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.Provider);
@@ -128,7 +127,7 @@ public sealed class TelegramMessageHandler
         var userMessage = new Models.Conversations.Message
         {
             Id = Guid.NewGuid().ToString(),
-            ConversationId = derivedConversationId,
+            ConversationId = conversation.Id,
             Role = "user",
             Content = userText,
             ChannelMessageId = message.MessageId.ToString(),
@@ -169,10 +168,9 @@ public sealed class TelegramMessageHandler
     private async Task HandleBotAddedToGroupAsync(ITelegramSender sender, global::Telegram.Bot.Types.Message groupMsg, CancellationToken ct)
     {
         var chatId = groupMsg.Chat.Id;
-        var derivedConversationId = $"telegram:{_connectionId}:{chatId}";
 
         // Check if conversation already exists
-        var existing = _store.Get(derivedConversationId);
+        var existing = _store.FindChannelConversation("telegram", _connectionId, chatId.ToString());
         if (existing is not null)
         {
             _logger?.LogDebug("Bot added to group {ChatId} but conversation already exists", chatId);
@@ -190,7 +188,9 @@ public sealed class TelegramMessageHandler
         // Create the conversation and lock new conversations
         var providerKey = _agentConfig.TextProvider;
         var model = _agentConfig.TextModel;
-        _store.GetOrCreate(derivedConversationId, "telegram", ConversationType.Text, providerKey, model);
+        _store.FindOrCreateChannelConversation(
+            "telegram", _connectionId, chatId.ToString(),
+            "telegram", ConversationType.Text, providerKey, model);
         connection.AllowNewConversations = false;
         _connectionStore.Save(connection);
         _logger?.LogInformation("Created conversation for group {ChatId} (bot added), auto-locked new conversations", chatId);
