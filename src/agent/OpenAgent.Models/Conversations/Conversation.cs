@@ -93,4 +93,29 @@ public sealed class Conversation
     [JsonPropertyName("active_skills")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? ActiveSkills { get; set; }
+
+    /// <summary>
+    /// Channel type this conversation is bound to (e.g. "telegram", "whatsapp"),
+    /// or null for app/scheduled-task conversations with no channel binding.
+    /// Together with ConnectionId and ChannelChatId, identifies the external chat.
+    /// </summary>
+    [JsonPropertyName("channel_type")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChannelType { get; set; }
+
+    /// <summary>
+    /// ID of the channel connection (matches Connection.Id in connections.json)
+    /// that owns this conversation. Null for non-channel conversations.
+    /// </summary>
+    [JsonPropertyName("connection_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ConnectionId { get; set; }
+
+    /// <summary>
+    /// External platform chat ID (e.g. Telegram chat ID, WhatsApp JID) that this
+    /// conversation represents. Null for non-channel conversations.
+    /// </summary>
+    [JsonPropertyName("channel_chat_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChannelChatId { get; set; }
 }
