@@ -22,12 +22,12 @@ internal sealed class SystemPromptBuilder
     // Prompt files and which conversation types include them
     private static readonly (string FilePath, ConversationType[] Types)[] FileMap =
     [
-        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
-        ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Cron, ConversationType.WebHook]),
+        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
+        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
+        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
+        ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
+        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
+        ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
         ("VOICE.md",         [ConversationType.Voice]),
     ];
 

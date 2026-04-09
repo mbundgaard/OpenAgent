@@ -27,7 +27,7 @@ public enum WhatsAppConnectionState
 /// Manages process lifecycle, QR pairing state machine, ping/pong health monitoring,
 /// and exponential-backoff reconnection.
 /// </summary>
-public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
+public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender, IAsyncDisposable
 {
     private readonly WhatsAppOptions _options;
     private readonly string _connectionId;
@@ -199,6 +199,15 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IAsyncDisposable
         {
             return (_state, _latestQr, _lastError);
         }
+    }
+
+    /// <summary>Sends a proactive text message to a WhatsApp chat.</summary>
+    public async Task SendMessageAsync(string chatId, string text, CancellationToken ct = default)
+    {
+        if (_nodeProcess is null)
+            throw new InvalidOperationException("WhatsApp bridge is not connected. Start the provider first.");
+
+        await _nodeProcess.WriteAsync(WhatsAppNodeProcess.FormatSendCommand(chatId, text));
     }
 
     /// <summary>

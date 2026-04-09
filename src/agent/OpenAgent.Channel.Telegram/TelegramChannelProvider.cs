@@ -12,7 +12,7 @@ namespace OpenAgent.Channel.Telegram;
 /// Channel provider that connects the agent to Telegram via polling or webhook.
 /// Creates the bot client, message handler, and manages the connection lifecycle.
 /// </summary>
-public sealed class TelegramChannelProvider : IChannelProvider
+public sealed class TelegramChannelProvider : IChannelProvider, IOutboundSender
 {
     private readonly TelegramOptions _options;
     private readonly string _connectionId;
@@ -168,6 +168,15 @@ public sealed class TelegramChannelProvider : IChannelProvider
             throw new InvalidOperationException("Telegram channel is not started.");
 
         return _sender;
+    }
+
+    /// <summary>Sends a proactive text message to a Telegram chat.</summary>
+    public async Task SendMessageAsync(string chatId, string text, CancellationToken ct = default)
+    {
+        if (_botClient is null)
+            throw new InvalidOperationException("Telegram bot client is not initialized. Start the provider first.");
+
+        await _botClient.SendMessage(long.Parse(chatId), text, cancellationToken: ct);
     }
 
     /// <summary>Polling update handler — forwards to the message handler using the cached sender.</summary>
