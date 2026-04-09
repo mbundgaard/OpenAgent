@@ -14,8 +14,12 @@ interface Props {
 export function ConversationSidebar({ conversations, loading, selectedId, onSelect, onNew, onDeleted }: Props) {
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    await deleteConversation(id);
-    onDeleted(id);
+    try {
+      await deleteConversation(id);
+      onDeleted(id);
+    } catch (error) {
+      console.error(`Failed to delete conversation ${id}:`, error);
+    }
   };
 
   return (
