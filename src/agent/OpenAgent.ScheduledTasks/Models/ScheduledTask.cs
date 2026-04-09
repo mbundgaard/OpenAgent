@@ -3,9 +3,11 @@ using System.Text.Json.Serialization;
 namespace OpenAgent.ScheduledTasks.Models;
 
 /// <summary>
-/// The definition of a proactive agent action — what to run, when, and where to deliver the result.
-/// A ScheduledTask turns a prompt into a scheduled LLM completion. Each task gets its own dedicated
-/// conversation (scheduledtask:{Id}) so history accumulates naturally and benefits from compaction.
+/// The definition of a proactive agent action — what to run, when, and in which conversation.
+/// A ScheduledTask turns a prompt into a scheduled LLM completion inside a conversation. The
+/// conversation owns its own output delivery (channel-bound conversations deliver to the channel,
+/// unbound conversations are silent), so the task itself has no delivery config.
+///
 /// State (NextRunAt, LastRunAt, errors) is kept on the nested State object — separated from the
 /// definition so the engine can update execution history without touching user-editable fields.
 /// </summary>
@@ -32,17 +34,12 @@ public sealed class ScheduledTask
     [JsonPropertyName("prompt")]
     public required string Prompt { get; set; }
 
-    [JsonPropertyName("agentTurn")]
-    public AgentTurnConfig? AgentTurn { get; set; }
-
-    [JsonPropertyName("delivery")]
-    public DeliveryConfig? Delivery { get; set; }
-
     /// <summary>
     /// Conversation this task runs in. Null on create → executor generates a fresh
     /// GUID on first run and writes it back here. Can be set explicitly to an existing
     /// conversation ID (e.g. a Telegram chat) so the task runs "inside" that chat and
-    /// has full context for replies.
+    /// has full context for replies. The conversation owns delivery: channel-bound
+    /// conversations deliver to the channel; unbound conversations are silent.
     /// </summary>
     [JsonPropertyName("conversationId")]
     public string? ConversationId { get; set; }
@@ -72,58 +69,6 @@ public sealed class ScheduleConfig
 
     [JsonPropertyName("at")]
     public DateTimeOffset? At { get; set; }
-}
-
-[JsonConverter(typeof(JsonStringEnumConverter<DeliveryMode>))]
-public enum DeliveryMode
-{
-    Silent,
-    Channel,
-    Webhook
-}
-
-/// <summary>
-/// Where the assistant response goes after a task runs. Three modes:
-/// Silent (default — result stays in the task's conversation history, viewable in the web UI),
-/// Channel (proactively message a specific chat via a running channel connection — agent messages you),
-/// Webhook (POST the result as JSON to an external URL — integrate with other systems).
-/// Channel delivery requires the target provider to implement IOutboundSender, otherwise falls back to silent.
-/// </summary>
-public sealed class DeliveryConfig
-{
-    [JsonPropertyName("mode")]
-    public DeliveryMode Mode { get; set; } = DeliveryMode.Silent;
-
-    [JsonPropertyName("connectionId")]
-    public string? ConnectionId { get; set; }
-
-    [JsonPropertyName("chatId")]
-    public string? ChatId { get; set; }
-
-    [JsonPropertyName("webhookUrl")]
-    public string? WebhookUrl { get; set; }
-}
-
-/// <summary>
-/// Reserved for future use — will let individual tasks override the default LLM setup.
-/// Today scheduled tasks run with the global AgentConfig (provider, model, full tool set).
-/// Once enabled this will allow per-task model selection, tool whitelisting, custom timeouts,
-/// and lightweight isolated runs. Present in the data model now so existing tasks won't need
-/// migration when the feature ships.
-/// </summary>
-public sealed class AgentTurnConfig
-{
-    [JsonPropertyName("model")]
-    public string? Model { get; set; }
-
-    [JsonPropertyName("provider")]
-    public string? Provider { get; set; }
-
-    [JsonPropertyName("timeoutSeconds")]
-    public int? TimeoutSeconds { get; set; }
-
-    [JsonPropertyName("tools")]
-    public List<string>? Tools { get; set; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<TaskRunStatus>))]

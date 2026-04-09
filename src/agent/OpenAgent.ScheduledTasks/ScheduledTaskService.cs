@@ -270,8 +270,8 @@ public sealed class ScheduledTaskService : IHostedService, IDisposable
         try
         {
             // Execute and deliver OUTSIDE the lock
-            var response = await _executor.ExecuteAsync(task, promptOverride, ct);
-            await _deliveryRouter.DeliverAsync(task, response, ct);
+            var result = await _executor.ExecuteAsync(task, promptOverride, ct);
+            await _deliveryRouter.DeliverAsync(result.Conversation, result.Response, ct);
 
             // Update state UNDER the lock
             await _lock.WaitAsync(ct);

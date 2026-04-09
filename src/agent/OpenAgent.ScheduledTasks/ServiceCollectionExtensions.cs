@@ -28,7 +28,6 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ILogger<ScheduledTaskExecutor>>()));
         services.AddSingleton(sp => new DeliveryRouter(
             sp.GetRequiredService<IConnectionManager>(),
-            sp.GetRequiredService<IHttpClientFactory>(),
             sp.GetRequiredService<ILogger<DeliveryRouter>>()));
         services.AddSingleton(sp => new ScheduledTaskService(
             sp.GetRequiredService<ScheduledTaskStore>(),
@@ -37,7 +36,6 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ILogger<ScheduledTaskService>>()));
         services.AddHostedService(sp => sp.GetRequiredService<ScheduledTaskService>());
         services.AddSingleton<IToolHandler, ScheduledTaskToolHandler>();
-        services.AddHttpClient("ScheduledTaskWebhook");
 
         return services;
     }

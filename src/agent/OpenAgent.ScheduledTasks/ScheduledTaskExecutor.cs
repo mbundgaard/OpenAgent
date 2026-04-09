@@ -32,11 +32,17 @@ internal sealed class ScheduledTaskExecutor(
     ILogger<ScheduledTaskExecutor> logger)
 {
     /// <summary>
+    /// Result of executing a task: the conversation it ran in (needed for delivery routing)
+    /// and the assistant response text.
+    /// </summary>
+    public readonly record struct ExecutionResult(Conversation Conversation, string Response);
+
+    /// <summary>
     /// Executes the task's prompt against its conversation (auto-creating one on first run).
     /// Mutates task.ConversationId on first run — caller is responsible for persisting the task.
-    /// Returns the collected assistant response text.
+    /// Returns the conversation and the collected assistant response text.
     /// </summary>
-    public async Task<string> ExecuteAsync(ScheduledTask task, string? promptOverride, CancellationToken ct)
+    public async Task<ExecutionResult> ExecuteAsync(ScheduledTask task, string? promptOverride, CancellationToken ct)
     {
         var rawPrompt = promptOverride ?? task.Prompt;
 
@@ -83,6 +89,6 @@ internal sealed class ScheduledTaskExecutor(
         logger.LogInformation("Scheduled task '{Name}' ({Id}) completed. Response length: {Length}",
             task.Name, task.Id, response.Length);
 
-        return response;
+        return new ExecutionResult(conversation, response);
     }
 }

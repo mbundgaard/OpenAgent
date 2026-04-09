@@ -60,8 +60,8 @@ public static class ScheduledTaskEndpoints
                     if (body.TryGetProperty("description", out var d)) task.Description = d.GetString();
                     if (body.TryGetProperty("schedule", out var s))
                         task.Schedule = JsonSerializer.Deserialize<ScheduleConfig>(s.GetRawText())!;
-                    if (body.TryGetProperty("delivery", out var del))
-                        task.Delivery = JsonSerializer.Deserialize<DeliveryConfig>(del.GetRawText());
+                    if (body.TryGetProperty("conversationId", out var cid))
+                        task.ConversationId = cid.GetString();
                 }, ct);
 
                 // Re-fetch to return updated state

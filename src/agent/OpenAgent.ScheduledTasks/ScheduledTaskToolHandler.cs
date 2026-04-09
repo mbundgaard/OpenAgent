@@ -10,10 +10,9 @@ namespace OpenAgent.ScheduledTasks;
 /// its own proactive work — during a conversation you can say "remind me tomorrow at 9am" and
 /// the agent will call create_scheduled_task directly, rather than you having to hit an API.
 ///
-/// The four tools mirror the service's CRUD API 1:1 but with context-aware defaults: when
-/// called from a channel conversation (e.g. Telegram), CreateScheduledTaskTool auto-fills the
-/// delivery target from the current conversationId, so the user doesn't have to tell the agent
-/// "reply to this chat" — it's inferred.
+/// The four tools mirror the service's CRUD API 1:1. CreateScheduledTaskTool defaults
+/// conversationId to the current conversation so a task created from a Telegram chat
+/// automatically runs in (and delivers back to) that same chat.
 /// </summary>
 public sealed class ScheduledTaskToolHandler : IToolHandler
 {
@@ -31,8 +30,8 @@ public sealed class ScheduledTaskToolHandler : IToolHandler
 }
 
 /// <summary>
-/// Creates a new scheduled task with the given configuration.
-/// Auto-detects delivery target from conversationId when the caller is a channel chat.
+/// Creates a new scheduled task. Defaults the task's conversation to the current one,
+/// so a task created from a Telegram chat runs inside that chat and delivers naturally.
 /// </summary>
 internal sealed class CreateScheduledTaskTool(ScheduledTaskService service, ILogger logger) : ITool
 {
@@ -41,7 +40,9 @@ internal sealed class CreateScheduledTaskTool(ScheduledTaskService service, ILog
         Name = "create_scheduled_task",
         Description = "Create a new scheduled task that runs an LLM prompt on a schedule. " +
                       "Specify cron, intervalMs, or at for one-time. " +
-                      "Delivery defaults to the current channel chat if called from Telegram/WhatsApp.",
+                      "The task runs in the current conversation by default, so if you're talking " +
+                      "via Telegram it will deliver back to that chat. Pass conversationId to route " +
+                      "the task elsewhere, or pass an empty string to run it in a new private conversation.",
         Parameters = new
         {
             type = "object",
@@ -63,18 +64,7 @@ internal sealed class CreateScheduledTaskTool(ScheduledTaskService service, ILog
                 },
                 description = new { type = "string", description = "Optional longer description" },
                 deleteAfterRun = new { type = "boolean", description = "If true, delete the task after one successful run" },
-                delivery = new
-                {
-                    type = "object",
-                    description = "Where to deliver results. Defaults to silent.",
-                    properties = new
-                    {
-                        mode = new { type = "string", description = "silent, channel, or webhook" },
-                        connectionId = new { type = "string", description = "Connection ID for channel delivery" },
-                        chatId = new { type = "string", description = "Chat ID for channel delivery" },
-                        webhookUrl = new { type = "string", description = "URL for webhook delivery" }
-                    }
-                }
+                conversationId = new { type = "string", description = "Conversation to run the task in. Omit to use the current conversation; pass empty string to create a new private one." }
             },
             required = new[] { "name", "prompt", "schedule" }
         }
@@ -88,33 +78,25 @@ internal sealed class CreateScheduledTaskTool(ScheduledTaskService service, ILog
 
             var name = args.GetProperty("name").GetString()!;
             var prompt = args.GetProperty("prompt").GetString()!;
-
-            // Deserialize schedule
             var scheduleEl = args.GetProperty("schedule");
             var schedule = JsonSerializer.Deserialize<ScheduleConfig>(scheduleEl.GetRawText())!;
 
-            // Optional fields
             var description = args.TryGetProperty("description", out var descEl) ? descEl.GetString() : null;
             var deleteAfterRun = args.TryGetProperty("deleteAfterRun", out var darEl) && darEl.GetBoolean();
 
-            // Delivery — deserialize if provided, otherwise try to auto-detect from conversationId
-            DeliveryConfig? delivery = null;
-            if (args.TryGetProperty("delivery", out var deliveryEl))
+            // Conversation resolution:
+            //  - omitted → default to the current conversation (task runs in this chat)
+            //  - empty string → null, so the executor creates a new private conversation on first run
+            //  - explicit value → use that conversation ID
+            string? taskConversationId;
+            if (args.TryGetProperty("conversationId", out var convEl))
             {
-                delivery = JsonSerializer.Deserialize<DeliveryConfig>(deliveryEl.GetRawText());
+                var value = convEl.GetString();
+                taskConversationId = string.IsNullOrEmpty(value) ? null : value;
             }
-
-            // Context-aware default: if conversationId is "telegram:connId:chatId" or "whatsapp:connId:chatId",
-            // auto-fill delivery connectionId and chatId when not explicitly provided
-            if (delivery is null or { Mode: DeliveryMode.Channel, ConnectionId: null })
+            else
             {
-                var parts = conversationId.Split(':');
-                if (parts.Length >= 3 && (parts[0] == "telegram" || parts[0] == "whatsapp"))
-                {
-                    delivery ??= new DeliveryConfig { Mode = DeliveryMode.Channel };
-                    delivery.ConnectionId ??= parts[1];
-                    delivery.ChatId ??= string.Join(":", parts[2..]);
-                }
+                taskConversationId = conversationId;
             }
 
             var task = new ScheduledTask
@@ -125,7 +107,7 @@ internal sealed class CreateScheduledTaskTool(ScheduledTaskService service, ILog
                 Prompt = prompt,
                 Schedule = schedule,
                 DeleteAfterRun = deleteAfterRun,
-                Delivery = delivery
+                ConversationId = taskConversationId
             };
 
             await service.AddAsync(task, ct);
@@ -135,6 +117,7 @@ internal sealed class CreateScheduledTaskTool(ScheduledTaskService service, ILog
                 status = "created",
                 id = task.Id,
                 name = task.Name,
+                conversationId = task.ConversationId,
                 nextRunAt = task.State.NextRunAt?.ToString("o")
             });
         }
@@ -172,10 +155,10 @@ internal sealed class ListScheduledTasksTool(ScheduledTaskService service) : ITo
             name = t.Name,
             enabled = t.Enabled,
             schedule = FormatSchedule(t.Schedule),
+            conversationId = t.ConversationId,
             nextRunAt = t.State.NextRunAt?.ToString("o"),
             lastStatus = t.State.LastStatus?.ToString().ToLowerInvariant(),
-            lastRunAt = t.State.LastRunAt?.ToString("o"),
-            deliveryMode = t.Delivery?.Mode.ToString().ToLowerInvariant() ?? "silent"
+            lastRunAt = t.State.LastRunAt?.ToString("o")
         });
 
         return JsonSerializer.Serialize(items);
@@ -223,18 +206,7 @@ internal sealed class UpdateScheduledTaskTool(ScheduledTaskService service, ILog
                         at = new { type = "string", description = "ISO 8601 datetime" }
                     }
                 },
-                delivery = new
-                {
-                    type = "object",
-                    description = "New delivery config",
-                    properties = new
-                    {
-                        mode = new { type = "string", description = "silent, channel, or webhook" },
-                        connectionId = new { type = "string", description = "Connection ID" },
-                        chatId = new { type = "string", description = "Chat ID" },
-                        webhookUrl = new { type = "string", description = "Webhook URL" }
-                    }
-                }
+                conversationId = new { type = "string", description = "Re-point the task at a different conversation" }
             },
             required = new[] { "taskId" }
         }
@@ -262,8 +234,8 @@ internal sealed class UpdateScheduledTaskTool(ScheduledTaskService service, ILog
                 if (args.TryGetProperty("schedule", out var scheduleEl))
                     task.Schedule = JsonSerializer.Deserialize<ScheduleConfig>(scheduleEl.GetRawText())!;
 
-                if (args.TryGetProperty("delivery", out var deliveryEl))
-                    task.Delivery = JsonSerializer.Deserialize<DeliveryConfig>(deliveryEl.GetRawText());
+                if (args.TryGetProperty("conversationId", out var convEl))
+                    task.ConversationId = convEl.GetString();
             }, ct);
 
             // Re-fetch the task to get the updated name
