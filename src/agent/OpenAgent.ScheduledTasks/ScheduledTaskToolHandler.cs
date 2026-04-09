@@ -6,8 +6,14 @@ using OpenAgent.ScheduledTasks.Models;
 namespace OpenAgent.ScheduledTasks;
 
 /// <summary>
-/// Groups scheduled task CRUD tools under a single handler.
-/// Exposes create, list, update, and delete tools for the agent.
+/// Exposes scheduled task CRUD to the LLM as callable tools. This is how the agent manages
+/// its own proactive work — during a conversation you can say "remind me tomorrow at 9am" and
+/// the agent will call create_scheduled_task directly, rather than you having to hit an API.
+///
+/// The four tools mirror the service's CRUD API 1:1 but with context-aware defaults: when
+/// called from a channel conversation (e.g. Telegram), CreateScheduledTaskTool auto-fills the
+/// delivery target from the current conversationId, so the user doesn't have to tell the agent
+/// "reply to this chat" — it's inferred.
 /// </summary>
 public sealed class ScheduledTaskToolHandler : IToolHandler
 {

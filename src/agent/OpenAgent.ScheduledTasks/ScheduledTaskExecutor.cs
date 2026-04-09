@@ -9,8 +9,17 @@ using System.Text;
 namespace OpenAgent.ScheduledTasks;
 
 /// <summary>
-/// Executes a single scheduled task: creates/retrieves a conversation, runs an LLM completion,
-/// and returns the assistant response text.
+/// Runs ONE task's LLM turn. Kept deliberately thin: resolve the dedicated conversation,
+/// inject the prompt as a user message, stream the completion, collect the final text.
+/// Has no knowledge of scheduling, state updates, or delivery — those are the service's job.
+/// This separation makes the execution path trivially testable (just pass a fake provider)
+/// and keeps the service focused on timing and persistence.
+///
+/// Each task owns its own conversation (scheduledtask:{taskId}) so history accumulates across
+/// runs. The conversation uses ConversationType.ScheduledTask which selects the right system
+/// prompt template. Compaction handles long-running tasks naturally — no special pruning needed.
+/// The promptOverride parameter is used by webhook triggers to inject event context without
+/// mutating the stored task prompt.
 /// </summary>
 internal sealed class ScheduledTaskExecutor(
     IConversationStore conversationStore,

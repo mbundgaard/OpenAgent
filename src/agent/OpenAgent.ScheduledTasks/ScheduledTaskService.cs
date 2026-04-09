@@ -6,8 +6,25 @@ using OpenAgent.ScheduledTasks.Storage;
 namespace OpenAgent.ScheduledTasks;
 
 /// <summary>
-/// Hosted service that manages the scheduled task lifecycle: loading, scheduling,
-/// executing, and persisting tasks. All mutations are serialized through a semaphore.
+/// The orchestrator for scheduled tasks — owns the timer loop, CRUD API, and coordinates
+/// Executor + DeliveryRouter + Store. Runs as an IHostedService so the .NET host handles
+/// startup/shutdown.
+///
+/// Startup: load tasks from disk → recompute NextRunAt → execute any missed runs sequentially
+/// with stagger → arm a 30s tick timer. This ensures a restart doesn't drop scheduled work
+/// that was due during downtime.
+///
+/// Tick: find tasks where NextRunAt is past and enabled, take up to MaxConcurrentRuns of them,
+/// execute concurrently via Task.WhenAll. The cap prevents token/rate-limit floods if many tasks
+/// come due simultaneously. Exceptions in the tick are caught so the timer stays alive.
+///
+/// Concurrency: a single SemaphoreSlim serializes all store reads/writes. Execution (the
+/// potentially slow LLM call + delivery) runs OUTSIDE the lock — we only re-acquire it at the
+/// end to update state. This is critical: blocking CRUD operations during a long LLM call would
+/// freeze the whole system.
+///
+/// Registered as a concrete class (not behind an interface) so API endpoints and agent tools
+/// can call CRUD methods directly. The handful of consumers makes an interface premature abstraction.
 /// </summary>
 public sealed class ScheduledTaskService : IHostedService, IDisposable
 {

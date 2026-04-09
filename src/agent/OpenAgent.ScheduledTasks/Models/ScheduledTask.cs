@@ -3,7 +3,11 @@ using System.Text.Json.Serialization;
 namespace OpenAgent.ScheduledTasks.Models;
 
 /// <summary>
-/// A task that executes on a schedule, delivering LLM responses to configured targets.
+/// The definition of a proactive agent action — what to run, when, and where to deliver the result.
+/// A ScheduledTask turns a prompt into a scheduled LLM completion. Each task gets its own dedicated
+/// conversation (scheduledtask:{Id}) so history accumulates naturally and benefits from compaction.
+/// State (NextRunAt, LastRunAt, errors) is kept on the nested State object — separated from the
+/// definition so the engine can update execution history without touching user-editable fields.
 /// </summary>
 public sealed class ScheduledTask
 {
@@ -39,7 +43,12 @@ public sealed class ScheduledTask
 }
 
 /// <summary>
-/// Schedule configuration. Exactly one of Cron, IntervalMs, or At must be set.
+/// Defines WHEN a task runs. Three mutually-exclusive modes:
+/// Cron (recurring with calendar semantics, e.g. "every weekday at 9am"),
+/// IntervalMs (fixed delay between runs, e.g. every 5 minutes),
+/// or At (one-shot at a specific timestamp, typically paired with DeleteAfterRun for reminders).
+/// Timezone only applies to Cron — interval and one-shot are absolute UTC.
+/// Validated by ScheduleCalculator.Validate before persistence.
 /// </summary>
 public sealed class ScheduleConfig
 {
@@ -65,7 +74,11 @@ public enum DeliveryMode
 }
 
 /// <summary>
-/// Configures where task results are delivered.
+/// Where the assistant response goes after a task runs. Three modes:
+/// Silent (default — result stays in the task's conversation history, viewable in the web UI),
+/// Channel (proactively message a specific chat via a running channel connection — agent messages you),
+/// Webhook (POST the result as JSON to an external URL — integrate with other systems).
+/// Channel delivery requires the target provider to implement IOutboundSender, otherwise falls back to silent.
 /// </summary>
 public sealed class DeliveryConfig
 {
@@ -83,7 +96,11 @@ public sealed class DeliveryConfig
 }
 
 /// <summary>
-/// Reserved for future full agent turn configuration.
+/// Reserved for future use — will let individual tasks override the default LLM setup.
+/// Today scheduled tasks run with the global AgentConfig (provider, model, full tool set).
+/// Once enabled this will allow per-task model selection, tool whitelisting, custom timeouts,
+/// and lightweight isolated runs. Present in the data model now so existing tasks won't need
+/// migration when the feature ships.
 /// </summary>
 public sealed class AgentTurnConfig
 {
@@ -108,7 +125,11 @@ public enum TaskRunStatus
 }
 
 /// <summary>
-/// Runtime state updated by the engine only. Not editable via API.
+/// Mutable runtime state owned by ScheduledTaskService — NEVER set from API/tools.
+/// Separated from the task definition so execution updates (NextRunAt, LastRunAt, errors)
+/// don't collide with user edits to name/prompt/schedule. The API surface ignores State on
+/// inbound payloads; only the engine writes here. ConsecutiveErrors tracks failure streaks
+/// for future automatic disable/backoff logic.
 /// </summary>
 public sealed class ScheduledTaskState
 {

@@ -4,7 +4,11 @@ using OpenAgent.ScheduledTasks.Models;
 namespace OpenAgent.ScheduledTasks;
 
 /// <summary>
-/// Computes the next run time for a scheduled task based on its schedule configuration.
+/// Pure functions for schedule math — computing when a task should run next, and validating
+/// that a schedule is well-formed before persistence. Kept separate from the service/store so
+/// it can be unit-tested in isolation and reused by both the engine (for tick computation) and
+/// CRUD operations (for validation and initial NextRunAt on create/update).
+/// Uses the Cronos library for cron expression parsing — handles timezones and both 5 and 6 field expressions.
 /// </summary>
 internal static class ScheduleCalculator
 {

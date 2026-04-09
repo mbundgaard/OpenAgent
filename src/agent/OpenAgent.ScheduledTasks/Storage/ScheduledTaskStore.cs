@@ -4,8 +4,12 @@ using OpenAgent.ScheduledTasks.Models;
 namespace OpenAgent.ScheduledTasks.Storage;
 
 /// <summary>
-/// Loads and saves scheduled tasks to a JSON file. Maintains an in-memory cache.
-/// All public methods are NOT thread-safe — callers must hold the service lock.
+/// Persists scheduled tasks to scheduled-tasks.json. Keeps the list in memory as the authoritative
+/// working copy and writes the full file on every mutation (there are few enough tasks that partial
+/// updates aren't worth the complexity). Intentionally NOT thread-safe — the service's semaphore is
+/// the single concurrency gate for all reads and writes. IO errors are swallowed in Load/Save:
+/// this protects against transient file locks (e.g. parallel test runners) where degraded-but-running
+/// beats a crash. Changes to a locked file stay in memory until the next successful save.
 /// </summary>
 internal sealed class ScheduledTaskStore
 {

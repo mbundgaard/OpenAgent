@@ -7,7 +7,16 @@ using System.Text.Json.Serialization;
 namespace OpenAgent.ScheduledTasks;
 
 /// <summary>
-/// Routes completed task output to the configured delivery target.
+/// The "where to send the result" stage of task execution. Completely decoupled from how the
+/// result was produced — takes a task and a response string and routes based on DeliveryConfig.
+/// Silent does nothing (response is already persisted in the conversation history by the provider).
+/// Channel looks up the running provider in ConnectionManager, checks if it implements IOutboundSender,
+/// and sends the text — falls back to silent with a warning if the connection doesn't exist or doesn't
+/// support outbound. Webhook POSTs a JSON payload with a short timeout.
+///
+/// Delivery failures don't throw: we log and move on, because the task itself succeeded (the LLM
+/// completion ran). The distinction matters for ConsecutiveErrors — we don't want transient webhook
+/// flakiness to disable a task.
 /// </summary>
 internal sealed class DeliveryRouter(
     IConnectionManager connectionManager,
