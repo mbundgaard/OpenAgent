@@ -75,7 +75,11 @@ public static class FileExplorerEndpoints
             if (!System.IO.File.Exists(fullPath))
                 return Results.NotFound(new { error = "File not found" });
 
-            var content = System.IO.File.ReadAllText(fullPath);
+            // Open with FileShare.ReadWrite so we can read files held open by other
+            // processes (e.g. Serilog's current day log file)
+            using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            var content = reader.ReadToEnd();
             return Results.Ok(new FileContentResponse
             {
                 Path = Path.GetRelativePath(dataRoot, fullPath).Replace('\\', '/'),

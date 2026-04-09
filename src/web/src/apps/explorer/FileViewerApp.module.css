@@ -38,20 +38,6 @@
   color: var(--color-text);
 }
 
-.content {
-  flex: 1;
-  overflow: auto;
-  scrollbar-width: none;
-  margin: 0;
-  padding: 10px;
-  font-size: 12px;
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--color-text);
-}
-
 .status {
   padding: 12px;
   font-size: 12px;
