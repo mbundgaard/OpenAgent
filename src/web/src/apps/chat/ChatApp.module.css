@@ -1,0 +1,6 @@
+.chat {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  color: var(--color-text);
+}
