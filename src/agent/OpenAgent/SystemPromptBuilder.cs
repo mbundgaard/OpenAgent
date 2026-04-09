@@ -22,12 +22,12 @@ internal sealed class SystemPromptBuilder
     // Prompt files and which conversation types include them
     private static readonly (string FilePath, ConversationType[] Types)[] FileMap =
     [
-        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
-        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
-        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
-        ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
-        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
-        ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.ScheduledTask, ConversationType.WebHook]),
+        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice]),
+        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice]),
+        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice]),
+        ("USER.md",          [ConversationType.Text, ConversationType.Voice]),
+        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice]),
+        ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice]),
         ("VOICE.md",         [ConversationType.Voice]),
     ];
 

@@ -5,9 +5,7 @@ namespace OpenAgent.Models.Conversations;
 public enum ConversationType
 {
     Text,
-    Voice,
-    ScheduledTask,
-    WebHook
+    Voice
 }
 
 /// <summary>
