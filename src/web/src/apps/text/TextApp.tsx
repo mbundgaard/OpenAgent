@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getToken } from '../../auth/token';
 import styles from './TextApp.module.css';
 
@@ -143,7 +144,7 @@ export function TextApp() {
                 {msg.content ? (
                   <>
                     <div className={styles.markdown}>
-                      <Markdown>{msg.content}</Markdown>
+                      <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
                     </div>
                     <CopyButton text={msg.content} />
                   </>

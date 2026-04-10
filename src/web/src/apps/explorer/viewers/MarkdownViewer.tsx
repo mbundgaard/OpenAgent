@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import styles from './MarkdownViewer.module.css';
 
 interface Props {
@@ -50,7 +51,7 @@ export function MarkdownViewer({ content }: Props) {
           ))}
         </div>
       )}
-      <Markdown>{body}</Markdown>
+      <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
     </div>
   );
 }
