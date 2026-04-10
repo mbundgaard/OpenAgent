@@ -17,6 +17,7 @@ using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
 using OpenAgent.ScheduledTasks;
 using OpenAgent.Skills;
+using OpenAgent.Tools.ModelManagement;
 using OpenAgent.Tools.Shell;
 using OpenAgent.Tools.WebFetch;
 using Serilog;
@@ -69,6 +70,7 @@ builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
+builder.Services.AddSingleton<IToolHandler, ModelToolHandler>();
 
 builder.Services.AddScheduledTasks(environment.DataPath);
 
@@ -86,9 +88,11 @@ builder.Services.AddKeyedSingleton<ILlmTextProvider, AnthropicSubscriptionTextPr
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey);
 builder.Services.AddSingleton<Func<string, ILlmTextProvider>>(sp =>
     key => sp.GetRequiredKeyedService<ILlmTextProvider>(key));
-// Non-keyed forwarding — endpoints and VoiceSessionManager resolve the default provider
+// Non-keyed forwarding — IEnumerable<ILlmTextProvider> resolves all text providers
 builder.Services.AddSingleton<ILlmTextProvider>(sp =>
     sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey));
+builder.Services.AddSingleton<ILlmTextProvider>(sp =>
+    sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey));
 builder.Services.AddSingleton<ILlmVoiceProvider>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
 builder.Services.AddSingleton<IVoiceSessionManager, VoiceSessionManager>();
