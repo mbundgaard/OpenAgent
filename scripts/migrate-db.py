@@ -9,9 +9,10 @@ Changes:
   4. Modality column added to Messages (default 0 = Text)
 
 Usage:
-  python scripts/migrate-db.py <path-to-openagent.db>
+  python scripts/migrate-db.py <input-db> <output-db>
 
-Creates a backup at <path>.bak before modifying.
+Copies the input DB (+ WAL/SHM files) to the output path, then migrates in place.
+The input files are not modified.
 """
 
 import sqlite3
@@ -125,29 +126,29 @@ def print_summary(conn):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: python {sys.argv[0]} <path-to-openagent.db>")
+    if len(sys.argv) != 3:
+        print(f"Usage: python {sys.argv[0]} <input-db> <output-db>")
         sys.exit(1)
 
-    db_path = sys.argv[1]
+    input_path = sys.argv[1]
+    output_path = sys.argv[2]
 
-    # Create backup (include WAL/SHM files if present)
-    backup_path = db_path + ".bak"
-    shutil.copy2(db_path, backup_path)
+    # Copy input to output (include WAL/SHM so the copy is complete)
+    shutil.copy2(input_path, output_path)
     for ext in ("-wal", "-shm"):
-        wal_path = db_path + ext
-        if os.path.exists(wal_path):
-            shutil.copy2(wal_path, backup_path + ext)
-    print(f"Backup created at {backup_path}")
+        src = input_path + ext
+        if os.path.exists(src):
+            shutil.copy2(src, output_path + ext)
+    print(f"Copied {input_path} -> {output_path}")
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(output_path)
     conn.execute("PRAGMA journal_mode = WAL")
 
-    # Flush any pending WAL writes into the main db file before migrating
+    # Flush any pending WAL writes into the main db file
     conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     print("WAL checkpoint complete\n")
 
-    conn.execute("PRAGMA foreign_keys = OFF")  # Disable FK checks during migration
+    conn.execute("PRAGMA foreign_keys = OFF")
 
     try:
         migrate_schema(conn)
@@ -156,6 +157,12 @@ def main():
     finally:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.close()
+
+    # Clean up WAL/SHM on the output — checkpoint already flushed everything
+    for ext in ("-wal", "-shm"):
+        f = output_path + ext
+        if os.path.exists(f):
+            os.remove(f)
 
     print("\nMigration complete.")
 
