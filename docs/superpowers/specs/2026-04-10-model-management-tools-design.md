@@ -43,18 +43,18 @@ Returns the active provider and model for the current conversation.
 { "provider": "anthropic-subscription", "model": "claude-sonnet-4-6" }
 ```
 
-- **Error**: conversation not found — returns error message
+In normal flow, the conversation always exists (the provider already has it). No explicit not-found error path needed.
 
 ### `set_model`
 
-Changes the model for the current conversation. Takes effect on the next LLM call (the current response completes with the old model).
+Changes the model for the current conversation. Takes effect on the next LLM call (the current response completes with the old model). For REST callers (`ChatEndpoints`), the conversation and provider are resolved once per request, so the change applies starting from the next HTTP request. For WebSocket, the conversation is re-read per message, so the change applies on the next message.
 
 - **Parameters**: `provider` (string, required), `model` (string, required)
 - **Returns**: confirmation message with old and new provider/model
-- **Validation**:
-  - Unknown provider — error listing valid providers
-  - Unknown model — error listing valid models for that provider
-- **Persistence**: updates `conversation.Provider` and `conversation.Model` via `IConversationStore.Update()`
+- **Validation order** (no partial updates):
+  1. Validate provider exists among configured text providers — if not, error listing valid providers
+  2. Validate model exists in that provider's model list — if not, error listing valid models for that provider
+  3. Only after both pass, persist `conversation.Provider` and `conversation.Model` via `IConversationStore.Update()`
 
 ## Architecture
 
@@ -78,6 +78,10 @@ Provider and model are kept as separate fields throughout — in tool parameters
 
 Register `ModelToolHandler` as `IToolHandler` in `Program.cs`, same pattern as other tool handlers. The handler receives `IConversationStore` and all `ILlmTextProvider` instances via constructor injection.
 
+## Edge Cases
+
+- **Empty/null model on older conversations**: `get_current_model` returns whatever is stored on the conversation. Conversations always have `Provider` and `Model` set at creation time (from `AgentConfig` defaults), so empty values shouldn't occur in practice. If they do, the tool returns the empty values as-is — no fallback logic.
+
 ## Testing
 
 Integration test in `OpenAgent.Tests` verifying:
@@ -85,3 +89,4 @@ Integration test in `OpenAgent.Tests` verifying:
 - `get_current_model` returns the conversation's current provider/model
 - `set_model` updates the conversation and the change persists
 - `set_model` with invalid provider/model returns helpful error messages
+- `set_model` on one conversation does not affect another (isolation)
