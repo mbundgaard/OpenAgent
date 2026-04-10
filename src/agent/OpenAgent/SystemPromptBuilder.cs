@@ -131,6 +131,12 @@ internal sealed class SystemPromptBuilder
             }
         }
 
+        // Inject current datetime so the agent always knows the time without shell calls
+        var tz = TimeZoneInfo.Local;
+        var now = DateTimeOffset.Now;
+        var utcLabel = now.Offset == TimeSpan.Zero ? "UTC" : $"UTC{now.Offset.Hours:+0;-0}";
+        sections.Add($"Current time: {now:yyyy-MM-ddTHH:mm} {tz.Id} ({utcLabel})");
+
         return string.Join("\n\n", sections);
     }
 
