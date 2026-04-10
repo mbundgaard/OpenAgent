@@ -438,9 +438,11 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
             }
         }
 
-        // Interrupted — user barged in
+        // Interrupted — user barged in; discard any partial assistant turn transcript
         if (content.Interrupted == true)
         {
+            _assistantTranscript.Clear();
+            _userTranscript.Clear();
             await _channel.Writer.WriteAsync(new SpeechStarted(), ct);
         }
     }
