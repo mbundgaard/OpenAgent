@@ -89,7 +89,11 @@ UpdateConversation(conversation)
 ### ILlmTextProvider : IConfigurable
 
 ```csharp
+// Full conversation context — builds system prompt, tools, history; persists messages
 CompleteAsync(conversation, userMessage, ct) → IAsyncEnumerable<CompletionEvent>
+
+// Raw completion — no context, tools, or persistence; used by compaction and expand tool
+CompleteAsync(messages, model, options, ct) → IAsyncEnumerable<CompletionEvent>
 ```
 
 Two implementations:
@@ -403,10 +407,12 @@ Tool results are stored as compact summaries (`ToolResultSummary`) in SQLite —
 |--------|-------|-------------|
 | GET | `/api/conversations` | List all conversations |
 | GET | `/api/conversations/{id}` | Get conversation with messages |
+| PATCH | `/api/conversations/{id}` | Update conversation (source, provider, model) |
 | DELETE | `/api/conversations/{id}` | Delete conversation |
 | POST | `/api/conversations/{id}/messages` | Send message → CompletionEvent JSON array |
 | WS | `/ws/conversations/{id}/text` | Stream text CompletionEvents |
 | WS | `/ws/conversations/{id}/voice` | Bidirectional voice session |
+| WS | `/ws/terminal/{sessionId}` | PTY terminal — binary keystrokes in, binary output out, JSON resize control |
 | GET | `/api/connections` | List connections |
 | GET | `/api/connections/types` | Channel metadata (config fields, setup steps) |
 | POST | `/api/connections` | Create connection |
@@ -423,6 +429,11 @@ Tool results are stored as compact summaries (`ToolResultSummary`) in SQLite —
 | GET | `/api/logs/{filename}` | Read log lines (level/time/search/tail filters) |
 | GET | `/api/files?path=` | List directory under dataPath |
 | GET | `/api/files/content?path=` | Read file as text |
+| GET | `/api/files/download?path=` | Download file as attachment |
+| POST | `/api/files/rename` | Rename file or directory |
+| DELETE | `/api/files?path=` | Delete file or directory |
+| POST | `/api/files/mkdir` | Create directory |
+| POST | `/api/files/upload` | Upload files (multipart) |
 | GET | `/health` | Health check (anonymous) |
 
 ---
