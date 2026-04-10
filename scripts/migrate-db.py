@@ -17,6 +17,7 @@ Creates a backup at <path>.bak before modifying.
 import sqlite3
 import sys
 import shutil
+import os
 import uuid
 import re
 
@@ -130,13 +131,22 @@ def main():
 
     db_path = sys.argv[1]
 
-    # Create backup
+    # Create backup (include WAL/SHM files if present)
     backup_path = db_path + ".bak"
     shutil.copy2(db_path, backup_path)
-    print(f"Backup created at {backup_path}\n")
+    for ext in ("-wal", "-shm"):
+        wal_path = db_path + ext
+        if os.path.exists(wal_path):
+            shutil.copy2(wal_path, backup_path + ext)
+    print(f"Backup created at {backup_path}")
 
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode = WAL")
+
+    # Flush any pending WAL writes into the main db file before migrating
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    print("WAL checkpoint complete\n")
+
     conn.execute("PRAGMA foreign_keys = OFF")  # Disable FK checks during migration
 
     try:
