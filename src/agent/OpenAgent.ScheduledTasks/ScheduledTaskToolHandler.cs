@@ -50,7 +50,7 @@ internal sealed class CreateScheduledTaskTool(
             properties = new
             {
                 name = new { type = "string", description = "Short name for the task" },
-                prompt = new { type = "string", description = "The prompt to send to the LLM on each run. Do NOT include file paths — each task automatically gets its own working directory (tasks/{taskId}/) injected at runtime." },
+                prompt = new { type = "string", description = "The prompt to send to the LLM on each run" },
                 schedule = new
                 {
                     type = "object",
