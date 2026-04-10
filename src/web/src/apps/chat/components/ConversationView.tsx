@@ -56,7 +56,7 @@ export function ConversationView({ conversationId, onDeleted, onActivity }: Prop
         <span className={styles.headerSource}>{detail?.source ?? 'new'}</span>
         <button className={styles.headerDelete} onClick={handleDelete}>Delete</button>
       </div>
-      <MessageList messages={messages} />
+      <MessageList messages={messages} toolActivity={textStream.toolActivity} />
       <Composer
         voiceState={voice.state}
         textStreaming={textStream.streaming}

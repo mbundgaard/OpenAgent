@@ -203,6 +203,33 @@
   font-size: 13px;
 }
 
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.toolItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.toolIcon {
+  font-size: 10px;
+}
+
+.toolName {
+  font-weight: 500;
+}
+
 .statusStrip {
   padding: 6px 14px;
   background: rgba(91, 108, 255, 0.12);

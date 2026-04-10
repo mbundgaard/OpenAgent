@@ -1,4 +1,4 @@
-import { useReducer, useCallback } from 'react';
+import { useReducer, useCallback, useEffect } from 'react';
 import type { ComponentType } from 'react';
 import type { WindowState } from '../windows/types';
 import type { AppDefinition } from '../apps/types';
@@ -24,7 +24,8 @@ type Action =
   | { type: 'MAXIMIZE'; instanceId: string }
   | { type: 'RESTORE'; instanceId: string }
   | { type: 'MOVE'; instanceId: string; x: number; y: number }
-  | { type: 'RESIZE'; instanceId: string; width: number; height: number; x: number; y: number };
+  | { type: 'RESIZE'; instanceId: string; width: number; height: number; x: number; y: number }
+  | { type: 'VIEWPORT_RESIZE' };
 
 interface State {
   windows: WindowState[];
@@ -149,6 +150,18 @@ function reducer(state: State, action: Action): State {
         ),
       };
 
+    case 'VIEWPORT_RESIZE':
+      // Update all maximized windows to match the new viewport size
+      if (!state.windows.some(w => w.isMaximized)) return state;
+      return {
+        ...state,
+        windows: state.windows.map(w =>
+          w.isMaximized
+            ? { ...w, size: { width: window.innerWidth, height: window.innerHeight - TASKBAR_HEIGHT } }
+            : w
+        ),
+      };
+
     default:
       return state;
   }
@@ -166,6 +179,13 @@ export function useWindowManager() {
   const restoreWindow = useCallback((instanceId: string) => dispatch({ type: 'RESTORE', instanceId }), []);
   const moveWindow = useCallback((instanceId: string, x: number, y: number) => dispatch({ type: 'MOVE', instanceId, x, y }), []);
   const resizeWindow = useCallback((instanceId: string, width: number, height: number, x: number, y: number) => dispatch({ type: 'RESIZE', instanceId, width, height, x, y }), []);
+
+  // Keep maximized windows in sync with viewport size
+  useEffect(() => {
+    const handleResize = () => dispatch({ type: 'VIEWPORT_RESIZE' });
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return {
     windows: state.windows,

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { VoiceState } from '../hooks/useVoiceSession';
 import styles from '../ChatApp.module.css';
 
@@ -21,6 +21,14 @@ const STATUS_LABELS: Record<VoiceState, string> = {
 
 export function Composer({ voiceState, textStreaming, voiceError, onSendText, onStartVoice, onStopVoice }: Props) {
   const [input, setInput] = useState('');
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Re-focus input when streaming ends or voice stops
+  useEffect(() => {
+    if (!textStreaming && voiceState === 'idle') {
+      inputRef.current?.focus();
+    }
+  }, [textStreaming, voiceState]);
 
   const voiceRunning = voiceState !== 'idle';
   const inputDisabled = voiceRunning || textStreaming;
@@ -68,6 +76,7 @@ export function Composer({ voiceState, textStreaming, voiceError, onSendText, on
       {voiceError && <div className={styles.composerError}>{voiceError}</div>}
       <div className={styles.composer}>
         <textarea
+          ref={inputRef}
           className={styles.input}
           value={input}
           onChange={e => setInput(e.target.value)}

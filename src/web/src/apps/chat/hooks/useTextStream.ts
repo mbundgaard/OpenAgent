@@ -14,11 +14,18 @@ interface Callbacks {
  * via send(), streams responses through the callbacks. WS is closed and reopened
  * when conversationId changes.
  */
+export interface ToolActivity {
+  type: 'tool_call' | 'tool_result';
+  name: string;
+}
+
 export function useTextStream(conversationId: string, callbacks: Callbacks): {
   send: (content: string) => void;
   streaming: boolean;
+  toolActivity: ToolActivity[];
 } {
   const [streaming, setStreaming] = useState(false);
+  const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const streamContentRef = useRef('');
   const callbacksRef = useRef(callbacks);
@@ -58,8 +65,15 @@ export function useTextStream(conversationId: string, callbacks: Callbacks): {
           streamContentRef.current += data.content;
           callbacksRef.current.onAssistantDelta(streamContentRef.current);
           break;
+        case 'tool_call':
+          setToolActivity(prev => [...prev, { type: 'tool_call', name: data.name }]);
+          break;
+        case 'tool_result':
+          setToolActivity(prev => [...prev, { type: 'tool_result', name: data.name }]);
+          break;
         case 'done':
           setStreaming(false);
+          setToolActivity([]);
           streamContentRef.current = '';
           callbacksRef.current.onDone();
           break;
@@ -111,9 +125,10 @@ export function useTextStream(conversationId: string, callbacks: Callbacks): {
     });
 
     setStreaming(true);
+    setToolActivity([]);
     streamContentRef.current = '';
     ws.send(JSON.stringify({ content: trimmed }));
   }, [conversationId]);
 
-  return { send, streaming };
+  return { send, streaming, toolActivity };
 }
