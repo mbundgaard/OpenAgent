@@ -2,75 +2,96 @@
 
 Multi-channel AI agent platform. Connects LLM providers to inbound channels with a shared agent personality, persistent conversations, and an extensible skill system.
 
-**One agent, any channel, any LLM.** Build an AI agent once — reach it via REST API, WebSocket, Telegram, or WhatsApp. Switch LLM providers per conversation without losing context. Teach it new workflows by dropping a skill folder.
+**One agent, any channel, any LLM.** Build an AI agent once — reach it via REST API, WebSocket, Telegram, or WhatsApp. Switch LLM providers per conversation without losing context. Teach it new workflows by dropping a skill folder. Schedule autonomous tasks. Manage everything from a desktop-style web UI.
+
+![AgentOS Desktop](docs/media/agentos-desktop.png)
 
 ## Features
 
-- **Multi-channel** — REST API, WebSocket (text + voice), Telegram (polling + webhook with streaming drafts), WhatsApp (Baileys bridge)
-- **Multi-provider** — Azure OpenAI and Anthropic Claude for text, Azure OpenAI Realtime for voice. Switch providers mid-conversation.
-- **Agent Skills** — Open [agentskills.io](https://agentskills.io) format. Drop a `SKILL.md` folder into the skills directory and the agent learns new workflows. Compatible with Claude Code, Cursor, VS Code Copilot, and 30+ other clients.
-- **Persistent conversations** — SQLite-backed with compaction. Conversations survive restarts, token usage is tracked, and long histories are automatically summarized.
-- **Tool system** — File operations, shell execution, web fetch, and skill resource loading. Tools are scoped to the data directory for safety.
-- **Personality layer** — System prompt composed from modular markdown files (SOUL.md, IDENTITY.md, USER.md, etc.). Customize the agent's personality without touching code.
-- **Web desktop** — React-based AgentOS UI for chat, conversation management, provider settings, and connection configuration.
-- **Dynamic configuration** — Provider settings, connections, and skills are managed at runtime via admin API. No restarts needed.
+### Channels
+Connect once, reach everywhere. Each channel gets its own conversation with full history and tool access.
+
+- **REST API** — synchronous text completion with streaming events
+- **WebSocket** — bidirectional text chat and real-time voice streaming
+- **Telegram** — polling or webhook mode with streaming draft messages so users see responses as they form
+- **WhatsApp** — Baileys-based bridge with QR pairing, automatic reconnection, and exponential backoff
+
+### LLM Providers
+Swap providers and models at runtime. No restarts, no redeployment. Per-conversation provider selection.
+
+- **Azure OpenAI** — Chat Completions for text, Realtime API for voice
+- **Anthropic Claude** — Messages API with adaptive thinking for Claude 4.6 models
+- **Pluggable** — add new providers by implementing `ILlmTextProvider` or `ILlmVoiceProvider`
+
+### Agent Skills
+Open [agentskills.io](https://agentskills.io) format — compatible with Claude Code, Cursor, VS Code Copilot, and 30+ other AI clients.
+
+Drop a `SKILL.md` folder into the skills directory and the agent learns new workflows. Skills are discovered at startup, listed in the system prompt, and activated per conversation when the task matches. Active skills persist across turns and survive conversation compaction.
+
+### Tool System
+Scoped to the data directory for safety. Tools are sent to the LLM via the wire protocol — not embedded in the system prompt.
+
+- **File operations** — read, write, append, edit with line-level precision
+- **Shell execution** — timeout enforcement, process tree cleanup, merged stdout/stderr
+- **Web fetch** — URL validation, SSRF protection, content extraction
+- **Skill resources** — load scripts, references, and assets from active skill directories
+
+### Scheduled Tasks
+Autonomous agent runs on a schedule. Cron expressions, fixed intervals, or one-shot execution.
+
+- **Cron and interval triggers** — flexible scheduling with timezone support
+- **Webhook triggers** — HTTP POST with context body injection for event-driven tasks
+- **Delivery routing** — results delivered to channel conversations (Telegram, WhatsApp) or held for WebSocket pickup
+- **On-demand execution** — trigger any task immediately via API
+
+### Persistent Conversations
+SQLite-backed with WAL mode. Conversations survive restarts, token usage is tracked, and long histories are automatically compacted via LLM-driven summarization. Tool call rounds are preserved across compaction boundaries.
+
+### Personality Layer
+System prompt composed from modular markdown files — SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md, MEMORY.md. Customize the agent's personality without touching code. Different conversation types (text, voice) get different prompt compositions.
+
+### AgentOS Web Desktop
+Desktop-style web UI built with React 19, TypeScript, and Vite.
+
+- **Chat** — multi-conversation text and voice chat with streaming responses
+- **Settings** — dynamic forms for provider configuration and channel connections, generated from backend schemas
+- **File Explorer** — browse, view, and manage files in the data directory with format-specific viewers (markdown, JSON lines, plain text)
+- **Terminal** — interactive PTY terminal via WebSocket with session persistence and tab eviction
+- **Log Viewer** — query Serilog compact JSON logs with level filtering, time ranges, and full-text search
+
+### Dynamic Configuration
+Provider settings, channel connections, and skills are managed at runtime via admin API or the web UI. Hot-reload with no restarts.
 
 ## Architecture
 
 ```
 Channels                    Core                         Providers
 -----------                 ----                         ---------
-REST API      ──┐                                ┌──  Azure OpenAI (Text)
-WebSocket     ──┤                                ├──  Anthropic Claude (Text)
-Telegram      ──┼──  AgentLogic / Contracts  ────┼──  Azure OpenAI (Voice)
-WhatsApp      ──┘                                └──  (pluggable)
+REST API      --+                                +--  Azure OpenAI (Text)
+WebSocket     --+                                +--  Anthropic Claude (Text)
+Telegram      --+--  AgentLogic / Contracts  ----+--  Azure OpenAI (Voice)
+WhatsApp      --+                                +--  (pluggable)
 
                          Skills Layer
                          ------------
                     {dataPath}/skills/*/SKILL.md
-                    Catalog → Activate → System Prompt
+                    Catalog > Activate > System Prompt
 ```
 
 - **Channels** receive inbound messages and deliver responses
-- **AgentLogic** provides system prompt, tools, message history, and tool execution
-- **Providers** call the LLM and drive the completion loop — AgentLogic is injected context, not an orchestrator
-- **Skills** are markdown instruction documents that teach the agent specialized workflows. Activated per conversation and injected into the system prompt.
+- **AgentLogic** provides system prompt, tools, message history, and tool execution — it is injected context, not an orchestrator
+- **Providers** call the LLM and drive the completion loop with a 10-round tool call safety cap
+- **Skills** are markdown instruction documents that teach the agent specialized workflows
 
 ## Tech Stack
 
 - .NET 10, ASP.NET Core Minimal APIs, System.Text.Json
-- Node.js (Baileys bridge for WhatsApp Web protocol)
+- Node.js 22 (Baileys bridge for WhatsApp Web protocol)
 - React 19, TypeScript, Vite, CSS Modules
-- SQLite conversation persistence with WAL mode
+- SQLite with WAL mode and schema migration
 - xUnit + WebApplicationFactory for integration tests
 - Central Package Management (`Directory.Packages.props`)
-- Docker container deployed to Azure App Service
-
-## Project Structure
-
-```
-src/agent/
-  OpenAgent/                              Host — Program.cs, DI wiring, AgentLogic
-  OpenAgent.Api/                          HTTP/WebSocket endpoints
-  OpenAgent.Contracts/                    Interfaces — IAgentLogic, IConversationStore, ILlmTextProvider, etc.
-  OpenAgent.Models/                       Shared models — Conversation, Message, CompletionEvent
-  OpenAgent.Skills/                       Agent Skills (agentskills.io spec) — discovery, catalog, activation
-  OpenAgent.Channel.Telegram/             Telegram bot (polling + webhook, streaming drafts)
-  OpenAgent.Channel.WhatsApp/             WhatsApp (Baileys Node.js bridge, QR pairing)
-  OpenAgent.ConversationStore.Sqlite/     SQLite persistent store with schema migration
-  OpenAgent.ConfigStore.File/             File-based provider configuration
-  OpenAgent.LlmText.OpenAIAzure/          Azure OpenAI Chat Completions provider
-  OpenAgent.LlmText.AnthropicSubscription/ Anthropic Messages API provider
-  OpenAgent.LlmVoice.OpenAIAzure/         Azure OpenAI Realtime voice provider
-  OpenAgent.Compaction/                   Conversation compaction (LLM-driven summarization)
-  OpenAgent.Security.ApiKey/              API key authentication
-  OpenAgent.Tools.FileSystem/             File tools (read, write, append, edit)
-  OpenAgent.Tools.Shell/                  Shell exec tool
-  OpenAgent.Tools.WebFetch/               Web fetch tool
-  OpenAgent.Tools.Expand/                 Message expansion tool (for compacted history)
-  OpenAgent.Tests/                        Integration tests
-src/web/                                  AgentOS web desktop (React 19, TypeScript, Vite)
-```
+- Docker container deployed to Azure App Service via GitHub Actions
 
 ## Getting Started
 
@@ -117,8 +138,6 @@ skills/
     scripts/          # Optional executable code
     references/       # Optional documentation
 ```
-
-The agent discovers skills at startup and lists them in the system prompt. When a task matches a skill's description, the agent activates it — the full instructions are injected into the system prompt for the conversation. Skills persist across turns and survive compaction.
 
 Format follows the open [Agent Skills specification](https://agentskills.io/specification).
 

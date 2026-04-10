@@ -6,6 +6,10 @@ Multi-channel AI agent platform. Connects LLM providers (text, voice) to inbound
 
 https://github.com/users/mbundgaard/projects/4 — managed via `gh project` and `gh issue` CLI commands. See [docs/project-api.md](docs/project-api.md) for API reference.
 
+Columns: Ideas → Backlog → Roadmap → In Progress → Done. Items within each column are prioritized top-to-bottom.
+
+Labels: `security`, `agent`, `tools`, `skills`, `channels`, `infrastructure`, `ui`, `llm` + `size:S`, `size:M`, `size:L`. All issues should have at least one domain label and a size label.
+
 ## Tech Stack
 
 - .NET 10, ASP.NET Core Minimal APIs, System.Text.Json
@@ -242,6 +246,15 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 ## Memory
 
 Session-to-session notes. Save memories here in CLAUDE.md — do NOT create separate memory files. Update this section as decisions are made.
+
+### Code Review
+- Full codebase review (11 domains) in [docs/review/code-review-prompts.md](docs/review/code-review-prompts.md)
+- Findings: [docs/review/review-by-opus-high.md](docs/review/review-by-opus-high.md) (17 high-severity), [docs/review/review-by-opus.md](docs/review/review-by-opus.md) (full)
+- All findings tracked as GitHub issues with fix instructions in the description
+
+### Memory System Design
+- Three-job architecture: Index → Digest → Background. See [docs/memory/DESIGN.md](docs/memory/DESIGN.md)
+- Issues: #17 (Index), #19 (Digest), #51 (Background) — must be built in order
 
 ### User Preferences
 - Prefers design discussions before implementation — brainstorm first, then plan, then build
