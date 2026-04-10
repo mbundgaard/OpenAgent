@@ -47,7 +47,8 @@ internal sealed class ScheduledTaskExecutor(
         var rawPrompt = promptOverride ?? task.Prompt;
 
         // Prefix the prompt so the LLM can distinguish task-triggered turns from real user messages.
-        var prompt = $"[Scheduled task: {task.Name}]\n{rawPrompt}";
+        // Working directory scoped to the task ID — deterministic, no name collisions.
+        var prompt = $"[Scheduled task: {task.Name}]\nWorking directory: tasks/{task.Id}\n{rawPrompt}";
 
         // First run: generate a fresh GUID and write it back to the task.
         // Subsequent runs: reuse the existing ConversationId.
