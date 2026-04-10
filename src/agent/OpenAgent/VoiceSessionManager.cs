@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 
 namespace OpenAgent;
@@ -7,12 +8,14 @@ namespace OpenAgent;
 public sealed class VoiceSessionManager : IVoiceSessionManager, IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, IVoiceSession> _sessions = new();
-    private readonly ILlmVoiceProvider _voiceProvider;
+    private readonly Func<string, ILlmVoiceProvider> _providerFactory;
+    private readonly AgentConfig _agentConfig;
     private readonly IConversationStore _store;
 
-    public VoiceSessionManager(ILlmVoiceProvider voiceProvider, IConversationStore store)
+    public VoiceSessionManager(Func<string, ILlmVoiceProvider> providerFactory, AgentConfig agentConfig, IConversationStore store)
     {
-        _voiceProvider = voiceProvider;
+        _providerFactory = providerFactory;
+        _agentConfig = agentConfig;
         _store = store;
     }
 
@@ -24,7 +27,13 @@ public sealed class VoiceSessionManager : IVoiceSessionManager, IAsyncDisposable
         var conversation = _store.Get(conversationId)
             ?? throw new InvalidOperationException($"Conversation '{conversationId}' not found.");
 
-        var session = await _voiceProvider.StartSessionAsync(conversation, ct);
+        // Resolve provider from conversation; fall back to current AgentConfig if not set
+        var providerKey = string.IsNullOrEmpty(conversation.Provider)
+            ? _agentConfig.VoiceProvider
+            : conversation.Provider;
+
+        var provider = _providerFactory(providerKey);
+        var session = await provider.StartSessionAsync(conversation, ct);
 
         if (!_sessions.TryAdd(conversationId, session))
         {
