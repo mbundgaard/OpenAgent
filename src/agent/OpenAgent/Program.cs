@@ -70,7 +70,14 @@ builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
-builder.Services.AddSingleton<IToolHandler, ModelToolHandler>();
+builder.Services.AddSingleton<IToolHandler>(sp =>
+    new ModelToolHandler(
+        sp.GetRequiredService<IConversationStore>(),
+        () => new ILlmTextProvider[]
+        {
+            sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey),
+            sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey)
+        }));
 
 builder.Services.AddScheduledTasks(environment.DataPath);
 
@@ -88,11 +95,9 @@ builder.Services.AddKeyedSingleton<ILlmTextProvider, AnthropicSubscriptionTextPr
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey);
 builder.Services.AddSingleton<Func<string, ILlmTextProvider>>(sp =>
     key => sp.GetRequiredKeyedService<ILlmTextProvider>(key));
-// Non-keyed forwarding — IEnumerable<ILlmTextProvider> resolves all text providers
+// Non-keyed forwarding — endpoints and VoiceSessionManager resolve the default provider
 builder.Services.AddSingleton<ILlmTextProvider>(sp =>
     sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey));
-builder.Services.AddSingleton<ILlmTextProvider>(sp =>
-    sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey));
 builder.Services.AddSingleton<ILlmVoiceProvider>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
 builder.Services.AddSingleton<IVoiceSessionManager, VoiceSessionManager>();
@@ -137,11 +142,21 @@ var app = builder.Build();
 
 // Load persisted provider configs (providers stay unconfigured if no config exists)
 var configStore = app.Services.GetRequiredService<IConfigStore>();
-foreach (var configurable in app.Services.GetServices<IConfigurable>())
+try
 {
-    var config = configStore.Load(configurable.Key);
-    if (config.HasValue)
-        configurable.Configure(config.Value);
+    var s = app.Services.GetServices<IConfigurable>();
+
+    foreach (var configurable in app.Services.GetServices<IConfigurable>())
+    {
+        var config = configStore.Load(configurable.Key);
+        if (config.HasValue)
+            configurable.Configure(config.Value);
+    }
+}
+catch (Exception e)
+{
+
+    throw;
 }
 
 app.UseWebSockets();

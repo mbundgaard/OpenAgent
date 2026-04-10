@@ -7,7 +7,7 @@ namespace OpenAgent.Tools.ModelManagement;
 /// Changes the text LLM provider and model for the current conversation.
 /// Takes effect on the next LLM call.
 /// </summary>
-public sealed class SetModelTool(IConversationStore store, IEnumerable<ILlmTextProvider> providers) : ITool
+public sealed class SetModelTool(IConversationStore store, Func<IEnumerable<ILlmTextProvider>> resolveProviders) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -32,7 +32,7 @@ public sealed class SetModelTool(IConversationStore store, IEnumerable<ILlmTextP
         var modelName = args.GetProperty("model").GetString()!;
 
         // Validate provider exists
-        var providerList = providers.ToList();
+        var providerList = resolveProviders().ToList();
         var targetProvider = providerList.FirstOrDefault(p => p.Key == providerKey);
         if (targetProvider is null)
         {

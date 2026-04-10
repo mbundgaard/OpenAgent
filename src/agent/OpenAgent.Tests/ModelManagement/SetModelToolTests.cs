@@ -19,7 +19,7 @@ public class SetModelToolTests
     public async Task UpdatesConversationProviderAndModel()
     {
         _store.GetOrCreate("conv-1", "app", ConversationType.Text, "provider-a", "model-1");
-        var tool = new SetModelTool(_store, _providers);
+        var tool = new SetModelTool(_store, () => _providers);
 
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { provider = "provider-b", model = "model-3" }), "conv-1");
@@ -39,7 +39,7 @@ public class SetModelToolTests
     public async Task RejectsUnknownProvider()
     {
         _store.GetOrCreate("conv-1", "app", ConversationType.Text, "provider-a", "model-1");
-        var tool = new SetModelTool(_store, _providers);
+        var tool = new SetModelTool(_store, () => _providers);
 
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { provider = "unknown", model = "model-1" }), "conv-1");
@@ -57,7 +57,7 @@ public class SetModelToolTests
     public async Task RejectsUnknownModel()
     {
         _store.GetOrCreate("conv-1", "app", ConversationType.Text, "provider-a", "model-1");
-        var tool = new SetModelTool(_store, _providers);
+        var tool = new SetModelTool(_store, () => _providers);
 
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { provider = "provider-a", model = "nonexistent" }), "conv-1");
@@ -76,7 +76,7 @@ public class SetModelToolTests
     {
         _store.GetOrCreate("conv-1", "app", ConversationType.Text, "provider-a", "model-1");
         _store.GetOrCreate("conv-2", "app", ConversationType.Text, "provider-a", "model-1");
-        var tool = new SetModelTool(_store, _providers);
+        var tool = new SetModelTool(_store, () => _providers);
 
         await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { provider = "provider-b", model = "model-3" }), "conv-1");

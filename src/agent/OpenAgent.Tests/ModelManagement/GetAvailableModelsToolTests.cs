@@ -15,7 +15,7 @@ public class GetAvailableModelsToolTests
             new FakeModelProvider("provider-a", ["model-1", "model-2"]),
             new FakeModelProvider("provider-b", ["model-3"])
         };
-        var tool = new GetAvailableModelsTool(providers);
+        var tool = new GetAvailableModelsTool(() => providers);
 
         var result = await tool.ExecuteAsync("{}", "conv-1");
         var doc = JsonDocument.Parse(result);
@@ -43,7 +43,7 @@ public class GetAvailableModelsToolTests
             new FakeModelProvider("configured", ["model-1"]),
             new FakeModelProvider("unconfigured", [])
         };
-        var tool = new GetAvailableModelsTool(providers);
+        var tool = new GetAvailableModelsTool(() => providers);
 
         var result = await tool.ExecuteAsync("{}", "conv-1");
         var doc = JsonDocument.Parse(result);

@@ -10,14 +10,13 @@ public sealed class ModelToolHandler : IToolHandler
 {
     public IReadOnlyList<ITool> Tools { get; }
 
-    public ModelToolHandler(IConversationStore store, IEnumerable<ILlmTextProvider> providers)
+    public ModelToolHandler(IConversationStore store, Func<IEnumerable<ILlmTextProvider>> resolveProviders)
     {
-        var providerList = providers.ToList();
         Tools =
         [
-            new GetAvailableModelsTool(providerList),
+            new GetAvailableModelsTool(resolveProviders),
             new GetCurrentModelTool(store),
-            new SetModelTool(store, providerList)
+            new SetModelTool(store, resolveProviders)
         ];
     }
 }
