@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import type { ConversationSummary, ConversationDetail, ConversationMessage } from './api';
 import { listConversations, getConversation, getMessages, updateConversation, deleteConversation } from './api';
@@ -18,6 +18,13 @@ export function ConversationsApp() {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [showToolCalls, setShowToolCalls] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom when messages load
+  useEffect(() => {
+    const el = messagesEndRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, showToolCalls]);
 
   // Editing state
   const [editing, setEditing] = useState(false);
@@ -211,12 +218,11 @@ export function ConversationsApp() {
                 )}
               </div>
             </div>
-            <div className={styles.messages}>
+            <div className={styles.messages} ref={messagesEndRef}>
               {messages
                 .filter(m => m.role !== 'system')
-                .filter(m => showToolCalls || m.channel_message_id != null)
+                .filter(m => showToolCalls || (m.role !== 'tool' && !m.tool_calls))
                 .slice(-50)
-                .reverse()
                 .map(msg => (
                 <div key={msg.id} className={`${styles.message} ${styles[msg.role] ?? ''}`}>
                   <div className={styles.messageHeader}>

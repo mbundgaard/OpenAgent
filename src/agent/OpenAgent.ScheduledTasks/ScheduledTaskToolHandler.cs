@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
-using OpenAgent.Models.Configs;
 using OpenAgent.ScheduledTasks.Models;
 
 namespace OpenAgent.ScheduledTasks;
@@ -11,9 +10,8 @@ namespace OpenAgent.ScheduledTasks;
 /// its own proactive work — during a conversation you can say "remind me tomorrow at 9am" and
 /// the agent will call create_scheduled_task directly, rather than you having to hit an API.
 ///
-/// The four tools mirror the service's CRUD API 1:1. CreateScheduledTaskTool resolves the
-/// target conversation with a fallback chain: explicit arg → current conversation (if channel-bound)
-/// → configured MainConversationId → error.
+/// The four tools mirror the service's CRUD API 1:1. CreateScheduledTaskTool always binds the
+/// task to the current conversation — the agent has no way to discover other conversation IDs.
 /// </summary>
 public sealed class ScheduledTaskToolHandler : IToolHandler
 {
@@ -21,12 +19,10 @@ public sealed class ScheduledTaskToolHandler : IToolHandler
 
     public ScheduledTaskToolHandler(
         ScheduledTaskService service,
-        IConversationStore conversationStore,
-        AgentConfig agentConfig,
         ILogger<ScheduledTaskToolHandler> logger)
     {
         Tools = [
-            new CreateScheduledTaskTool(service, conversationStore, agentConfig, logger),
+            new CreateScheduledTaskTool(service, logger),
             new ListScheduledTasksTool(service),
             new UpdateScheduledTaskTool(service, logger),
             new DeleteScheduledTaskTool(service, logger)
@@ -35,14 +31,11 @@ public sealed class ScheduledTaskToolHandler : IToolHandler
 }
 
 /// <summary>
-/// Creates a new scheduled task. Resolves the target conversation with a fallback chain:
-/// explicit conversationId arg → current conversation (if channel-bound) → MainConversationId
-/// from AgentConfig → error (so the agent can tell the user to configure a main conversation).
+/// Creates a new scheduled task. Always binds to the current conversation — the agent has no
+/// way to discover other conversation IDs, so there's no fallback chain.
 /// </summary>
 internal sealed class CreateScheduledTaskTool(
     ScheduledTaskService service,
-    IConversationStore conversationStore,
-    AgentConfig agentConfig,
     ILogger logger) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
@@ -50,11 +43,7 @@ internal sealed class CreateScheduledTaskTool(
         Name = "create_scheduled_task",
         Description = "Create a new scheduled task that runs an LLM prompt on a schedule. " +
                       "Specify cron, intervalMs, or at for one-time. " +
-                      "Delivery is determined by the conversation the task runs in: if that conversation " +
-                      "is bound to a channel (e.g. Telegram), the task output is delivered there; otherwise " +
-                      "it's silent. By default the task runs in the current conversation if it's channel-bound, " +
-                      "or falls back to the user's configured main conversation. Pass conversationId explicitly " +
-                      "to override, or an empty string to force a new silent private conversation.",
+                      "The task runs in the current conversation.",
         Parameters = new
         {
             type = "object",
@@ -75,10 +64,9 @@ internal sealed class CreateScheduledTaskTool(
                     }
                 },
                 description = new { type = "string", description = "Optional longer description" },
-                deleteAfterRun = new { type = "boolean", description = "If true, delete the task after one successful run" },
-                conversationId = new { type = "string", description = "Conversation to run the task in. Omit to use the current conversation; pass empty string to create a new private one." }
+                deleteAfterRun = new { type = "boolean", description = "If true, delete the task after one successful run" }
             },
-            required = new[] { "name", "prompt", "schedule" }
+            required = new[] { "name", "prompt", "schedule", "description", "deleteAfterRun" }
         }
     };
 
@@ -96,42 +84,7 @@ internal sealed class CreateScheduledTaskTool(
             var description = args.TryGetProperty("description", out var descEl) ? descEl.GetString() : null;
             var deleteAfterRun = args.TryGetProperty("deleteAfterRun", out var darEl) && darEl.GetBoolean();
 
-            // Conversation resolution fallback chain:
-            //  1. Explicit conversationId arg (including empty string → force new private conversation)
-            //  2. Current conversation, IF it's channel-bound (delivers to the channel)
-            //  3. AgentConfig.MainConversationId (the user's configured fallback)
-            //  4. Error — tell the agent to ask the user to configure a main conversation
-            string? taskConversationId;
-            if (args.TryGetProperty("conversationId", out var convEl))
-            {
-                // Explicit override wins — empty string becomes null (force new private conversation)
-                var value = convEl.GetString();
-                taskConversationId = string.IsNullOrEmpty(value) ? null : value;
-            }
-            else
-            {
-                var current = conversationStore.Get(conversationId);
-                if (current?.ChannelType is not null)
-                {
-                    // Current conversation is channel-bound — run the task here so it delivers to that channel
-                    taskConversationId = conversationId;
-                }
-                else if (!string.IsNullOrEmpty(agentConfig.MainConversationId))
-                {
-                    // Fallback to the configured main conversation
-                    taskConversationId = agentConfig.MainConversationId;
-                }
-                else
-                {
-                    return JsonSerializer.Serialize(new
-                    {
-                        error = "No delivery target: the current conversation is not bound to a channel " +
-                                "and no main conversation is configured. Ask the user to set MainConversationId " +
-                                "in AgentConfig, or pass an explicit conversationId (or empty string for a silent task)."
-                    });
-                }
-            }
-
+            // Always bind to the current conversation — the agent has no way to discover other IDs
             var task = new ScheduledTask
             {
                 Id = Guid.NewGuid().ToString(),
@@ -140,7 +93,7 @@ internal sealed class CreateScheduledTaskTool(
                 Prompt = prompt,
                 Schedule = schedule,
                 DeleteAfterRun = deleteAfterRun,
-                ConversationId = taskConversationId
+                ConversationId = conversationId
             };
 
             await service.AddAsync(task, ct);
