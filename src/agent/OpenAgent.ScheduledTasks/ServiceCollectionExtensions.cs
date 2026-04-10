@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ILogger<ScheduledTaskExecutor>>()));
         services.AddSingleton(sp => new DeliveryRouter(
             sp.GetRequiredService<IConnectionManager>(),
+            sp.GetRequiredService<IWebSocketRegistry>(),
             sp.GetRequiredService<ILogger<DeliveryRouter>>()));
         services.AddSingleton(sp => new ScheduledTaskService(
             sp.GetRequiredService<ScheduledTaskStore>(),

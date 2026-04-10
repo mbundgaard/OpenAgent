@@ -92,6 +92,7 @@ builder.Services.AddSingleton<ILlmTextProvider>(sp =>
 builder.Services.AddSingleton<ILlmVoiceProvider>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
 builder.Services.AddSingleton<IVoiceSessionManager, VoiceSessionManager>();
+builder.Services.AddSingleton<IWebSocketRegistry, WebSocketRegistry>();
 builder.Services.AddSingleton<ITerminalSessionManager, TerminalSessionManager>();
 builder.Services.AddSingleton<IConfigStore, FileConfigStore>();
 

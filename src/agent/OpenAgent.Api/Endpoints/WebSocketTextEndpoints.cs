@@ -43,6 +43,8 @@ public static class WebSocketTextEndpoints
             store.UpdateType(conversationId, ConversationType.Text);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
+            var registry = services.GetRequiredService<IWebSocketRegistry>();
+            registry.Register(conversationId, ws);
 
             try
             {
@@ -50,6 +52,8 @@ public static class WebSocketTextEndpoints
             }
             finally
             {
+                registry.Unregister(conversationId, ws);
+
                 if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
                 {
                     try

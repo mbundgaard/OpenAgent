@@ -1,15 +1,17 @@
+using System.Net.WebSockets;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
+using OpenAgent.Models.Text;
 
 namespace OpenAgent.ScheduledTasks;
 
 /// <summary>
-/// The "where to send the result" stage of task execution. Reads delivery intent from the
-/// conversation, not the task — channel-bound conversations (ChannelType/ConnectionId/
-/// ChannelChatId set) deliver their output to the external chat via IOutboundSender.
-/// Unbound conversations are silent: the response is already in the conversation history,
-/// nothing extra is sent.
+/// The "where to send the result" stage of task execution. Tries two delivery paths:
+///   1. Channel-bound (Telegram/WhatsApp) → IOutboundSender
+///   2. Active WebSocket → push delta+done events to connected web app client
+/// If neither applies, delivery is silent — the response is already in the conversation history.
 ///
 /// Delivery failures don't throw: we log and move on, because the task itself succeeded
 /// (the LLM completion ran). The distinction matters for ConsecutiveErrors — we don't want
@@ -17,19 +19,40 @@ namespace OpenAgent.ScheduledTasks;
 /// </summary>
 internal sealed class DeliveryRouter(
     IConnectionManager connectionManager,
+    IWebSocketRegistry webSocketRegistry,
     ILogger<DeliveryRouter> logger)
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
     /// <summary>
-    /// Delivers the response based on the conversation's channel binding.
-    /// If the conversation has no channel binding, this is a no-op (silent).
+    /// Delivers the response based on the conversation's channel binding or active WebSocket.
     /// </summary>
     public async Task DeliverAsync(Conversation conversation, string response, CancellationToken ct)
     {
-        // No channel binding → silent delivery. Response already persisted by the provider.
-        if (conversation.ChannelType is null || conversation.ConnectionId is null || conversation.ChannelChatId is null)
+        // Channel-bound → deliver via outbound sender
+        if (conversation.ChannelType is not null && conversation.ConnectionId is not null && conversation.ChannelChatId is not null)
+        {
+            await DeliverToChannelAsync(conversation, response, ct);
             return;
+        }
 
-        var provider = connectionManager.GetProvider(conversation.ConnectionId);
+        // Active WebSocket → push to connected web app client
+        var ws = webSocketRegistry.Get(conversation.Id);
+        if (ws is not null)
+        {
+            await DeliverToWebSocketAsync(ws, response, ct);
+            return;
+        }
+
+        // No delivery target — response is already persisted in conversation history
+    }
+
+    private async Task DeliverToChannelAsync(Conversation conversation, string response, CancellationToken ct)
+    {
+        var provider = connectionManager.GetProvider(conversation.ConnectionId!);
         if (provider is not IOutboundSender sender)
         {
             logger.LogWarning(
@@ -40,7 +63,7 @@ internal sealed class DeliveryRouter(
 
         try
         {
-            await sender.SendMessageAsync(conversation.ChannelChatId, response, ct);
+            await sender.SendMessageAsync(conversation.ChannelChatId!, response, ct);
             logger.LogInformation(
                 "Delivered response to {ChannelType} {ConnectionId}:{ChatId}",
                 conversation.ChannelType, conversation.ConnectionId, conversation.ChannelChatId);
@@ -50,6 +73,28 @@ internal sealed class DeliveryRouter(
             logger.LogError(ex,
                 "Failed to deliver response to {ChannelType} {ConnectionId}:{ChatId}",
                 conversation.ChannelType, conversation.ConnectionId, conversation.ChannelChatId);
+        }
+    }
+
+    private async Task DeliverToWebSocketAsync(WebSocket ws, string response, CancellationToken ct)
+    {
+        try
+        {
+            // Send as delta + done — same protocol the text WS endpoint uses
+            var deltaJson = JsonSerializer.SerializeToUtf8Bytes(
+                new TextWebSocketDelta { Content = response }, JsonOptions);
+            await ws.SendAsync(deltaJson, WebSocketMessageType.Text, true, ct);
+
+            var doneJson = JsonSerializer.SerializeToUtf8Bytes(
+                new TextWebSocketDone(), JsonOptions);
+            await ws.SendAsync(doneJson, WebSocketMessageType.Text, true, ct);
+
+            logger.LogInformation("Delivered response to WebSocket for conversation {ConversationId}",
+                "websocket");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to deliver response to WebSocket");
         }
     }
 }
