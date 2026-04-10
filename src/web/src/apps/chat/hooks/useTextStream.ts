@@ -38,6 +38,23 @@ export function useTextStream(conversationId: string, callbacks: Callbacks): {
       const data = JSON.parse(event.data);
       switch (data.type) {
         case 'delta':
+          // Server-pushed message (e.g. scheduled task) — no preceding send(),
+          // so create a new assistant message slot before streaming into it.
+          if (!streamContentRef.current && !streaming) {
+            callbacksRef.current.onAssistantStart({
+              id: crypto.randomUUID(),
+              conversation_id: conversationId,
+              role: 'assistant',
+              content: '',
+              created_at: new Date().toISOString(),
+              tool_calls: null,
+              tool_call_id: null,
+              channel_message_id: null,
+              prompt_tokens: null,
+              completion_tokens: null,
+              elapsed_ms: null
+            });
+          }
           streamContentRef.current += data.content;
           callbacksRef.current.onAssistantDelta(streamContentRef.current);
           break;
