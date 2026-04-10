@@ -43,7 +43,7 @@ internal sealed class DeliveryRouter(
         var ws = webSocketRegistry.Get(conversation.Id);
         if (ws is not null)
         {
-            await DeliverToWebSocketAsync(ws, response, ct);
+            await DeliverToWebSocketAsync(conversation.Id, ws, response, ct);
             return;
         }
 
@@ -76,7 +76,7 @@ internal sealed class DeliveryRouter(
         }
     }
 
-    private async Task DeliverToWebSocketAsync(WebSocket ws, string response, CancellationToken ct)
+    private async Task DeliverToWebSocketAsync(string conversationId, WebSocket ws, string response, CancellationToken ct)
     {
         try
         {
@@ -90,7 +90,7 @@ internal sealed class DeliveryRouter(
             await ws.SendAsync(doneJson, WebSocketMessageType.Text, true, ct);
 
             logger.LogInformation("Delivered response to WebSocket for conversation {ConversationId}",
-                "websocket");
+                conversationId);
         }
         catch (Exception ex)
         {
