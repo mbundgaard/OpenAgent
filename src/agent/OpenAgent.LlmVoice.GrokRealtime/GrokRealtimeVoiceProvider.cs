@@ -13,6 +13,8 @@ namespace OpenAgent.LlmVoice.GrokRealtime;
 /// </summary>
 public sealed class GrokRealtimeVoiceProvider(IAgentLogic agentLogic, ILogger<GrokRealtimeVoiceProvider> logger) : ILlmVoiceProvider
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     private GrokConfig? _config;
 
     public const string ProviderKey = "grok-realtime-voice";
@@ -32,8 +34,7 @@ public sealed class GrokRealtimeVoiceProvider(IAgentLogic agentLogic, ILogger<Gr
 
     public void Configure(JsonElement configuration)
     {
-        _config = JsonSerializer.Deserialize<GrokConfig>(configuration,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+        _config = JsonSerializer.Deserialize<GrokConfig>(configuration, JsonOptions)
             ?? throw new InvalidOperationException("Failed to deserialize Grok provider configuration.");
 
         if (string.IsNullOrWhiteSpace(_config.ApiKey))

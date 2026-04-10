@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -30,7 +31,7 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
     private readonly ILogger _logger;
 
     private readonly Channel<VoiceEvent> _channel = Channel.CreateUnbounded<VoiceEvent>(
-        new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _sessionCts = new();
 
@@ -43,6 +44,10 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
     // Reconnect guard — 0 = idle, 1 = reconnecting
     private int _reconnecting;
     private Timer? _reconnectTimer;
+
+    // Transcript accumulators — flushed and persisted on turn complete
+    private readonly StringBuilder _assistantTranscript = new();
+    private readonly StringBuilder _userTranscript = new();
 
     public string SessionId { get; private set; } = string.Empty;
 
@@ -385,25 +390,52 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
             }
         }
 
-        // Output transcription (assistant speech)
+        // Output transcription (assistant speech) — stream delta and accumulate for persistence
         if (content.OutputTranscription?.Text is { Length: > 0 } outputText)
         {
+            _assistantTranscript.Append(outputText);
             await _channel.Writer.WriteAsync(new TranscriptDelta(outputText, TranscriptSource.Assistant), ct);
         }
 
-        // Input transcription (user speech) — log and emit as user transcript
+        // Input transcription (user speech) — stream delta and accumulate for persistence
         if (content.InputTranscription?.Text is { Length: > 0 } inputText)
         {
+            _userTranscript.Append(inputText);
             await _channel.Writer.WriteAsync(new TranscriptDelta(inputText, TranscriptSource.User), ct);
         }
 
-        // Turn complete signals end of model audio turn
+        // Turn complete — flush audio, emit full transcripts, persist to conversation history
         if (content.TurnComplete == true)
         {
             await _channel.Writer.WriteAsync(new AudioDone(), ct);
 
-            // Persist any completed transcripts (best-effort from last transcript deltas)
-            // Full transcript accumulation is handled by the consumer if needed
+            if (_assistantTranscript.Length > 0)
+            {
+                var assistantText = _assistantTranscript.ToString();
+                _assistantTranscript.Clear();
+                await _channel.Writer.WriteAsync(new TranscriptDone(assistantText, TranscriptSource.Assistant), ct);
+                _agentLogic.AddMessage(_conversation.Id, new Message
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    ConversationId = _conversation.Id,
+                    Role = "assistant",
+                    Content = assistantText
+                });
+            }
+
+            if (_userTranscript.Length > 0)
+            {
+                var userText = _userTranscript.ToString();
+                _userTranscript.Clear();
+                await _channel.Writer.WriteAsync(new TranscriptDone(userText, TranscriptSource.User), ct);
+                _agentLogic.AddMessage(_conversation.Id, new Message
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    ConversationId = _conversation.Id,
+                    Role = "user",
+                    Content = userText
+                });
+            }
         }
 
         // Interrupted — user barged in
@@ -420,7 +452,7 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
         foreach (var call in calls)
         {
             var name = call.Name ?? "";
-            var callId = call.Id ?? "";
+            var callId = call.Id ?? Guid.NewGuid().ToString();
             // Gemini sends args as a JsonElement object — serialize to JSON string for IAgentLogic
             var arguments = call.Args.ValueKind == JsonValueKind.Undefined
                 ? "{}"

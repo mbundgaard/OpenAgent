@@ -14,6 +14,8 @@ namespace OpenAgent.LlmVoice.GeminiLive;
 /// </summary>
 public sealed class GeminiLiveVoiceProvider(IAgentLogic agentLogic, ILogger<GeminiLiveVoiceProvider> logger) : ILlmVoiceProvider
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     private GeminiConfig? _config;
 
     public const string ProviderKey = "gemini-live-voice";
@@ -34,8 +36,7 @@ public sealed class GeminiLiveVoiceProvider(IAgentLogic agentLogic, ILogger<Gemi
 
     public void Configure(JsonElement configuration)
     {
-        _config = JsonSerializer.Deserialize<GeminiConfig>(configuration,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+        _config = JsonSerializer.Deserialize<GeminiConfig>(configuration, JsonOptions)
             ?? throw new InvalidOperationException("Failed to deserialize Gemini Live provider configuration.");
 
         if (string.IsNullOrWhiteSpace(_config.ApiKey))
