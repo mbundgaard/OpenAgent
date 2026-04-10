@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { createConversation } from '../conversations/api';
 import { ConversationSidebar } from './components/ConversationSidebar';
 import { ConversationView } from './components/ConversationView';
 import { useConversations } from './hooks/useConversations';
@@ -12,9 +13,11 @@ export function ChatApp() {
 
   const refresh = useCallback(() => setRefreshTrigger(t => t + 1), []);
 
-  const handleNew = useCallback(() => {
-    setSelectedId(crypto.randomUUID());
-  }, []);
+  const handleNew = useCallback(async () => {
+    const id = await createConversation();
+    refresh();
+    setSelectedId(id);
+  }, [refresh]);
 
   const handleDeleted = useCallback((id: string) => {
     if (selectedId === id) setSelectedId(null);

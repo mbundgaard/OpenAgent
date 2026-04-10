@@ -142,21 +142,11 @@ var app = builder.Build();
 
 // Load persisted provider configs (providers stay unconfigured if no config exists)
 var configStore = app.Services.GetRequiredService<IConfigStore>();
-try
+foreach (var configurable in app.Services.GetServices<IConfigurable>())
 {
-    var s = app.Services.GetServices<IConfigurable>();
-
-    foreach (var configurable in app.Services.GetServices<IConfigurable>())
-    {
-        var config = configStore.Load(configurable.Key);
-        if (config.HasValue)
-            configurable.Configure(config.Value);
-    }
-}
-catch (Exception e)
-{
-
-    throw;
+    var config = configStore.Load(configurable.Key);
+    if (config.HasValue)
+        configurable.Configure(config.Value);
 }
 
 app.UseWebSockets();

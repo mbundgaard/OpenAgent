@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 
 namespace OpenAgent.Api.Endpoints;
@@ -17,6 +18,13 @@ public static class ConversationEndpoints
     public static void MapConversationEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/conversations").RequireAuthorization();
+
+        group.MapPost("/", (IConversationStore store, AgentConfig agentConfig) =>
+        {
+            var conversationId = Guid.NewGuid().ToString();
+            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
+            return Results.Ok(new { id = conversation.Id });
+        });
 
         group.MapGet("/", (IConversationStore store) =>
         {
@@ -62,13 +70,16 @@ public static class ConversationEndpoints
             });
         });
 
-        group.MapGet("/{conversationId}/messages", (string conversationId, IConversationStore store) =>
+        group.MapGet("/{conversationId}/messages", (string conversationId, int? tail, IConversationStore store) =>
         {
             var conversation = store.Get(conversationId);
             if (conversation is null)
                 return Results.NotFound();
 
             var messages = store.GetMessages(conversationId);
+            // tail=N returns only the last N messages (for initial UI load)
+            if (tail is > 0)
+                messages = messages.TakeLast(tail.Value).ToList();
             return Results.Ok(messages);
         });
 
