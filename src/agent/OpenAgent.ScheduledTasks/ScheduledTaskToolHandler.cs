@@ -43,7 +43,8 @@ internal sealed class CreateScheduledTaskTool(
         Name = "create_scheduled_task",
         Description = "Create a new scheduled task that runs an LLM prompt on a schedule. " +
                       "Specify cron, intervalMs, or at for one-time. " +
-                      "The task runs in the current conversation.",
+                      "The task runs in the current conversation. " +
+                      "Each task gets its own working directory automatically injected into the prompt — never include file paths in the prompt.",
         Parameters = new
         {
             type = "object",
