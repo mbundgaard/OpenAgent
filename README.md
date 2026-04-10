@@ -36,6 +36,8 @@ WhatsApp      ──┘                                └──  (pluggable)
 - **Providers** call the LLM and drive the completion loop — AgentLogic is injected context, not an orchestrator
 - **Skills** are markdown instruction documents that teach the agent specialized workflows. Activated per conversation and injected into the system prompt.
 
+For a detailed technical reference covering all interfaces, data models, providers, endpoints, and design decisions, see [docs/architecture.md](docs/architecture.md).
+
 ## Tech Stack
 
 - .NET 10, ASP.NET Core Minimal APIs, System.Text.Json
