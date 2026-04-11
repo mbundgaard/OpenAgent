@@ -118,6 +118,12 @@ public static class UrlValidator
         // 192.168.0.0/16
         if (v4Bytes[0] == 192 && v4Bytes[1] == 168) return true;
 
+        // 100.64.0.0/10 (CGN/RFC 6598, used by some cloud providers)
+        if (v4Bytes[0] == 100 && v4Bytes[1] >= 64 && v4Bytes[1] <= 127) return true;
+
+        // 198.18.0.0/15 (benchmark/testing, RFC 2544)
+        if (v4Bytes[0] == 198 && (v4Bytes[1] == 18 || v4Bytes[1] == 19)) return true;
+
         return false;
     }
 }

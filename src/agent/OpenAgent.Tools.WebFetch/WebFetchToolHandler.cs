@@ -11,7 +11,7 @@ public sealed class WebFetchToolHandler : IToolHandler
 
     public WebFetchToolHandler()
     {
-        var httpClient = new HttpClient();
+        var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         var dnsResolver = new SystemDnsResolver();
         Tools = [new WebFetchTool(httpClient, dnsResolver)];
     }
