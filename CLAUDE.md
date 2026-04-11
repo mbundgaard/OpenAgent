@@ -254,6 +254,12 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 
 Session-to-session notes. Save memories here in CLAUDE.md — do NOT create separate memory files. Update this section as decisions are made.
 
+### WebFetch SSRF Protection (Issue #7 — Closed)
+- IPv6: allows public addresses, blocks loopback (::1), link-local (fe80::/10), ULA (fc00::/7)
+- IPv4: blocks RFC 1918, loopback, link-local, CGN (100.64.0.0/10), benchmark (198.18.0.0/15)
+- HttpClient timeout: 30s (was default 100s)
+- DNS rebinding (TOCTOU): accepted risk — would require `ConnectCallback` rewrite, low value for auth-gated agent
+
 ### Code Review
 - Full codebase review (11 domains) in [docs/review/code-review-prompts.md](docs/review/code-review-prompts.md)
 - Findings: [docs/review/review-by-opus-high.md](docs/review/review-by-opus-high.md) (17 high-severity), [docs/review/review-by-opus.md](docs/review/review-by-opus.md) (full)
