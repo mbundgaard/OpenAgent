@@ -78,36 +78,45 @@ public static class UrlValidator
 
     private static bool IsPrivateOrReserved(IPAddress ip)
     {
-        // IPv6 loopback
+        // IPv6 loopback (::1)
         if (ip.Equals(IPAddress.IPv6Loopback))
             return true;
 
-        // Map to IPv4 if possible
+        // Map to IPv4 if possible, then check IPv4 ranges
         if (ip.AddressFamily == AddressFamily.InterNetworkV6 && ip.IsIPv4MappedToIPv6)
             ip = ip.MapToIPv4();
 
-        if (ip.AddressFamily != AddressFamily.InterNetwork)
-            return true; // Block non-IPv4 that isn't mapped — conservative
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            // IPv6 link-local (fe80::/10) and unique-local (fc00::/7)
+            var bytes = ip.GetAddressBytes();
+            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) return true; // fe80::/10
+            if ((bytes[0] & 0xfe) == 0xfc) return true; // fc00::/7
+            return false; // Public IPv6 — allow (e.g. Cloudflare 2606:4700::/32)
+        }
 
-        var bytes = ip.GetAddressBytes();
+        if (ip.AddressFamily != AddressFamily.InterNetwork)
+            return true; // Unknown address family — block
+
+        var v4Bytes = ip.GetAddressBytes();
 
         // 0.0.0.0/8
-        if (bytes[0] == 0) return true;
+        if (v4Bytes[0] == 0) return true;
 
         // 10.0.0.0/8
-        if (bytes[0] == 10) return true;
+        if (v4Bytes[0] == 10) return true;
 
         // 127.0.0.0/8
-        if (bytes[0] == 127) return true;
+        if (v4Bytes[0] == 127) return true;
 
         // 169.254.0.0/16 (link-local, AWS metadata)
-        if (bytes[0] == 169 && bytes[1] == 254) return true;
+        if (v4Bytes[0] == 169 && v4Bytes[1] == 254) return true;
 
         // 172.16.0.0/12
-        if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
+        if (v4Bytes[0] == 172 && v4Bytes[1] >= 16 && v4Bytes[1] <= 31) return true;
 
         // 192.168.0.0/16
-        if (bytes[0] == 192 && bytes[1] == 168) return true;
+        if (v4Bytes[0] == 192 && v4Bytes[1] == 168) return true;
 
         return false;
     }
