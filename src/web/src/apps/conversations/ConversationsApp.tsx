@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import type { ConversationSummary, ConversationDetail, ConversationMessage } from './api';
 import { listConversations, getConversation, getMessages, updateConversation, deleteConversation } from './api';
 import { listProviders, getProviderModels } from '../settings/api';
@@ -238,7 +236,7 @@ export function ConversationsApp() {
                   </div>
                   <div className={styles.messageContent}>
                     {msg.role === 'assistant' && msg.content ? (
-                      <div className={styles.markdown}><Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown></div>
+                      <span>{msg.content}</span>
                     ) : msg.tool_call_id ? (
                       <div className={styles.toolResult}>
                         <span className={styles.toolLabel}>Tool result for {msg.tool_call_id.slice(0, 12)}</span>
