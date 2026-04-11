@@ -105,7 +105,7 @@ Endpoints validate the request and forward to the provider. No business logic in
 
 ### Endpoint organization
 All endpoints live in `OpenAgent.Api/Endpoints/`. They are ASP.NET Core extension methods on `WebApplication`. Grouped by transport and domain:
-- REST endpoints: `ConversationEndpoints`, `ChatEndpoints`, `ConnectionEndpoints`, `ScheduledTaskEndpoints`, `LogEndpoints`, `FileExplorerEndpoints`
+- REST endpoints: `ConversationEndpoints`, `ChatEndpoints`, `ConnectionEndpoints`, `ScheduledTaskEndpoints`, `LogEndpoints`, `FileExplorerEndpoints`, `ToolEndpoints`
 - WebSocket endpoints: `WebSocketVoiceEndpoints`, `WebSocketTextEndpoints`
 - Channel endpoints: `TelegramWebhookEndpoints`, `WhatsAppEndpoints` (QR pairing)
 
@@ -135,6 +135,13 @@ All endpoints require `X-Api-Key` header except `/health`.
 | `DELETE` | `/api/scheduled-tasks/{taskId}` | Delete task |
 | `POST` | `/api/scheduled-tasks/{taskId}/run` | Execute immediately |
 | `POST` | `/api/scheduled-tasks/{taskId}/trigger` | Trigger with optional webhook context body |
+
+#### Tools
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/tools` | List all tools with definitions (name, description, parameters schema) |
+| `GET` | `/api/tools/{toolName}` | Get single tool definition |
+| `POST` | `/api/tools/{toolName}/execute` | Execute a tool directly, returns result + duration |
 
 #### Logs
 | Method | Route | Description |

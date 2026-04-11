@@ -177,6 +177,7 @@ app.MapLogEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
+app.MapToolEndpoints();
 
 // SPA fallback — serve index.html for unmatched routes (client-side routing)
 app.MapFallbackToFile("index.html");
