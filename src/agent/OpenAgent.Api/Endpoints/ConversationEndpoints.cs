@@ -66,7 +66,10 @@ public static class ConversationEndpoints
                 VoiceSessionId = conversation.VoiceSessionId,
                 VoiceSessionOpen = conversation.VoiceSessionOpen,
                 CompactionRunning = conversation.CompactionRunning,
-                ActiveSkills = conversation.ActiveSkills
+                ActiveSkills = conversation.ActiveSkills,
+                ChannelType = conversation.ChannelType,
+                ConnectionId = conversation.ConnectionId,
+                ChannelChatId = conversation.ChannelChatId
             });
         });
 
@@ -95,6 +98,8 @@ public static class ConversationEndpoints
                 conversation.Provider = request.Provider;
             if (request.Model is not null)
                 conversation.Model = request.Model;
+            if (request.ChannelChatId is not null)
+                conversation.ChannelChatId = request.ChannelChatId;
 
             store.Update(conversation);
 
@@ -113,7 +118,10 @@ public static class ConversationEndpoints
                 VoiceSessionId = conversation.VoiceSessionId,
                 VoiceSessionOpen = conversation.VoiceSessionOpen,
                 CompactionRunning = conversation.CompactionRunning,
-                ActiveSkills = conversation.ActiveSkills
+                ActiveSkills = conversation.ActiveSkills,
+                ChannelType = conversation.ChannelType,
+                ConnectionId = conversation.ConnectionId,
+                ChannelChatId = conversation.ChannelChatId
             });
         });
 
