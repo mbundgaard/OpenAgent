@@ -233,6 +233,7 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 - Data directory bootstrapped on first startup by `DataDirectoryBootstrap.Run()` — creates required folders (`projects/`, `repos/`, `memory/`, `config/`, `connections/`) and extracts embedded default personality files (AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md, MEMORY.md, BOOTSTRAP.md) if missing. Also writes empty `config/agent.json` and `config/connections.json`. Never overwrites existing files.
 - BOOTSTRAP.md is a first-run conversation ritual — guides the agent through identity discovery with the user, then self-deletes. AGENTS.md checks for its presence on session startup.
 - System prompt composed from markdown files in dataPath: AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md — loaded once at startup, filtered by ConversationType
+- System prompt includes current time in Europe/Copenhagen timezone with weekday and ISO week number (e.g. `Saturday 2026-04-11T17:10 Europe/Copenhagen (UTC+2), week 15`). Hardcoded timezone — does not rely on OS locale.
 - BuildChatMessages validates tool call rounds — skips orphaned tool calls to avoid API 400 errors
 - WhatsApp uses Baileys (Node.js) as a managed child process — .NET spawns `node baileys-bridge.js`, communicates via stdin/stdout JSON lines. No sidecar container needed.
 - WhatsApp auth state (Baileys creds) stored at `{dataPath}/connections/whatsApp/{connectionId}/`
