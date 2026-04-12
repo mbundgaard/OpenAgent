@@ -42,6 +42,11 @@ public class TelnyxChannelProviderFactoryTests
         Assert.Equal("Secret", apiKey.Type);
         Assert.True(apiKey.Required);
         Assert.Equal("Secret", secret.Type);
+        Assert.False(secret.Required);
+
+        var phoneNumber = factory.ConfigFields.Single(f => f.Key == "phoneNumber");
+        Assert.True(phoneNumber.Required);
+        Assert.Equal("String", phoneNumber.Type);
     }
 
     [Fact]

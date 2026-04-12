@@ -20,6 +20,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
     /// <summary>Identifier of the owning connection row.</summary>
     public string ConnectionId => _connectionId;
 
+    /// <summary>Creates a provider for the given connection. The factory is the only intended caller.</summary>
     public TelnyxChannelProvider(
         TelnyxOptions options,
         string connectionId,

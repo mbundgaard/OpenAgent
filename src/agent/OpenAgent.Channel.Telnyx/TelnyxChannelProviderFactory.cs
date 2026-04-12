@@ -13,10 +13,13 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
 {
     private readonly ILoggerFactory _loggerFactory;
 
+    /// <inheritdoc/>
     public string Type => "telnyx";
 
+    /// <inheritdoc/>
     public string DisplayName => "Telnyx";
 
+    /// <inheritdoc/>
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
         new() { Key = "apiKey", Label = "API Key", Type = "Secret", Required = true },
@@ -25,6 +28,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
         new() { Key = "allowedNumbers", Label = "Allowed Caller Numbers (comma-separated, empty = allow all)", Type = "String" },
     ];
 
+    /// <inheritdoc/>
     public ChannelSetupStep? SetupStep => null;
 
     public TelnyxChannelProviderFactory(ILoggerFactory loggerFactory)
