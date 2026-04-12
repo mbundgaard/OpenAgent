@@ -1,6 +1,7 @@
 using OpenAgent;
 using OpenAgent.Api.Endpoints;
 using OpenAgent.Channel.Telegram;
+using OpenAgent.Channel.Telnyx;
 using OpenAgent.Channel.WhatsApp;
 using OpenAgent.Compaction;
 using OpenAgent.ConfigStore.File;
@@ -143,6 +144,9 @@ builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
         sp.GetRequiredService<Func<string, ILlmTextProvider>>(),
         sp.GetRequiredService<AgentConfig>(),
         sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
+    new TelnyxChannelProviderFactory(
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<ConnectionManager>();
 builder.Services.AddSingleton<IConnectionManager>(sp => sp.GetRequiredService<ConnectionManager>());
