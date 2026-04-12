@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 
@@ -46,7 +47,7 @@ public static class TelnyxWebhookEndpoints
         CancellationToken ct)
     {
         var logger = loggerFactory.CreateLogger("TelnyxWebhook");
-        var (provider, _, form) = await ReadAndVerifyAsync(webhookId, request, connectionManager, logger, ct);
+        var (provider, form) = await ReadAndVerifyAsync(webhookId, request, connectionManager, logger, ct);
         if (provider is null)
             return Results.NotFound();
 
@@ -66,7 +67,7 @@ public static class TelnyxWebhookEndpoints
         CancellationToken ct)
     {
         var logger = loggerFactory.CreateLogger("TelnyxWebhook");
-        var (provider, _, form) = await ReadAndVerifyAsync(webhookId, request, connectionManager, logger, ct);
+        var (provider, form) = await ReadAndVerifyAsync(webhookId, request, connectionManager, logger, ct);
         if (provider is null)
             return Results.NotFound();
 
@@ -87,7 +88,7 @@ public static class TelnyxWebhookEndpoints
         CancellationToken ct)
     {
         var logger = loggerFactory.CreateLogger("TelnyxWebhook");
-        var (provider, _, form) = await ReadAndVerifyAsync(webhookId, request, connectionManager, logger, ct);
+        var (provider, form) = await ReadAndVerifyAsync(webhookId, request, connectionManager, logger, ct);
         if (provider is null)
             return Results.NotFound();
 
@@ -107,7 +108,7 @@ public static class TelnyxWebhookEndpoints
 
     // Shared preamble: find the provider, buffer the body, verify the ED25519 signature,
     // parse the form fields. Returns null provider on any failure (not found or auth failure).
-    private static async Task<(TelnyxChannelProvider? provider, byte[] rawBody, IFormCollection form)>
+    private static async Task<(TelnyxChannelProvider? provider, IFormCollection form)>
         ReadAndVerifyAsync(
             string webhookId,
             HttpRequest request,
@@ -124,7 +125,7 @@ public static class TelnyxWebhookEndpoints
         if (provider is null)
         {
             logger.LogWarning("Telnyx webhook received for unknown webhookId={WebhookId}", webhookId);
-            return (null, [], new FormCollection(null));
+            return (null, new FormCollection(null));
         }
 
         // Buffer the raw body so we can both verify the signature and re-parse form fields
@@ -144,33 +145,16 @@ public static class TelnyxWebhookEndpoints
                 DateTimeOffset.UtcNow))
         {
             logger.LogWarning("Telnyx webhook for {ConnectionId} failed signature verification", provider.ConnectionId);
-            return (null, [], new FormCollection(null));
+            return (null, new FormCollection(null));
         }
 
         // Re-parse the buffered body as application/x-www-form-urlencoded
         using var bodyStream = new MemoryStream(rawBody);
         using var reader = new StreamReader(bodyStream);
         var text = await reader.ReadToEndAsync(ct);
-        var form = new FormCollection(ParseFormBody(text));
+        var parsed = QueryHelpers.ParseQuery(text);
+        var form = new FormCollection(parsed.ToDictionary(kv => kv.Key, kv => kv.Value));
 
-        return (provider, rawBody, form);
-    }
-
-    // Hand-rolled form body parser — avoids re-enabling request body buffering or re-binding
-    // HttpContext, which would require middleware. Covers the subset of fields Telnyx sends.
-    private static Dictionary<string, Microsoft.Extensions.Primitives.StringValues> ParseFormBody(string body)
-    {
-        var result = new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>(StringComparer.Ordinal);
-        if (string.IsNullOrEmpty(body)) return result;
-
-        foreach (var pair in body.Split('&'))
-        {
-            var i = pair.IndexOf('=');
-            var key = i < 0 ? Uri.UnescapeDataString(pair) : Uri.UnescapeDataString(pair[..i]);
-            var val = i < 0 ? "" : Uri.UnescapeDataString(pair[(i + 1)..].Replace('+', ' '));
-            result[key] = val;
-        }
-
-        return result;
+        return (provider, form);
     }
 }
