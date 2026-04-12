@@ -78,6 +78,24 @@ public class TelnyxSignatureVerifierTests
         Assert.False(_verifier.Verify("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----", "sig", null, [], DateTimeOffset.Now));
     }
 
+    [Fact]
+    public void Verify_rejects_replayed_request_with_fresh_timestamp()
+    {
+        var (publicPem, privatePem) = GenerateKeyPair();
+        var body = System.Text.Encoding.UTF8.GetBytes("{}");
+        var original = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
+        var originalTimestamp = original.ToUnixTimeSeconds().ToString();
+        var signature = SignForTest(privatePem, originalTimestamp, body);
+
+        // Attacker strips timestamp header and replays with a fresh one
+        // to evade the clock-skew guard. Signature was bound to the original
+        // timestamp via the {ts}|{body} payload, so verification fails.
+        var freshTimestamp = original.AddSeconds(1).ToUnixTimeSeconds().ToString();
+        var ok = _verifier.Verify(publicPem, signature, freshTimestamp, body, original.AddSeconds(1));
+
+        Assert.False(ok);
+    }
+
     // --- Helpers ---
 
     /// <summary>

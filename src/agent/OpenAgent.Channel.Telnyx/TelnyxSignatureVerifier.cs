@@ -39,10 +39,17 @@ public sealed class TelnyxSignatureVerifier
         DateTimeOffset now)
     {
         // Dev mode: no key configured — skip verification with warning
-        if (string.IsNullOrWhiteSpace(publicKeyPem))
+        if (string.IsNullOrEmpty(publicKeyPem))
         {
             _logger.LogWarning("Telnyx signature verification skipped — no public key configured");
             return true;
+        }
+
+        // Whitespace-only key is almost certainly a misconfiguration (padded env var, form trim failure)
+        if (string.IsNullOrWhiteSpace(publicKeyPem))
+        {
+            _logger.LogWarning("Telnyx webhook public key is whitespace-only — treating as misconfiguration");
+            return false;
         }
 
         // Both headers must be present
@@ -85,16 +92,22 @@ public sealed class TelnyxSignatureVerifier
         payload[written] = (byte)'|';
         Buffer.BlockCopy(rawBody, 0, payload, written + 1, rawBody.Length);
 
+        // Parse public key — distinct catch so key-parsing failures log separately from verify failures
+        Ed25519PublicKeyParameters pubKey;
+        try
+        {
+            using var sr = new StringReader(publicKeyPem);
+            pubKey = (Ed25519PublicKeyParameters)new PemReader(sr).ReadObject();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Telnyx webhook public key could not be parsed as Ed25519");
+            return false;
+        }
+
         // Verify ED25519 signature using BouncyCastle
         try
         {
-            Ed25519PublicKeyParameters pubKey;
-            using (var sr = new StringReader(publicKeyPem))
-            {
-                var pemReader = new PemReader(sr);
-                pubKey = (Ed25519PublicKeyParameters)pemReader.ReadObject();
-            }
-
             var signer = new Ed25519Signer();
             signer.Init(forSigning: false, pubKey);
             signer.BlockUpdate(payload, 0, payload.Length);
