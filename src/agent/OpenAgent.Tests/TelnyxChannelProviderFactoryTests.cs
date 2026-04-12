@@ -58,6 +58,9 @@ public class TelnyxChannelProviderFactoryTests
                 "apiKey": "KEY_abc",
                 "phoneNumber": "+4512345678",
                 "webhookSecret": "shh",
+                "baseUrl": "https://example.com",
+                "webhookPublicKey": "-----BEGIN PUBLIC KEY-----\nMCo...\n-----END PUBLIC KEY-----",
+                "webhookId": "abc-123",
                 "allowedNumbers": "+4511111111,+4522222222"
             }
             """).RootElement;
@@ -76,8 +79,28 @@ public class TelnyxChannelProviderFactoryTests
         Assert.Equal("KEY_abc", provider.Options.ApiKey);
         Assert.Equal("+4512345678", provider.Options.PhoneNumber);
         Assert.Equal("shh", provider.Options.WebhookSecret);
+        Assert.Equal("https://example.com", provider.Options.BaseUrl);
+        Assert.StartsWith("-----BEGIN PUBLIC KEY-----", provider.Options.WebhookPublicKey);
+        Assert.Equal("abc-123", provider.Options.WebhookId);
         Assert.Equal(new[] { "+4511111111", "+4522222222" }, provider.Options.AllowedNumbers);
         Assert.Equal("conn-1", provider.ConnectionId);
+    }
+
+    [Fact]
+    public void ConfigFields_includes_baseUrl_and_webhookPublicKey()
+    {
+        var factory = new TelnyxChannelProviderFactory(NullLoggerFactory.Instance);
+        var keys = factory.ConfigFields.Select(f => f.Key).ToArray();
+
+        Assert.Contains("baseUrl", keys);
+        Assert.Contains("webhookPublicKey", keys);
+
+        var baseUrl = factory.ConfigFields.Single(f => f.Key == "baseUrl");
+        Assert.True(baseUrl.Required);
+
+        var publicKey = factory.ConfigFields.Single(f => f.Key == "webhookPublicKey");
+        Assert.Equal("Secret", publicKey.Type);
+        Assert.False(publicKey.Required);
     }
 
     [Fact]

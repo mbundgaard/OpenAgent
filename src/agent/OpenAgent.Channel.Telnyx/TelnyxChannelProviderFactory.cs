@@ -22,10 +22,12 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
     /// <inheritdoc/>
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
-        new() { Key = "apiKey", Label = "API Key", Type = "Secret", Required = true },
-        new() { Key = "phoneNumber", Label = "Phone Number (E.164)", Type = "String", Required = true },
-        new() { Key = "webhookSecret", Label = "Webhook Signing Secret", Type = "Secret" },
-        new() { Key = "allowedNumbers", Label = "Allowed Caller Numbers (comma-separated, empty = allow all)", Type = "String" },
+        new() { Key = "apiKey",           Label = "API Key",                        Type = "Secret", Required = true },
+        new() { Key = "phoneNumber",      Label = "Phone Number (E.164)",           Type = "String", Required = true },
+        new() { Key = "baseUrl",          Label = "Public Base URL",                Type = "String", Required = true },
+        new() { Key = "webhookPublicKey", Label = "Webhook Public Key (PEM)",       Type = "Secret" },
+        new() { Key = "webhookSecret",    Label = "Webhook Signing Secret",         Type = "Secret" },
+        new() { Key = "allowedNumbers",   Label = "Allowed Caller Numbers (comma-separated, empty = allow all)", Type = "String" },
     ];
 
     /// <inheritdoc/>
@@ -53,6 +55,15 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
 
             if (connection.Config.TryGetProperty("webhookSecret", out var secretEl) && secretEl.ValueKind == JsonValueKind.String)
                 options.WebhookSecret = secretEl.GetString();
+
+            if (connection.Config.TryGetProperty("baseUrl", out var baseUrlEl) && baseUrlEl.ValueKind == JsonValueKind.String)
+                options.BaseUrl = baseUrlEl.GetString();
+
+            if (connection.Config.TryGetProperty("webhookPublicKey", out var keyPemEl) && keyPemEl.ValueKind == JsonValueKind.String)
+                options.WebhookPublicKey = keyPemEl.GetString();
+
+            if (connection.Config.TryGetProperty("webhookId", out var webhookIdEl) && webhookIdEl.ValueKind == JsonValueKind.String)
+                options.WebhookId = webhookIdEl.GetString();
 
             if (connection.Config.TryGetProperty("allowedNumbers", out var allowedEl))
             {
