@@ -22,13 +22,14 @@ internal sealed class SystemPromptBuilder
     // Prompt files and which conversation types include them
     private static readonly (string FilePath, ConversationType[] Types)[] FileMap =
     [
-        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice]),
-        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice]),
-        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice]),
-        ("USER.md",          [ConversationType.Text, ConversationType.Voice]),
-        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice]),
-        ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice]),
+        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
+        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
+        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
+        ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
+        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
+        ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
         ("VOICE.md",         [ConversationType.Voice]),
+        ("PHONE.md",         [ConversationType.Phone]),
     ];
 
     public SystemPromptBuilder(AgentEnvironment environment, SkillCatalog skillCatalog, AgentConfig agentConfig, ILogger<SystemPromptBuilder> logger)

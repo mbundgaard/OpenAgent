@@ -5,7 +5,8 @@ namespace OpenAgent.Models.Conversations;
 public enum ConversationType
 {
     Text,
-    Voice
+    Voice,
+    Phone,
 }
 
 /// <summary>
