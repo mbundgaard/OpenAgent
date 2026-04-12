@@ -1,17 +1,33 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent.Channel.Telnyx;
+using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Connections;
+using OpenAgent.Tests.Fakes;
 using Xunit;
 
 namespace OpenAgent.Tests;
 
 public class TelnyxChannelProviderFactoryTests
 {
+    // Helper — constructs a factory with test-friendly dependencies.
+    private static TelnyxChannelProviderFactory BuildFactory(
+        IConversationStore? store = null,
+        IConnectionStore? connections = null,
+        Func<string, ILlmTextProvider>? resolver = null,
+        AgentConfig? config = null) =>
+        new(
+            store ?? new InMemoryConversationStore(),
+            connections ?? new FakeConnectionStore(),
+            resolver ?? (_ => new FakeTelnyxTextProvider("stub")),
+            config ?? new AgentConfig { TextProvider = "fake", TextModel = "fake-1" },
+            NullLoggerFactory.Instance);
+
     [Fact]
     public void Factory_exposes_expected_metadata()
     {
-        var factory = new TelnyxChannelProviderFactory(NullLoggerFactory.Instance);
+        var factory = BuildFactory();
 
         Assert.Equal("telnyx", factory.Type);
         Assert.Equal("Telnyx", factory.DisplayName);
@@ -21,7 +37,7 @@ public class TelnyxChannelProviderFactoryTests
     [Fact]
     public void ConfigFields_declares_expected_keys()
     {
-        var factory = new TelnyxChannelProviderFactory(NullLoggerFactory.Instance);
+        var factory = BuildFactory();
 
         var keys = factory.ConfigFields.Select(f => f.Key).ToArray();
 
@@ -34,7 +50,7 @@ public class TelnyxChannelProviderFactoryTests
     [Fact]
     public void ApiKey_and_webhookSecret_are_secret_fields()
     {
-        var factory = new TelnyxChannelProviderFactory(NullLoggerFactory.Instance);
+        var factory = BuildFactory();
 
         var apiKey = factory.ConfigFields.Single(f => f.Key == "apiKey");
         var secret = factory.ConfigFields.Single(f => f.Key == "webhookSecret");
@@ -52,7 +68,7 @@ public class TelnyxChannelProviderFactoryTests
     [Fact]
     public void Create_parses_string_config_into_options()
     {
-        var factory = new TelnyxChannelProviderFactory(NullLoggerFactory.Instance);
+        var factory = BuildFactory();
         var config = JsonDocument.Parse("""
             {
                 "apiKey": "KEY_abc",
@@ -89,7 +105,7 @@ public class TelnyxChannelProviderFactoryTests
     [Fact]
     public void ConfigFields_includes_baseUrl_and_webhookPublicKey()
     {
-        var factory = new TelnyxChannelProviderFactory(NullLoggerFactory.Instance);
+        var factory = BuildFactory();
         var keys = factory.ConfigFields.Select(f => f.Key).ToArray();
 
         Assert.Contains("baseUrl", keys);
@@ -108,7 +124,7 @@ public class TelnyxChannelProviderFactoryTests
     [Fact]
     public void Create_parses_array_allowedNumbers()
     {
-        var factory = new TelnyxChannelProviderFactory(NullLoggerFactory.Instance);
+        var factory = BuildFactory();
         var config = JsonDocument.Parse("""
             {
                 "apiKey": "k",
@@ -133,7 +149,7 @@ public class TelnyxChannelProviderFactoryTests
     [Fact]
     public void Create_handles_missing_optional_fields()
     {
-        var factory = new TelnyxChannelProviderFactory(NullLoggerFactory.Instance);
+        var factory = BuildFactory();
         var config = JsonDocument.Parse("""{ "apiKey": "k" }""").RootElement;
         var connection = new Connection
         {

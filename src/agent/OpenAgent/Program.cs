@@ -147,6 +147,10 @@ builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
     new TelnyxChannelProviderFactory(
+        sp.GetRequiredService<IConversationStore>(),
+        sp.GetRequiredService<IConnectionStore>(),
+        sp.GetRequiredService<Func<string, ILlmTextProvider>>(),
+        sp.GetRequiredService<AgentConfig>(),
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<ConnectionManager>();
 builder.Services.AddSingleton<IConnectionManager>(sp => sp.GetRequiredService<ConnectionManager>());
@@ -189,6 +193,7 @@ app.MapConnectionEndpoints();
 app.MapFileExplorerEndpoints();
 app.MapLogEndpoints();
 app.MapTelegramWebhookEndpoints();
+app.MapTelnyxWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
 app.MapToolEndpoints();

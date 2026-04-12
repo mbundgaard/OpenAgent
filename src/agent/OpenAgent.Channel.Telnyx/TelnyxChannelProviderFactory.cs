@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Connections;
 using OpenAgent.Models.Providers;
 
@@ -11,6 +12,10 @@ namespace OpenAgent.Channel.Telnyx;
 /// </summary>
 public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
 {
+    private readonly IConversationStore _store;
+    private readonly IConnectionStore _connectionStore;
+    private readonly Func<string, ILlmTextProvider> _textProviderResolver;
+    private readonly AgentConfig _agentConfig;
     private readonly ILoggerFactory _loggerFactory;
 
     /// <inheritdoc/>
@@ -33,8 +38,17 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
     /// <inheritdoc/>
     public ChannelSetupStep? SetupStep => null;
 
-    public TelnyxChannelProviderFactory(ILoggerFactory loggerFactory)
+    public TelnyxChannelProviderFactory(
+        IConversationStore store,
+        IConnectionStore connectionStore,
+        Func<string, ILlmTextProvider> textProviderResolver,
+        AgentConfig agentConfig,
+        ILoggerFactory loggerFactory)
     {
+        _store = store;
+        _connectionStore = connectionStore;
+        _textProviderResolver = textProviderResolver;
+        _agentConfig = agentConfig;
         _loggerFactory = loggerFactory;
     }
 
@@ -86,6 +100,10 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
         return new TelnyxChannelProvider(
             options,
             connection.Id,
-            _loggerFactory.CreateLogger<TelnyxChannelProvider>());
+            _store,
+            _connectionStore,
+            _textProviderResolver,
+            _agentConfig,
+            _loggerFactory);
     }
 }
