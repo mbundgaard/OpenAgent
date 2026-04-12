@@ -116,4 +116,12 @@ public sealed class Conversation
     [JsonPropertyName("channel_chat_id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ChannelChatId { get; set; }
+
+    /// <summary>
+    /// Human-readable label for this conversation (e.g. "DM: Martin Bundgaard", "Group: Fitness").
+    /// Populated by channel providers from platform metadata; null for app/scheduled-task conversations.
+    /// </summary>
+    [JsonPropertyName("display_name")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayName { get; set; }
 }

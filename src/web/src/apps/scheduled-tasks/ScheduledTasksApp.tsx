@@ -79,7 +79,9 @@ function formatTimestamp(iso: string | null | undefined): string {
 }
 
 function formatConversationLabel(conv: ConversationSummary): string {
-  // Channel-bound: "telegram: chat 12345"
+  // Prefer the human-readable display name if the channel has populated one.
+  if (conv.display_name) return conv.display_name;
+  // Channel-bound fallback: "telegram: chat 12345"
   if (conv.channel_type && conv.channel_chat_id) {
     return `${conv.channel_type}: ${conv.channel_chat_id}`;
   }

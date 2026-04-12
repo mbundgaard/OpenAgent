@@ -41,7 +41,8 @@ public static class ConversationEndpoints
                 TotalCompletionTokens = c.TotalCompletionTokens,
                 TurnCount = c.TurnCount,
                 LastActivity = c.LastActivity,
-                ActiveSkills = c.ActiveSkills
+                ActiveSkills = c.ActiveSkills,
+                DisplayName = c.DisplayName
             }));
         });
 
@@ -69,7 +70,8 @@ public static class ConversationEndpoints
                 ActiveSkills = conversation.ActiveSkills,
                 ChannelType = conversation.ChannelType,
                 ConnectionId = conversation.ConnectionId,
-                ChannelChatId = conversation.ChannelChatId
+                ChannelChatId = conversation.ChannelChatId,
+                DisplayName = conversation.DisplayName
             });
         });
 
@@ -121,7 +123,8 @@ public static class ConversationEndpoints
                 ActiveSkills = conversation.ActiveSkills,
                 ChannelType = conversation.ChannelType,
                 ConnectionId = conversation.ConnectionId,
-                ChannelChatId = conversation.ChannelChatId
+                ChannelChatId = conversation.ChannelChatId,
+                DisplayName = conversation.DisplayName
             });
         });
 

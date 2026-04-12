@@ -125,7 +125,7 @@ export function ConversationsApp() {
               onClick={() => handleSelect(c.id)}
             >
               <div className={styles.itemTop}>
-                <span className={styles.source}>{c.source}</span>
+                <span className={styles.source}>{c.display_name ?? c.source}</span>
               </div>
               <div className={styles.itemMeta}>
                 <span>{c.model}</span>

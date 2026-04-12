@@ -88,6 +88,12 @@ public sealed class InMemoryConversationStore : IConversationStore
             conv.Type = type;
     }
 
+    public void UpdateDisplayName(string conversationId, string? displayName)
+    {
+        if (_conversations.TryGetValue(conversationId, out var conv) && conv.DisplayName != displayName)
+            conv.DisplayName = displayName;
+    }
+
     public bool Delete(string conversationId) =>
         _conversations.Remove(conversationId) | _messages.Remove(conversationId);
 

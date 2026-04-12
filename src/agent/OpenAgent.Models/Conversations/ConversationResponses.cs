@@ -41,6 +41,10 @@ public sealed class ConversationListItemResponse
     [JsonPropertyName("active_skills")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? ActiveSkills { get; init; }
+
+    [JsonPropertyName("display_name")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayName { get; init; }
 }
 
 /// <summary>
@@ -103,6 +107,10 @@ public sealed class ConversationDetailResponse
     [JsonPropertyName("channel_chat_id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ChannelChatId { get; init; }
+
+    [JsonPropertyName("display_name")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayName { get; init; }
 }
 
 /// <summary>

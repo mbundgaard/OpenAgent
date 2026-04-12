@@ -15,6 +15,7 @@ export interface ConversationSummary {
   channel_type?: string | null;
   connection_id?: string | null;
   channel_chat_id?: string | null;
+  display_name?: string | null;
 }
 
 export interface ConversationDetail extends ConversationSummary {

@@ -4,6 +4,7 @@ import { listConversations, type ConversationSummary } from '../conversations/ap
 import styles from './ProviderForm.module.css';
 
 function formatConversationLabel(conv: ConversationSummary): string {
+  if (conv.display_name) return conv.display_name;
   if (conv.channel_type && conv.channel_chat_id) {
     return `${conv.channel_type}: ${conv.channel_chat_id}`;
   }

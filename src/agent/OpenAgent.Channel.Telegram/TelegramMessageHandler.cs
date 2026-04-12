@@ -120,6 +120,15 @@ public sealed class TelegramMessageHandler
             "telegram", _connectionId, chatId.ToString(),
             "telegram", ConversationType.Text, providerKey, model);
 
+        // Refresh display name from latest Telegram metadata (catches renames).
+        // Only write if changed — we already have the current value in memory.
+        var displayName = BuildDisplayName(message);
+        if (displayName != conversation.DisplayName)
+        {
+            _store.UpdateDisplayName(conversation.Id, displayName);
+            conversation.DisplayName = displayName;
+        }
+
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.Provider);
 
@@ -188,9 +197,12 @@ public sealed class TelegramMessageHandler
         // Create the conversation and lock new conversations
         var providerKey = _agentConfig.TextProvider;
         var model = _agentConfig.TextModel;
-        _store.FindOrCreateChannelConversation(
+        var created = _store.FindOrCreateChannelConversation(
             "telegram", _connectionId, chatId.ToString(),
             "telegram", ConversationType.Text, providerKey, model);
+        var groupDisplayName = BuildGroupDisplayName(groupMsg);
+        if (groupDisplayName != created.DisplayName)
+            _store.UpdateDisplayName(created.Id, groupDisplayName);
         connection.AllowNewConversations = false;
         _connectionStore.Save(connection);
         _logger?.LogInformation("Created conversation for group {ChatId} (bot added), auto-locked new conversations", chatId);
@@ -615,5 +627,29 @@ public sealed class TelegramMessageHandler
         catch { /* not JSON */ }
 
         return true;
+    }
+
+    /// <summary>
+    /// Builds a human-readable label for the conversation. DMs → "DM: First Last" (falls back to
+    /// username or user ID). Groups → "Group: Title" (falls back to chat ID).
+    /// </summary>
+    private static string? BuildDisplayName(global::Telegram.Bot.Types.Message message)
+    {
+        if (message.Chat.Type is ChatType.Group or ChatType.Supergroup)
+            return BuildGroupDisplayName(message);
+
+        var from = message.From;
+        if (from is null) return null;
+
+        var fullName = $"{from.FirstName} {from.LastName}".Trim();
+        if (!string.IsNullOrWhiteSpace(fullName)) return $"DM: {fullName}";
+        if (!string.IsNullOrWhiteSpace(from.Username)) return $"DM: @{from.Username}";
+        return $"DM: {from.Id}";
+    }
+
+    private static string BuildGroupDisplayName(global::Telegram.Bot.Types.Message message)
+    {
+        var title = message.Chat.Title;
+        return !string.IsNullOrWhiteSpace(title) ? $"Group: {title}" : $"Group: {message.Chat.Id}";
     }
 }

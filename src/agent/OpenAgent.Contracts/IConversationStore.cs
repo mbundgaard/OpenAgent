@@ -42,6 +42,12 @@ public interface IConversationStore : IConfigurable
     /// <summary>Updates the conversation's Type. No-op if the conversation does not exist or already has this type.</summary>
     void UpdateType(string conversationId, ConversationType type);
 
+    /// <summary>
+    /// Updates the conversation's human-readable display name. No-op if the value is unchanged.
+    /// Channel providers call this on every inbound message so renames propagate.
+    /// </summary>
+    void UpdateDisplayName(string conversationId, string? displayName);
+
     /// <summary>Removes the conversation. Returns true if it existed.</summary>
     bool Delete(string conversationId);
 

@@ -97,6 +97,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Conversations", "ConnectionId", "TEXT");
         TryAddColumn(connection, "Conversations", "ChannelChatId", "TEXT");
         TryAddColumn(connection, "Messages", "Modality", "INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn(connection, "Conversations", "DisplayName", "TEXT");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
@@ -151,7 +152,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId FROM Conversations
+            SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName FROM Conversations
             WHERE ChannelType = @channelType AND ConnectionId = @connectionId AND ChannelChatId = @channelChatId
             LIMIT 1
             """;
@@ -220,7 +221,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId FROM Conversations ORDER BY COALESCE(LastActivity, CreatedAt) DESC";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName FROM Conversations ORDER BY COALESCE(LastActivity, CreatedAt) DESC";
 
         using var reader = cmd.ExecuteReader();
         var list = new List<Conversation>();
@@ -234,7 +235,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId FROM Conversations WHERE Id = @id";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -554,8 +555,20 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             ActiveSkills = reader.IsDBNull(16) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(16)),
             ChannelType = reader.IsDBNull(17) ? null : reader.GetString(17),
             ConnectionId = reader.IsDBNull(18) ? null : reader.GetString(18),
-            ChannelChatId = reader.IsDBNull(19) ? null : reader.GetString(19)
+            ChannelChatId = reader.IsDBNull(19) ? null : reader.GetString(19),
+            DisplayName = reader.IsDBNull(20) ? null : reader.GetString(20)
         };
+    }
+
+    /// <summary>Updates the human-readable display name. No-op when nothing would change.</summary>
+    public void UpdateDisplayName(string conversationId, string? displayName)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE Conversations SET DisplayName = @displayName WHERE Id = @id AND IFNULL(DisplayName, '') != IFNULL(@displayName, '')";
+        cmd.Parameters.AddWithValue("@id", conversationId);
+        cmd.Parameters.AddWithValue("@displayName", (object?)displayName ?? DBNull.Value);
+        cmd.ExecuteNonQuery();
     }
 
     private static Message ReadMessage(SqliteDataReader reader)
