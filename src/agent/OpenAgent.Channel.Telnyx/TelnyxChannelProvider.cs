@@ -14,7 +14,10 @@ public sealed class TelnyxChannelProvider : IChannelProvider
     private readonly string _connectionId;
     private readonly ILogger<TelnyxChannelProvider> _logger;
 
+    /// <summary>Strongly-typed configuration for this connection. Exposed for tests that read back factory-parsed values.</summary>
     public TelnyxOptions Options => _options;
+
+    /// <summary>Identifier of the owning connection row.</summary>
     public string ConnectionId => _connectionId;
 
     public TelnyxChannelProvider(
@@ -27,6 +30,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         _logger = logger;
     }
 
+    /// <summary>No-op in plan 1 — logs the start event only. Real Telnyx wiring arrives in plan 2.</summary>
     public Task StartAsync(CancellationToken ct)
     {
         // Plan 1 scaffolding — no actual Telnyx traffic yet.
@@ -38,6 +42,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         return Task.CompletedTask;
     }
 
+    /// <summary>No-op in plan 1 — logs the stop event only.</summary>
     public Task StopAsync(CancellationToken ct)
     {
         _logger.LogInformation("Telnyx channel {ConnectionId} stopped", _connectionId);
