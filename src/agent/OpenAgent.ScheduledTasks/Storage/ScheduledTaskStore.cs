@@ -42,12 +42,23 @@ internal sealed class ScheduledTaskStore
         try
         {
             var json = File.ReadAllText(_filePath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                // Empty or whitespace-only file (e.g. pre-seeded by bootstrap or CI image) — treat as empty list
+                _tasks = [];
+                return;
+            }
             var file = JsonSerializer.Deserialize<ScheduledTaskFile>(json, JsonOptions);
             _tasks = file?.Tasks ?? [];
         }
         catch (IOException)
         {
             // File locked by another process (e.g. parallel test runners) — start with empty list
+            _tasks = [];
+        }
+        catch (JsonException)
+        {
+            // Corrupt or partially-written file (e.g. crash mid-Save) — start fresh; next Save will overwrite
             _tasks = [];
         }
     }
