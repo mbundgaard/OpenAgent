@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getProviderValues, getProviderModels, saveProviderConfig, listProviders } from './api';
+import { getProviderValues, getProviderModels, saveProviderConfig, listProviders, type ProviderInfo } from './api';
 import { listConversations, type ConversationSummary } from '../conversations/api';
 import styles from './ProviderForm.module.css';
 
@@ -19,7 +19,7 @@ export function AgentConfigForm() {
     memoryDays: '3',
     mainConversationId: '',
   });
-  const [providers, setProviders] = useState<string[]>([]);
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [saving, setSaving] = useState(false);
@@ -34,10 +34,10 @@ export function AgentConfigForm() {
       listProviders(),
       getProviderValues('agent'),
       listConversations(),
-    ]).then(async ([providerKeys, agentValues, convs]) => {
+    ]).then(async ([providerInfos, agentValues, convs]) => {
       if (cancelled) return;
 
-      setProviders(providerKeys);
+      setProviders(providerInfos);
       setConversations(convs.sort((a, b) =>
         (b.last_activity ?? b.created_at).localeCompare(a.last_activity ?? a.created_at)));
 
@@ -51,10 +51,10 @@ export function AgentConfigForm() {
 
       // Fetch models for each provider that has them
       const modelsMap: Record<string, string[]> = {};
-      for (const pk of providerKeys) {
+      for (const p of providerInfos) {
         try {
-          const models = await getProviderModels(pk);
-          if (models.length > 0) modelsMap[pk] = models;
+          const models = await getProviderModels(p.key);
+          if (models.length > 0) modelsMap[p.key] = models;
         } catch { /* provider has no models */ }
       }
       if (!cancelled) setModelsByProvider(modelsMap);
@@ -79,9 +79,10 @@ export function AgentConfigForm() {
 
   if (loading) return <p className={styles.loading}>Loading...</p>;
 
-  // Provider keys that have models (for dropdowns)
-  const textProviders = providers.filter(p => modelsByProvider[p]?.length);
-  const voiceProviders = providers.filter(p => modelsByProvider[p]?.length);
+  // Text providers must have at least one model (you select which one to use).
+  // Voice providers appear regardless of model list — some providers (e.g. Grok) don't expose client-side model selection.
+  const textProviders = providers.filter(p => p.capabilities.includes('text') && modelsByProvider[p.key]?.length).map(p => p.key);
+  const voiceProviders = providers.filter(p => p.capabilities.includes('voice')).map(p => p.key);
 
   const renderSlot = (label: string, providerKey: string, modelKey: string, providerOptions: string[]) => {
     const selectedProvider = values[providerKey];

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -8,18 +9,19 @@ using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
-using OpenAgent.LlmVoice.OpenAIAzure.Protocol;
-using OpenAgent.LlmVoice.OpenAIAzure.Models;
+using OpenAgent.LlmVoice.GrokRealtime.Models;
+using OpenAgent.LlmVoice.GrokRealtime.Protocol;
 
-namespace OpenAgent.LlmVoice.OpenAIAzure;
+namespace OpenAgent.LlmVoice.GrokRealtime;
 
 /// <summary>
-/// A live voice session backed by an Azure OpenAI Realtime WebSocket connection.
-/// Streams audio in/out, handles server VAD, transcripts, and tool-call execution.
+/// A live voice session backed by the Grok Realtime WebSocket API.
+/// Protocol-compatible with OpenAI Realtime; differs only in endpoint URL, auth header,
+/// and two audio event type names.
 /// </summary>
-internal sealed class AzureOpenAiVoiceSession : IVoiceSession
+internal sealed class GrokVoiceSession : IVoiceSession
 {
-    private readonly AzureRealtimeConfig _config;
+    private readonly GrokConfig _config;
     private readonly Conversation _conversation;
     private readonly IAgentLogic _agentLogic;
     private readonly ILogger _logger;
@@ -28,11 +30,12 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _receiveCts = new();
+    private readonly ConcurrentDictionary<Task, byte> _toolTasks = new();
     private Task _receiveTask = Task.CompletedTask;
 
     public string SessionId { get; private set; } = string.Empty;
 
-    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, Conversation conversation, IAgentLogic agentLogic, ILogger logger)
+    internal GrokVoiceSession(GrokConfig config, Conversation conversation, IAgentLogic agentLogic, ILogger logger)
     {
         _config = config;
         _conversation = conversation;
@@ -42,16 +45,13 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     internal async Task ConnectAsync(CancellationToken ct)
     {
-        var host = new Uri(_config.Endpoint).Host;
-        var uri = new Uri(
-            $"wss://{host}/openai/realtime" +
-            $"?api-version={_config.ApiVersion}&deployment={_conversation.Model}");
+        var uri = new Uri("wss://api.x.ai/v1/realtime");
 
-        _ws.Options.SetRequestHeader("api-key", _config.ApiKey);
+        // Grok uses Authorization: Bearer, not api-key
+        _ws.Options.SetRequestHeader("Authorization", $"Bearer {_config.ApiKey}");
 
-        _logger.LogDebug("Connecting to Azure OpenAI Realtime at {Uri}", uri);
+        _logger.LogDebug("Connecting to Grok Realtime for conversation {ConversationId}", _conversation.Id);
         await _ws.ConnectAsync(uri, ct);
-        _logger.LogDebug("WebSocket connected for conversation {ConversationId}", _conversation.Id);
 
         _receiveTask = ReceiveLoopAsync(_receiveCts.Token);
 
@@ -60,30 +60,27 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     public async Task SendAudioAsync(ReadOnlyMemory<byte> audio, CancellationToken ct = default)
     {
-        var evt = new ClientEvent
+        await SendEventAsync(new GrokClientEvent
         {
             Type = EventTypes.InputAudioBufferAppend,
             Audio = Convert.ToBase64String(audio.Span)
-        };
-        await SendEventAsync(evt, ct);
+        }, ct);
     }
 
     public async Task CommitAudioAsync(CancellationToken ct = default)
     {
-        await SendEventAsync(new ClientEvent { Type = EventTypes.InputAudioBufferCommit }, ct);
+        await SendEventAsync(new GrokClientEvent { Type = EventTypes.InputAudioBufferCommit }, ct);
     }
 
     public async Task CancelResponseAsync(CancellationToken ct = default)
     {
-        await SendEventAsync(new ClientEvent { Type = EventTypes.ResponseCancel }, ct);
+        await SendEventAsync(new GrokClientEvent { Type = EventTypes.ResponseCancel }, ct);
     }
 
     public async IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync([EnumeratorCancellation] CancellationToken ct = default)
     {
         await foreach (var evt in _channel.Reader.ReadAllAsync(ct))
-        {
             yield return evt;
-        }
     }
 
     public async ValueTask DisposeAsync()
@@ -93,14 +90,18 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         try { await _receiveTask; }
         catch (OperationCanceledException) { }
 
+        // Wait for in-flight tool tasks to finish so they don't hit disposed primitives.
+        var pending = _toolTasks.Keys.ToArray();
+        if (pending.Length > 0)
+        {
+            try { await Task.WhenAll(pending); }
+            catch { /* individual failures already logged */ }
+        }
+
         if (_ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
         {
-            try
-            {
-                await _ws.CloseAsync(
-                    WebSocketCloseStatus.NormalClosure, "dispose", CancellationToken.None);
-            }
-            catch { /* best-effort close */ }
+            try { await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "dispose", CancellationToken.None); }
+            catch { /* best-effort */ }
         }
 
         if (_conversation.VoiceSessionOpen)
@@ -119,7 +120,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
     private async Task SendSessionUpdateAsync(CancellationToken ct)
     {
         var tools = _agentLogic.Tools.Count > 0
-            ? _agentLogic.Tools.Select(t => new RealtimeToolDefinition
+            ? _agentLogic.Tools.Select(t => new GrokToolDefinition
             {
                 Name = t.Name,
                 Description = t.Description ?? "",
@@ -127,29 +128,29 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
-        var codec = string.IsNullOrWhiteSpace(_config.Codec) ? "pcm16" : _config.Codec!;
+        var codec = NormalizeCodec(_config.Codec);
+        var rate = ResolveRate(_config.SampleRate, codec);
 
-        var sessionConfig = new RealtimeSessionConfig
-        {
-            Modalities = ["audio", "text"],
-            Voice = _config.Voice ?? "alloy",
-            Instructions = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type, _conversation.ActiveSkills),
-            InputAudioFormat = codec,
-            OutputAudioFormat = codec,
-            InputAudioTranscription = new InputAudioTranscriptionConfig { Model = "whisper-1" },
-            TurnDetection = new TurnDetectionConfig { Type = "server_vad" },
-            Tools = tools,
-            ToolChoice = tools is not null ? "auto" : null
-        };
-
-        await SendEventAsync(new ClientEvent
+        await SendEventAsync(new GrokClientEvent
         {
             Type = EventTypes.SessionUpdate,
-            Session = sessionConfig
+            Session = new GrokSessionConfig
+            {
+                Modalities = ["audio", "text"],
+                Voice = _config.Voice ?? "rex",
+                Instructions = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type, _conversation.ActiveSkills),
+                Audio = new GrokAudioConfig
+                {
+                    Input = new GrokAudioDirection { Format = new GrokAudioFormat { Type = CodecToWire(codec), Rate = rate } },
+                    Output = new GrokAudioDirection { Format = new GrokAudioFormat { Type = CodecToWire(codec), Rate = rate } }
+                },
+                TurnDetection = new GrokTurnDetectionConfig { Type = "server_vad" },
+                Tools = tools,
+                ToolChoice = tools is not null ? "auto" : null
+            }
         }, ct);
 
-        // Advertise negotiated audio format to the client. OpenAI Realtime has fixed rates per codec.
-        var rate = RateForCodec(codec);
+        // Advertise the negotiated audio format so the client can configure capture/playback.
         await _channel.Writer.WriteAsync(new SessionReady(
             InputSampleRate: rate,
             OutputSampleRate: rate,
@@ -157,41 +158,46 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             OutputCodec: codec), ct);
     }
 
-    private static int RateForCodec(string codec) => codec switch
+    // "pcm16" | "g711_ulaw" | "g711_alaw"
+    private static string NormalizeCodec(string? codec) => codec switch
     {
-        "g711_ulaw" or "g711_alaw" => 8000,
-        _ => 24000
+        "g711_ulaw" => "g711_ulaw",
+        "g711_alaw" => "g711_alaw",
+        _ => "pcm16"
     };
+
+    // Neutral codec → xAI wire value
+    private static string CodecToWire(string codec) => codec switch
+    {
+        "g711_ulaw" => "audio/pcmu",
+        "g711_alaw" => "audio/pcma",
+        _ => "audio/pcm"
+    };
+
+    private static int ResolveRate(string? configured, string codec)
+    {
+        // μ-law / A-law are fixed at 8 kHz regardless of configured rate.
+        if (codec is "g711_ulaw" or "g711_alaw") return 8000;
+        return int.TryParse(configured, out var rate) ? rate : 24000;
+    }
 
     private async Task SendToolResultAndContinueAsync(string callId, string result, CancellationToken ct)
     {
-        await SendEventAsync(new ClientEvent
+        await SendEventAsync(new GrokClientEvent
         {
             Type = EventTypes.ConversationItemCreate,
-            Item = new
-            {
-                type = "function_call_output",
-                call_id = callId,
-                output = result
-            }
+            Item = new { type = "function_call_output", call_id = callId, output = result }
         }, ct);
 
-        await SendEventAsync(new ClientEvent { Type = EventTypes.ResponseCreate }, ct);
+        await SendEventAsync(new GrokClientEvent { Type = EventTypes.ResponseCreate }, ct);
     }
 
-    private async Task SendEventAsync(ClientEvent evt, CancellationToken ct)
+    private async Task SendEventAsync(GrokClientEvent evt, CancellationToken ct)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(evt);
-
         await _sendLock.WaitAsync(ct);
-        try
-        {
-            await _ws.SendAsync(json, WebSocketMessageType.Text, true, ct);
-        }
-        finally
-        {
-            _sendLock.Release();
-        }
+        try { await _ws.SendAsync(json, WebSocketMessageType.Text, true, ct); }
+        finally { _sendLock.Release(); }
     }
 
     private async Task ReceiveLoopAsync(CancellationToken ct)
@@ -209,26 +215,21 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                 do
                 {
                     result = await _ws.ReceiveAsync(rentedBuffer, ct);
-
-                    if (result.MessageType == WebSocketMessageType.Close)
-                        return;
-
+                    if (result.MessageType == WebSocketMessageType.Close) return;
                     buffer.Write(rentedBuffer.AsSpan(0, result.Count));
                 }
                 while (!result.EndOfMessage);
 
-                var envelope = JsonSerializer.Deserialize<RealtimeEnvelope>(
-                    buffer.WrittenSpan);
-
+                var envelope = JsonSerializer.Deserialize<GrokEnvelope>(buffer.WrittenSpan);
                 if (envelope is null) continue;
 
                 await HandleEnvelopeAsync(envelope, ct);
             }
         }
-        catch (OperationCanceledException) { /* expected on dispose */ }
+        catch (OperationCanceledException) { }
         catch (WebSocketException ex)
         {
-            _logger.LogWarning(ex, "WebSocket connection lost for conversation {ConversationId}", _conversation.Id);
+            _logger.LogWarning(ex, "Grok WebSocket connection lost for conversation {ConversationId}", _conversation.Id);
         }
         finally
         {
@@ -236,7 +237,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         }
     }
 
-    private async Task HandleEnvelopeAsync(RealtimeEnvelope envelope, CancellationToken ct)
+    private async Task HandleEnvelopeAsync(GrokEnvelope envelope, CancellationToken ct)
     {
         if (envelope.Type == EventTypes.FunctionCallArgumentsDone)
         {
@@ -245,7 +246,6 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             var callId = envelope.CallId ?? "";
             var conversationId = _conversation.Id;
 
-            // Persist the tool call as an assistant message
             var toolCalls = JsonSerializer.Serialize(new[]
             {
                 new { id = callId, type = "function", function = new { name, arguments } }
@@ -259,14 +259,14 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                 Modality = MessageModality.Voice
             });
 
-            _ = Task.Run(async () =>
+            Task toolTask = null!;
+            toolTask = Task.Run(async () =>
             {
                 try
                 {
                     _logger.LogDebug("Executing voice tool {ToolName} for conversation {ConversationId}", name, conversationId);
                     var result = await _agentLogic.ExecuteToolAsync(conversationId, name, arguments, ct);
 
-                    // Persist tool result summary
                     _agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
@@ -284,7 +284,6 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                     _logger.LogError(ex, "Voice tool {ToolName} failed for conversation {ConversationId}", name, conversationId);
                     var errorResult = JsonSerializer.Serialize(new { error = ex.Message });
 
-                    // Persist error summary
                     _agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
@@ -297,14 +296,18 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
                     await SendToolResultAndContinueAsync(callId, errorResult, ct);
                 }
+                finally
+                {
+                    _toolTasks.TryRemove(toolTask, out _);
+                }
             }, ct);
+            _toolTasks.TryAdd(toolTask, 0);
             return;
         }
 
         var voiceEvent = MapEvent(envelope);
         if (voiceEvent is not null)
         {
-            // Persist completed transcripts as messages
             if (voiceEvent is TranscriptDone td)
             {
                 var role = td.Source == TranscriptSource.User ? "user" : "assistant";
@@ -322,7 +325,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         }
     }
 
-    private VoiceEvent? MapEvent(RealtimeEnvelope envelope) => envelope.Type switch
+    private VoiceEvent? MapEvent(GrokEnvelope envelope) => envelope.Type switch
     {
         EventTypes.SessionCreated => HandleSessionCreated(envelope),
         EventTypes.SpeechStarted => new SpeechStarted(),
@@ -337,16 +340,14 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         _ => null
     };
 
-    private VoiceEvent? HandleSessionCreated(RealtimeEnvelope envelope)
+    private VoiceEvent? HandleSessionCreated(GrokEnvelope envelope)
     {
         if (envelope.Session is { } session &&
             session.TryGetProperty("id", out var idProp))
         {
             SessionId = idProp.GetString() ?? "";
-            _logger.LogDebug("Session created with ID {SessionId} for conversation {ConversationId}",
+            _logger.LogDebug("Grok session created {SessionId} for conversation {ConversationId}",
                 SessionId, _conversation.Id);
-
-            // Update conversation with session state
             _conversation.VoiceSessionId = SessionId;
             _conversation.VoiceSessionOpen = true;
             _agentLogic.UpdateConversation(_conversation);
@@ -354,13 +355,10 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         return null;
     }
 
-    private static string ExtractErrorMessage(RealtimeEnvelope envelope)
+    private static string ExtractErrorMessage(GrokEnvelope envelope)
     {
-        if (envelope.Error is { } error &&
-            error.TryGetProperty("message", out var msgProp))
-        {
+        if (envelope.Error is { } error && error.TryGetProperty("message", out var msgProp))
             return msgProp.GetString() ?? "Unknown error";
-        }
         return "Unknown error";
     }
 }

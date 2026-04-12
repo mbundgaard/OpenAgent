@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getToken } from '../../../auth/token';
 import type { ConversationMessage } from '../../conversations/api';
 
-/** PCM16 mono at 24 kHz — matches the OpenAI Realtime API wire format. */
-const SAMPLE_RATE = 24000;
+/** Fallback sample rate if the server never sends session_ready (shouldn't happen). */
+const FALLBACK_SAMPLE_RATE = 24000;
 
 export type VoiceState = 'idle' | 'listening' | 'userSpeaking' | 'thinking' | 'assistantSpeaking';
 
@@ -46,6 +46,8 @@ export function useVoiceSession(conversationId: string, callbacks: Callbacks): {
 
   // -- Audio playback --
 
+  const outputRateRef = useRef<number>(FALLBACK_SAMPLE_RATE);
+
   const playNextChunk = useCallback(() => {
     const ctx = audioCtxRef.current;
     if (!ctx || playQueueRef.current.length === 0) {
@@ -61,7 +63,7 @@ export function useVoiceSession(conversationId: string, callbacks: Callbacks): {
       float32[i] = int16[i] / 32768;
     }
 
-    const buffer = ctx.createBuffer(1, float32.length, SAMPLE_RATE);
+    const buffer = ctx.createBuffer(1, float32.length, outputRateRef.current);
     buffer.copyToChannel(float32, 0);
 
     const source = ctx.createBufferSource();
@@ -116,9 +118,11 @@ export function useVoiceSession(conversationId: string, callbacks: Callbacks): {
 
   // -- Microphone capture --
 
-  const startMicrophone = useCallback(async () => {
-    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  const startMicrophone = useCallback(async (inputRate: number, outputRate: number) => {
+    // Use the output rate for the AudioContext so playback needs no resampling.
+    const ctx = new AudioContext({ sampleRate: outputRate });
     audioCtxRef.current = ctx;
+    outputRateRef.current = outputRate;
 
     // Load the PCM capture worklet inline via a blob URL
     const workletCode = `
@@ -145,7 +149,7 @@ export function useVoiceSession(conversationId: string, callbacks: Callbacks): {
     URL.revokeObjectURL(workletUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: SAMPLE_RATE, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      audio: { sampleRate: inputRate, channelCount: 1, echoCancellation: true, noiseSuppression: true },
     });
     streamRef.current = stream;
 
@@ -169,14 +173,6 @@ export function useVoiceSession(conversationId: string, callbacks: Callbacks): {
     lastSourceRef.current = null;
     accumulatedRef.current = '';
 
-    try {
-      await startMicrophone();
-    } catch {
-      setError('Microphone access denied');
-      setState('idle');
-      return;
-    }
-
     const token = getToken();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${window.location.host}/ws/conversations/${conversationId}/voice?api_key=${token}`;
@@ -184,9 +180,11 @@ export function useVoiceSession(conversationId: string, callbacks: Callbacks): {
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
-    ws.onopen = () => { setState('listening'); setError(null); };
+    let micStarted = false;
 
-    ws.onmessage = (event) => {
+    ws.onopen = () => { setError(null); };
+
+    ws.onmessage = async (event) => {
       // Binary frame = audio from assistant
       if (event.data instanceof ArrayBuffer) {
         setState('assistantSpeaking');
@@ -195,8 +193,33 @@ export function useVoiceSession(conversationId: string, callbacks: Callbacks): {
       }
 
       // Text frame = JSON control event
-      const data = JSON.parse(event.data as string) as { type: string; source?: 'user' | 'assistant'; text?: string; message?: string };
+      const data = JSON.parse(event.data as string) as {
+        type: string;
+        source?: 'user' | 'assistant';
+        text?: string;
+        message?: string;
+        input_sample_rate?: number;
+        output_sample_rate?: number;
+        input_codec?: string;
+        output_codec?: string;
+      };
       switch (data.type) {
+        case 'session_ready':
+          if (micStarted) break;
+          if (data.input_codec !== 'pcm16' || data.output_codec !== 'pcm16') {
+            setError(`Unsupported codec: ${data.input_codec}/${data.output_codec}. Only pcm16 is supported by this client.`);
+            ws.close();
+            return;
+          }
+          try {
+            await startMicrophone(data.input_sample_rate ?? FALLBACK_SAMPLE_RATE, data.output_sample_rate ?? FALLBACK_SAMPLE_RATE);
+            micStarted = true;
+            setState('listening');
+          } catch {
+            setError('Microphone access denied');
+            ws.close();
+          }
+          break;
         case 'speech_started':
           flushPlayback();
           setState('userSpeaking');

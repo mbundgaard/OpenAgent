@@ -24,6 +24,8 @@
     <ProjectReference Include="..\OpenAgent.ConversationStore.Sqlite\OpenAgent.ConversationStore.Sqlite.csproj" />
     <ProjectReference Include="..\OpenAgent.Contracts\OpenAgent.Contracts.csproj" />
     <ProjectReference Include="..\OpenAgent.LlmVoice.OpenAIAzure\OpenAgent.LlmVoice.OpenAIAzure.csproj" />
+    <ProjectReference Include="..\OpenAgent.LlmVoice.GrokRealtime\OpenAgent.LlmVoice.GrokRealtime.csproj" />
+    <ProjectReference Include="..\OpenAgent.LlmVoice.GeminiLive\OpenAgent.LlmVoice.GeminiLive.csproj" />
     <ProjectReference Include="..\OpenAgent.LlmText.OpenAIAzure\OpenAgent.LlmText.OpenAIAzure.csproj" />
     <ProjectReference Include="..\OpenAgent.LlmText.AnthropicSubscription\OpenAgent.LlmText.AnthropicSubscription.csproj" />
     <ProjectReference Include="..\OpenAgent.ConfigStore.File\OpenAgent.ConfigStore.File.csproj" />

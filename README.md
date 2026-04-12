@@ -83,6 +83,8 @@ WhatsApp      --+                                +--  (pluggable)
 - **Providers** call the LLM and drive the completion loop with a 10-round tool call safety cap
 - **Skills** are markdown instruction documents that teach the agent specialized workflows
 
+For a detailed technical reference covering all interfaces, data models, providers, endpoints, and design decisions, see [docs/architecture.md](docs/architecture.md).
+
 ## Tech Stack
 
 - .NET 10, ASP.NET Core Minimal APIs, System.Text.Json

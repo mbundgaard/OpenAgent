@@ -8,6 +8,8 @@ using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.LlmText.AnthropicSubscription;
 using OpenAgent.LlmText.OpenAIAzure;
+using OpenAgent.LlmVoice.GeminiLive;
+using OpenAgent.LlmVoice.GrokRealtime;
 using OpenAgent.LlmVoice.OpenAIAzure;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
@@ -93,9 +95,13 @@ builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddKeyedSingleton<ILlmTextProvider, AzureOpenAiTextProvider>(AzureOpenAiTextProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmTextProvider, AnthropicSubscriptionTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey);
+builder.Services.AddKeyedSingleton<ILlmVoiceProvider, GrokRealtimeVoiceProvider>(GrokRealtimeVoiceProvider.ProviderKey);
+builder.Services.AddKeyedSingleton<ILlmVoiceProvider, GeminiLiveVoiceProvider>(GeminiLiveVoiceProvider.ProviderKey);
 builder.Services.AddSingleton<Func<string, ILlmTextProvider>>(sp =>
     key => sp.GetRequiredKeyedService<ILlmTextProvider>(key));
-// Non-keyed forwarding — endpoints and VoiceSessionManager resolve the default provider
+builder.Services.AddSingleton<Func<string, ILlmVoiceProvider>>(sp =>
+    key => sp.GetRequiredKeyedService<ILlmVoiceProvider>(key));
+// Non-keyed forwarding — kept for backward compatibility with tests
 builder.Services.AddSingleton<ILlmTextProvider>(sp =>
     sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey));
 builder.Services.AddSingleton<ILlmVoiceProvider>(sp =>
@@ -113,6 +119,10 @@ builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey));
 builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
+builder.Services.AddSingleton<IConfigurable>(sp =>
+    sp.GetRequiredKeyedService<ILlmVoiceProvider>(GrokRealtimeVoiceProvider.ProviderKey));
+builder.Services.AddSingleton<IConfigurable>(sp =>
+    sp.GetRequiredKeyedService<ILlmVoiceProvider>(GeminiLiveVoiceProvider.ProviderKey));
 
 // Authentication — swap AddApiKeyAuth for AddEntraIdAuth when migrating to Entra ID
 builder.Services.AddApiKeyAuth(builder.Configuration);

@@ -9,8 +9,13 @@ export interface ConfigField {
   options?: string[];
 }
 
-/** List all configurable provider keys. */
-export async function listProviders(): Promise<string[]> {
+export interface ProviderInfo {
+  key: string;
+  capabilities: string[]; // e.g. ["text"], ["voice"], []
+}
+
+/** List all configurable providers with their capability tags. */
+export async function listProviders(): Promise<ProviderInfo[]> {
   const res = await apiFetch('/api/admin/providers');
   return res.json();
 }

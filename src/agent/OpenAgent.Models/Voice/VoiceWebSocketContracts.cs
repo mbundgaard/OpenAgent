@@ -31,3 +31,22 @@ public sealed class VoiceErrorEvent : VoiceWebSocketEvent
     [JsonPropertyName("message")]
     public required string Message { get; init; }
 }
+
+/// <summary>
+/// Outbound session-ready payload. Emitted once per session before audio flows.
+/// Client uses these values to configure AudioContext and microphone capture.
+/// </summary>
+public sealed class VoiceSessionReadyEvent : VoiceWebSocketEvent
+{
+    [JsonPropertyName("input_sample_rate")]
+    public required int InputSampleRate { get; init; }
+
+    [JsonPropertyName("output_sample_rate")]
+    public required int OutputSampleRate { get; init; }
+
+    [JsonPropertyName("input_codec")]
+    public required string InputCodec { get; init; }
+
+    [JsonPropertyName("output_codec")]
+    public required string OutputCodec { get; init; }
+}

@@ -25,8 +25,12 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll(typeof(ILlmVoiceProvider));
+                services.RemoveAll(typeof(Func<string, ILlmVoiceProvider>));
                 services.AddSingleton<FakeVoiceProvider>();
                 services.AddSingleton<ILlmVoiceProvider>(sp => sp.GetRequiredService<FakeVoiceProvider>());
+                // VoiceSessionManager resolves providers by key — return the fake for any key
+                services.AddSingleton<Func<string, ILlmVoiceProvider>>(sp =>
+                    _ => sp.GetRequiredService<FakeVoiceProvider>());
             });
         });
     }
