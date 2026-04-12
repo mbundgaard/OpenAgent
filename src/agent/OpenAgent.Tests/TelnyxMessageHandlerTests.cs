@@ -16,7 +16,6 @@ public class TelnyxMessageHandlerTests
             options: new TelnyxOptions { BaseUrl = "https://example.com", WebhookId = "abc" });
 
         var xml = await handler.HandleVoiceAsync(
-            connectionId: "conn-1",
             callSid: "call-123",
             from: "+4512345678",
             to: "+4598765432",
@@ -36,10 +35,9 @@ public class TelnyxMessageHandlerTests
             provider: fakeProvider);
 
         // Seed the conversation by calling voice first.
-        await handler.HandleVoiceAsync("conn-1", "call-123", "+4512345678", "+4598765432", default);
+        await handler.HandleVoiceAsync("call-123", "+4512345678", "+4598765432", default);
 
         var xml = await handler.HandleSpeechAsync(
-            connectionId: "conn-1",
             callSid: "call-123",
             from: "+4512345678",
             speechResult: "What is the answer?",
@@ -63,7 +61,7 @@ public class TelnyxMessageHandlerTests
         };
         var (handler, store, _) = BuildHandler(options);
 
-        var xml = await handler.HandleVoiceAsync("conn-1", "call-x", "+4512345678", "+4598765432", default);
+        var xml = await handler.HandleVoiceAsync("call-x", "+4512345678", "+4598765432", default);
 
         Assert.Contains("<Hangup />", xml);
         Assert.DoesNotContain("<Gather", xml);
@@ -81,7 +79,7 @@ public class TelnyxMessageHandlerTests
         };
         var (handler, store, _) = BuildHandler(options);
 
-        var xml = await handler.HandleVoiceAsync("conn-1", "call-x", "+4512345678", "+4598765432", default);
+        var xml = await handler.HandleVoiceAsync("call-x", "+4512345678", "+4598765432", default);
 
         Assert.Contains("<Gather", xml);
         Assert.NotNull(store.FindChannelConversation("telnyx", "conn-1", "+4512345678"));
@@ -95,9 +93,9 @@ public class TelnyxMessageHandlerTests
             new TelnyxOptions { BaseUrl = "https://example.com", WebhookId = "abc" },
             provider: fakeProvider);
 
-        await handler.HandleVoiceAsync("conn-1", "call-x", "+4512345678", "+4598765432", default);
+        await handler.HandleVoiceAsync("call-x", "+4512345678", "+4598765432", default);
 
-        var xml = await handler.HandleSpeechAsync("conn-1", "call-x", "+4512345678", speechResult: "", ct: default);
+        var xml = await handler.HandleSpeechAsync("call-x", "+4512345678", speechResult: "", ct: default);
 
         Assert.Contains("<Gather", xml);
         Assert.Null(fakeProvider.LastUserMessage); // provider was never invoked

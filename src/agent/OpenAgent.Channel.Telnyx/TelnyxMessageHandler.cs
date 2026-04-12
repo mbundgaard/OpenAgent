@@ -45,33 +45,32 @@ public sealed class TelnyxMessageHandler
     /// retrieves the conversation, and returns a TeXML greeting with a speech gather.
     /// </summary>
     public Task<string> HandleVoiceAsync(
-        string connectionId,
         string callSid,
         string from,
         string to,
         CancellationToken ct)
     {
         _logger.LogInformation("Telnyx [{ConnectionId}] inbound call {CallSid} from {From} to {To}",
-            connectionId, callSid, from, to);
+            _connectionId, callSid, from, to);
 
         // Reject caller if allowlist is non-empty and they are not on it
         if (!IsCallerAllowed(from))
         {
-            _logger.LogWarning("Telnyx [{ConnectionId}] rejecting caller {From} — not on allowlist", connectionId, from);
+            _logger.LogWarning("Telnyx [{ConnectionId}] rejecting caller {From} — not on allowlist", _connectionId, from);
             return Task.FromResult(TeXmlBuilder.Reject("Not authorised."));
         }
 
         // Find or create the conversation bound to this caller's E.164 number
         _store.FindOrCreateChannelConversation(
             channelType: ChannelType,
-            connectionId: connectionId,
+            connectionId: _connectionId,
             channelChatId: from,
             source: Source,
             type: ConversationType.Phone,
             provider: _agentConfig.TextProvider,
             model: _agentConfig.TextModel);
 
-        var actionUrl = BuildActionUrl(connectionId, "speech");
+        var actionUrl = BuildActionUrl("speech");
         return Task.FromResult(TeXmlBuilder.GreetAndGather(
             greeting: "Hi, it's OpenAgent. How can I help you today?",
             gatherActionUrl: actionUrl));
@@ -83,26 +82,25 @@ public sealed class TelnyxMessageHandler
     /// with the next gather. An empty SpeechResult reprompts without calling the provider.
     /// </summary>
     public async Task<string> HandleSpeechAsync(
-        string connectionId,
         string callSid,
         string from,
         string speechResult,
         CancellationToken ct)
     {
-        var conversation = _store.FindChannelConversation(ChannelType, connectionId, from);
+        var conversation = _store.FindChannelConversation(ChannelType, _connectionId, from);
         if (conversation is null)
         {
-            _logger.LogWarning("Telnyx [{ConnectionId}] speech webhook for unknown conversation {From}", connectionId, from);
+            _logger.LogWarning("Telnyx [{ConnectionId}] speech webhook for unknown conversation {From}", _connectionId, from);
             return TeXmlBuilder.Farewell("Sorry, something went wrong. Goodbye.");
         }
 
         // Empty speech — Telnyx did not detect any input; reprompt without touching the provider
         if (string.IsNullOrWhiteSpace(speechResult))
         {
-            _logger.LogInformation("Telnyx [{ConnectionId}] empty speech result — reprompting", connectionId);
+            _logger.LogInformation("Telnyx [{ConnectionId}] empty speech result — reprompting", _connectionId);
             return TeXmlBuilder.RespondAndGather(
                 reply: "I didn't catch that — could you say it again?",
-                gatherActionUrl: BuildActionUrl(connectionId, "speech"));
+                gatherActionUrl: BuildActionUrl("speech"));
         }
 
         // Build user message and call the provider
@@ -114,30 +112,38 @@ public sealed class TelnyxMessageHandler
             Content = speechResult
         };
 
-        var provider = _textProviderResolver(conversation.Provider);
-        var replyBuilder = new StringBuilder();
-        await foreach (var evt in provider.CompleteAsync(conversation, userMessage, ct))
+        var reply = new StringBuilder();
+        try
         {
-            if (evt is TextDelta delta)
-                replyBuilder.Append(delta.Content);
+            var provider = _textProviderResolver(conversation.Provider);
+            await foreach (var evt in provider.CompleteAsync(conversation, userMessage, ct))
+            {
+                if (evt is TextDelta delta)
+                    reply.Append(delta.Content);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Telnyx [{ConnectionId}] text provider threw during call", _connectionId);
+            return TeXmlBuilder.Farewell("Sorry, I'm having trouble connecting. Please try again later. Goodbye.");
         }
 
-        var reply = replyBuilder.ToString().Trim();
-        if (reply.Length == 0)
+        var replyText = reply.ToString().Trim();
+        if (replyText.Length == 0)
         {
-            _logger.LogWarning("Telnyx [{ConnectionId}] provider returned empty reply", connectionId);
+            _logger.LogWarning("Telnyx [{ConnectionId}] provider returned empty reply", _connectionId);
             return TeXmlBuilder.Farewell("Sorry, I'm having trouble. Goodbye.");
         }
 
-        return TeXmlBuilder.RespondAndGather(reply, BuildActionUrl(connectionId, "speech"));
+        return TeXmlBuilder.RespondAndGather(replyText, BuildActionUrl("speech"));
     }
 
     /// <summary>
     /// Handles a call-ended webhook. Logs the hangup; no TeXML response is needed.
     /// </summary>
-    public Task HandleHangupAsync(string connectionId, string callSid, string from, CancellationToken ct)
+    public Task HandleHangupAsync(string callSid, string from, CancellationToken ct)
     {
-        _logger.LogInformation("Telnyx [{ConnectionId}] call {CallSid} ended (from {From})", connectionId, callSid, from);
+        _logger.LogInformation("Telnyx [{ConnectionId}] call {CallSid} ended (from {From})", _connectionId, callSid, from);
         return Task.CompletedTask;
     }
 
@@ -149,7 +155,7 @@ public sealed class TelnyxMessageHandler
     }
 
     // Builds the Telnyx callback action URL for the given suffix (e.g. "speech").
-    private string BuildActionUrl(string connectionId, string suffix)
+    private string BuildActionUrl(string suffix)
     {
         var baseUrl = (_options.BaseUrl ?? "").TrimEnd('/');
         var webhookId = _options.WebhookId ?? "_";
