@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listProviders } from './api';
+import { listProviders, type ProviderInfo } from './api';
 import { AgentConfigForm } from './AgentConfigForm';
 import { ConnectionsForm } from './ConnectionsForm';
 import { ProviderForm } from './ProviderForm';
@@ -16,7 +16,7 @@ const sidebarItems: { key: Section; label: string }[] = [
 ];
 
 export function SettingsApp() {
-  const [providers, setProviders] = useState<string[]>([]);
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Section>('agent');
 
@@ -29,7 +29,7 @@ export function SettingsApp() {
   };
 
   // Filter out "agent" from provider list — it has its own tab
-  const providerKeys = providers.filter(k => k !== 'agent');
+  const providerKeys = providers.map(p => p.key).filter(k => k !== 'agent');
 
   return (
     <div className={styles.settings}>

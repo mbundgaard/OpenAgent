@@ -46,7 +46,8 @@ export function ConversationsApp() {
 
   // Load provider models for editing
   useEffect(() => {
-    listProviders().then(async (keys) => {
+    listProviders().then(async (infos) => {
+      const keys = infos.map(p => p.key);
       setProviders(keys.filter(k => k !== 'agent'));
       const modelsMap: Record<string, string[]> = {};
       for (const pk of keys) {

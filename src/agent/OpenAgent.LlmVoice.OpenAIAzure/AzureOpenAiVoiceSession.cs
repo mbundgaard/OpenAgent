@@ -103,6 +103,13 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             catch { /* best-effort close */ }
         }
 
+        if (_conversation.VoiceSessionOpen)
+        {
+            _conversation.VoiceSessionOpen = false;
+            try { _agentLogic.UpdateConversation(_conversation); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to clear VoiceSessionOpen for {ConversationId}", _conversation.Id); }
+        }
+
         _ws.Dispose();
         _sendLock.Dispose();
         _receiveCts.Dispose();
@@ -120,13 +127,15 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
+        var codec = string.IsNullOrWhiteSpace(_config.Codec) ? "pcm16" : _config.Codec!;
+
         var sessionConfig = new RealtimeSessionConfig
         {
             Modalities = ["audio", "text"],
             Voice = _config.Voice ?? "alloy",
             Instructions = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type, _conversation.ActiveSkills),
-            InputAudioFormat = "pcm16",
-            OutputAudioFormat = "pcm16",
+            InputAudioFormat = codec,
+            OutputAudioFormat = codec,
             InputAudioTranscription = new InputAudioTranscriptionConfig { Model = "whisper-1" },
             TurnDetection = new TurnDetectionConfig { Type = "server_vad" },
             Tools = tools,
@@ -138,7 +147,21 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             Type = EventTypes.SessionUpdate,
             Session = sessionConfig
         }, ct);
+
+        // Advertise negotiated audio format to the client. OpenAI Realtime has fixed rates per codec.
+        var rate = RateForCodec(codec);
+        await _channel.Writer.WriteAsync(new SessionReady(
+            InputSampleRate: rate,
+            OutputSampleRate: rate,
+            InputCodec: codec,
+            OutputCodec: codec), ct);
     }
+
+    private static int RateForCodec(string codec) => codec switch
+    {
+        "g711_ulaw" or "g711_alaw" => 8000,
+        _ => 24000
+    };
 
     private async Task SendToolResultAndContinueAsync(string callId, string result, CancellationToken ct)
     {

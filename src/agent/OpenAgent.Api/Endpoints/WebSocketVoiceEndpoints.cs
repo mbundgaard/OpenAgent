@@ -125,6 +125,17 @@ public static class WebSocketVoiceEndpoints
 
             switch (evt)
             {
+                case SessionReady ready:
+                    await SendJsonAsync(ws, new VoiceSessionReadyEvent
+                    {
+                        Type = "session_ready",
+                        InputSampleRate = ready.InputSampleRate,
+                        OutputSampleRate = ready.OutputSampleRate,
+                        InputCodec = ready.InputCodec,
+                        OutputCodec = ready.OutputCodec
+                    }, ct);
+                    break;
+
                 case AudioDelta audio:
                     await ws.SendAsync(audio.Audio, WebSocketMessageType.Binary, true, ct);
                     break;

@@ -19,7 +19,11 @@ public static class AdminEndpoints
 
         group.MapGet("/", (IEnumerable<IConfigurable> configurables) =>
         {
-            return Results.Ok(configurables.Select(c => c.Key));
+            return Results.Ok(configurables.Select(c => new
+            {
+                key = c.Key,
+                capabilities = InferCapabilities(c)
+            }));
         });
 
         group.MapGet("/{key}/config", (string key, IEnumerable<IConfigurable> configurables) =>
@@ -107,5 +111,14 @@ public static class AdminEndpoints
 
             return Results.NoContent();
         });
+    }
+
+    // Infers capability tags from the runtime type. Keeps the IConfigurable interface flat.
+    private static string[] InferCapabilities(IConfigurable configurable)
+    {
+        var caps = new List<string>();
+        if (configurable is ILlmTextProvider) caps.Add("text");
+        if (configurable is ILlmVoiceProvider) caps.Add("voice");
+        return caps.ToArray();
     }
 }

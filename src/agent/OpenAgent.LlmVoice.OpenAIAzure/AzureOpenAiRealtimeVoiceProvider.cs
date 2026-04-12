@@ -26,7 +26,9 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
         new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true },
         new() { Key = "apiVersion", Label = "API Version", Type = "String", DefaultValue = "2025-04-01-preview" },
         new() { Key = "voice", Label = "Voice", Type = "Enum", DefaultValue = "alloy",
-            Options = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"] }
+            Options = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"] },
+        new() { Key = "codec", Label = "Codec", Type = "Enum", DefaultValue = "pcm16",
+            Options = ["pcm16", "g711_ulaw", "g711_alaw"] }
     ];
 
     public IReadOnlyList<string> Models => _config?.Models ?? [];

@@ -73,13 +73,15 @@ Send a `session.update` event immediately after connecting (same as Azure OpenAI
 
 ### Voice Options
 
-|Voice |Character                      |
-|------|-------------------------------|
-|`eve` |Default — balanced, general use|
-|`aria`|Professional, business-oriented|
-|`kai` |Versatile                      |
-|`nova`|Engaging, dynamic              |
-|`rex` |Decisive, instructional        |
+|Voice |Character                                              |
+|------|-------------------------------------------------------|
+|`eve` |Energetic female — default                             |
+|`ara` |Warm female                                            |
+|`rex` |Professional and articulate, male confident (business) |
+|`sal` |Neutral                                                |
+|`leo` |Authoritative male                                     |
+
+Authoritative list: `GET /v1/tts/voices`.
 
 ### Audio Streaming
 

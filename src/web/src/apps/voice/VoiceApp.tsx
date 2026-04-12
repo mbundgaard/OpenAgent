@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getToken } from '../../auth/token';
 import styles from './VoiceApp.module.css';
 
-/** PCM16 mono at 24 kHz — matches the OpenAI Realtime API wire format. */
-const SAMPLE_RATE = 24000;
+/** Fallback sample rate if the server never sends session_ready. */
+const FALLBACK_SAMPLE_RATE = 24000;
 
 type VoiceState = 'idle' | 'listening' | 'userSpeaking' | 'thinking' | 'assistantSpeaking';
 
@@ -30,6 +30,7 @@ export function VoiceApp() {
   // Playback queue — incoming PCM chunks played sequentially
   const playQueueRef = useRef<ArrayBuffer[]>([]);
   const playingRef = useRef(false);
+  const outputRateRef = useRef<number>(FALLBACK_SAMPLE_RATE);
 
   // -- Audio playback ----------------------------------------------------------
 
@@ -48,7 +49,7 @@ export function VoiceApp() {
       float32[i] = int16[i] / 32768;
     }
 
-    const buffer = ctx.createBuffer(1, float32.length, SAMPLE_RATE);
+    const buffer = ctx.createBuffer(1, float32.length, outputRateRef.current);
     buffer.copyToChannel(float32, 0);
 
     const source = ctx.createBufferSource();
@@ -83,13 +84,14 @@ export function VoiceApp() {
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
+    let micStarted = false;
+
     ws.onopen = () => {
-      console.log('[Voice] WebSocket open');
-      setState('listening');
+      console.log('[Voice] WebSocket open — waiting for session_ready');
       setError(null);
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       // Binary frame = audio from assistant
       if (event.data instanceof ArrayBuffer) {
         setState('assistantSpeaking');
@@ -102,6 +104,25 @@ export function VoiceApp() {
       console.log('[Voice] received event:', data.type, data);
 
       switch (data.type) {
+        case 'session_ready':
+          if (micStarted) break;
+          if (data.input_codec !== 'pcm16' || data.output_codec !== 'pcm16') {
+            setError(`Unsupported codec: ${data.input_codec}/${data.output_codec}. Only pcm16 is supported by this client.`);
+            ws.close();
+            return;
+          }
+          try {
+            console.log('[Voice] starting microphone at', data.input_sample_rate, '→', data.output_sample_rate, 'Hz');
+            await startMicrophone(data.input_sample_rate ?? FALLBACK_SAMPLE_RATE, data.output_sample_rate ?? FALLBACK_SAMPLE_RATE);
+            micStarted = true;
+            setState('listening');
+          } catch (err) {
+            console.error('[Voice] mic init failed:', err);
+            setError('Microphone access denied');
+            ws.close();
+          }
+          break;
+
         case 'speech_started':
           flushPlayback();
           setState('userSpeaking');
@@ -148,13 +169,17 @@ export function VoiceApp() {
       setError('Connection failed');
       setState('idle');
     };
+    // startMicrophone intentionally omitted — it's a stable useCallback([]) reference and
+    // adding it to deps causes a TDZ error because it's declared below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enqueueAudio, flushPlayback]);
 
   // -- Microphone capture ------------------------------------------------------
 
-  const startMicrophone = useCallback(async () => {
-    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  const startMicrophone = useCallback(async (inputRate: number, outputRate: number) => {
+    const ctx = new AudioContext({ sampleRate: outputRate });
     audioCtxRef.current = ctx;
+    outputRateRef.current = outputRate;
 
     // Load the PCM capture worklet inline via a blob URL
     const workletCode = `
@@ -181,7 +206,7 @@ export function VoiceApp() {
     URL.revokeObjectURL(workletUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: SAMPLE_RATE, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      audio: { sampleRate: inputRate, channelCount: 1, echoCancellation: true, noiseSuppression: true },
     });
     streamRef.current = stream;
 
@@ -202,24 +227,14 @@ export function VoiceApp() {
 
   // -- Start / Stop ------------------------------------------------------------
 
-  const handleStart = useCallback(async () => {
-    console.log('[Voice] handleStart called');
+  const handleStart = useCallback(() => {
+    console.log('[Voice] handleStart called — opening WebSocket, mic starts on session_ready');
     setError(null);
     setUserTranscript('');
     setAssistantTranscript('');
     conversationIdRef.current = crypto.randomUUID();
-
-    try {
-      console.log('[Voice] starting microphone...');
-      await startMicrophone();
-      console.log('[Voice] microphone started, connecting WebSocket...');
-      connectWebSocket();
-    } catch (err) {
-      console.error('[Voice] handleStart error:', err);
-      setError('Microphone access denied');
-      setState('idle');
-    }
-  }, [startMicrophone, connectWebSocket]);
+    connectWebSocket();
+  }, [connectWebSocket]);
 
   const handleStop = useCallback(() => {
     // Close WebSocket

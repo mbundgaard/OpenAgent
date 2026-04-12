@@ -6,6 +6,17 @@ namespace OpenAgent.Models.Voice;
 /// </summary>
 public abstract record VoiceEvent;
 
+/// <summary>
+/// Emitted once per session, before audio flows. Carries the negotiated audio format so
+/// the client can configure its AudioContext / microphone to match the provider.
+/// Codec values: "pcm16", "g711_ulaw", "g711_alaw".
+/// </summary>
+public sealed record SessionReady(
+    int InputSampleRate,
+    int OutputSampleRate,
+    string InputCodec,
+    string OutputCodec) : VoiceEvent;
+
 public sealed record SpeechStarted : VoiceEvent;
 public sealed record SpeechStopped : VoiceEvent;
 public sealed record AudioDelta(ReadOnlyMemory<byte> Audio) : VoiceEvent;

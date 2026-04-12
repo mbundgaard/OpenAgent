@@ -72,10 +72,6 @@ internal sealed class GrokClientEvent
 /// </summary>
 internal sealed class GrokSessionConfig
 {
-    [JsonPropertyName("model")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Model { get; set; }
-
     [JsonPropertyName("modalities")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? Modalities { get; set; }
@@ -88,13 +84,9 @@ internal sealed class GrokSessionConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Instructions { get; set; }
 
-    [JsonPropertyName("input_audio_format")]
+    [JsonPropertyName("audio")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? InputAudioFormat { get; set; }
-
-    [JsonPropertyName("output_audio_format")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? OutputAudioFormat { get; set; }
+    public GrokAudioConfig? Audio { get; set; }
 
     [JsonPropertyName("input_audio_transcription")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -117,6 +109,37 @@ internal sealed class GrokTranscriptionConfig
 {
     [JsonPropertyName("model")]
     public string? Model { get; set; }
+}
+
+/// <summary>
+/// Nested audio configuration for Grok session.update. xAI uses a nested
+/// shape (audio.input.format / audio.output.format) rather than the flat
+/// input_audio_format / output_audio_format fields from the pre-GA OpenAI Realtime schema.
+/// </summary>
+internal sealed class GrokAudioConfig
+{
+    [JsonPropertyName("input")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GrokAudioDirection? Input { get; set; }
+
+    [JsonPropertyName("output")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GrokAudioDirection? Output { get; set; }
+}
+
+internal sealed class GrokAudioDirection
+{
+    [JsonPropertyName("format")]
+    public GrokAudioFormat Format { get; set; } = new();
+}
+
+internal sealed class GrokAudioFormat
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "audio/pcm";
+
+    [JsonPropertyName("rate")]
+    public int Rate { get; set; } = 24000;
 }
 
 internal sealed class GrokTurnDetectionConfig
