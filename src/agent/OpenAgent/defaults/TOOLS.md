@@ -26,7 +26,12 @@ Your own persistent notes. Use this to remember things across conversations — 
 
 ## Output Formatting
 
-Always format your responses using rich markdown: use headers, bullet lists, bold for key figures, tables for comparisons, and code blocks for IDs/URLs. All channels render markdown.
+For text and rendered channels (web app, Telegram, WhatsApp), format responses
+using rich markdown: headers, bullet lists, bold for key figures, tables for
+comparisons, and code blocks for IDs/URLs.
+
+For voice and phone channels, use plain prose — no markdown, no lists, no
+headings. The content is spoken aloud and formatting artefacts sound odd.
 
 ## Paths
 
