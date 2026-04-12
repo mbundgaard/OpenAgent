@@ -101,6 +101,8 @@ public class TelnyxChannelProviderFactoryTests
         var publicKey = factory.ConfigFields.Single(f => f.Key == "webhookPublicKey");
         Assert.Equal("Secret", publicKey.Type);
         Assert.False(publicKey.Required);
+
+        Assert.DoesNotContain("webhookId", factory.ConfigFields.Select(f => f.Key).ToArray());
     }
 
     [Fact]
@@ -149,5 +151,8 @@ public class TelnyxChannelProviderFactoryTests
         Assert.Null(provider.Options.PhoneNumber);
         Assert.Null(provider.Options.WebhookSecret);
         Assert.Empty(provider.Options.AllowedNumbers);
+        Assert.Null(provider.Options.BaseUrl);
+        Assert.Null(provider.Options.WebhookPublicKey);
+        Assert.Null(provider.Options.WebhookId);
     }
 }
