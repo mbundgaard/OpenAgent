@@ -12,39 +12,54 @@ interface Props {
 
 export function MessageList({ messages, toolActivity }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const lastUserRef = useRef<HTMLDivElement>(null);
+  const lastMsgRef = useRef<HTMLDivElement>(null);
   const prevLengthRef = useRef(0);
 
-  // Filter out system messages and tool/tool_call messages — chat app shows only user/assistant content
-  const visible = messages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content);
+  // Filter out system/tool messages and scheduled task injected prompts — chat shows only real user/assistant content
+  const visible = messages.filter(m =>
+    (m.role === 'user' || m.role === 'assistant') &&
+    m.content &&
+    !m.content.startsWith('[Scheduled task: '));
+
+  // Find the index of the last user message for the scroll ref
+  let lastUserIndex = -1;
+  for (let i = visible.length - 1; i >= 0; i--) {
+    if (visible[i].role === 'user') { lastUserIndex = i; break; }
+  }
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
     if (visible.length !== prevLengthRef.current) {
-      // New message added — find the last user message and scroll it to the top
+      const wasEmpty = prevLengthRef.current === 0;
       prevLengthRef.current = visible.length;
-      const userMessages = container.querySelectorAll(`.${styles.user}`);
-      const lastUser = userMessages[userMessages.length - 1];
-      if (lastUser) {
-        lastUser.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        endRef.current?.scrollIntoView({ behavior: 'smooth' });
+
+      if (wasEmpty && lastMsgRef.current && containerRef.current) {
+        // Initial load — scroll last message to bottom of container
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const elRect = lastMsgRef.current.getBoundingClientRect();
+        containerRef.current.scrollTop += elRect.bottom - containerRect.bottom;
+      } else if (!wasEmpty) {
+        const lastMsg = visible[visible.length - 1];
+        if (lastMsg?.role === 'user' && lastUserRef.current && containerRef.current) {
+          // User sent a message — scroll it to the top
+          const containerRect = containerRef.current.getBoundingClientRect();
+          const elRect = lastUserRef.current.getBoundingClientRect();
+          containerRef.current.scrollTop += elRect.top - containerRect.top;
+        }
       }
-    } else {
-      // Content updated (streaming delta) — scroll to bottom to follow the response
-      endRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [visible.length, messages]);
+  }, [visible.length]);
 
   return (
     <div className={styles.messages} ref={containerRef}>
       {visible.length === 0 && (
         <div className={styles.messagesEmpty}>Start a conversation...</div>
       )}
-      {visible.map(msg => (
-        <div key={msg.id} className={`${styles.message} ${styles[msg.role] ?? ''}`}>
+      {visible.map((msg, i) => (
+        <div key={msg.id} ref={el => {
+          if (i === lastUserIndex) lastUserRef.current = el;
+          if (i === visible.length - 1) lastMsgRef.current = el;
+        }} className={`${styles.message} ${styles[msg.role] ?? ''}`}>
           {msg.role === 'user' ? (
             <div className={styles.userBubble}>{msg.content}</div>
           ) : (
@@ -68,7 +83,7 @@ export function MessageList({ messages, toolActivity }: Props) {
           ))}
         </div>
       )}
-      <div ref={endRef} />
+      <div className={styles.messagesSpacer} />
     </div>
   );
 }

@@ -37,6 +37,12 @@ export interface ConversationMessage {
   elapsed_ms: number | null;
 }
 
+export async function createConversation(): Promise<string> {
+  const res = await apiFetch('/api/conversations', { method: 'POST' });
+  const data: { id: string } = await res.json();
+  return data.id;
+}
+
 export async function listConversations(): Promise<ConversationSummary[]> {
   const res = await apiFetch('/api/conversations');
   return res.json();

@@ -21,7 +21,7 @@ export function useConversation(conversationId: string): {
     setError(null);
     setMessages([]);
 
-    apiFetch(`/api/conversations/${conversationId}/messages`)
+    apiFetch(`/api/conversations/${conversationId}/messages?tail=20`)
       .then(async res => {
         if (cancelled) return;
         if (res.status === 404) {

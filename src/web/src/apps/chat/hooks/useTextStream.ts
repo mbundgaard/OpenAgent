@@ -22,13 +22,17 @@ export interface ToolActivity {
 export function useTextStream(conversationId: string, callbacks: Callbacks): {
   send: (content: string) => void;
   streaming: boolean;
+  connected: boolean;
   toolActivity: ToolActivity[];
 } {
   const [streaming, setStreaming] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const streamContentRef = useRef('');
   const callbacksRef = useRef(callbacks);
+  // Queue a message to send once the WebSocket opens
+  const pendingSendRef = useRef<string | null>(null);
 
   // Keep latest callbacks accessible without re-opening the WS
   callbacksRef.current = callbacks;
@@ -40,6 +44,16 @@ export function useTextStream(conversationId: string, callbacks: Callbacks): {
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
+
+    ws.onopen = () => {
+      setConnected(true);
+      // Flush any message queued while the WS was still connecting
+      const pending = pendingSendRef.current;
+      if (pending) {
+        pendingSendRef.current = null;
+        ws.send(JSON.stringify({ content: pending }));
+      }
+    };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -82,17 +96,18 @@ export function useTextStream(conversationId: string, callbacks: Callbacks): {
 
     ws.onclose = () => {
       setStreaming(false);
+      setConnected(false);
     };
 
-    return () => { ws.close(); wsRef.current = null; };
+    return () => { ws.close(); wsRef.current = null; setConnected(false); };
   }, [conversationId]);
 
   const send = useCallback((content: string) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
     const trimmed = content.trim();
     if (!trimmed) return;
+
+    const ws = wsRef.current;
+    if (!ws) return;
 
     // Optimistic user message
     callbacksRef.current.onUserMessage({
@@ -127,8 +142,14 @@ export function useTextStream(conversationId: string, callbacks: Callbacks): {
     setStreaming(true);
     setToolActivity([]);
     streamContentRef.current = '';
-    ws.send(JSON.stringify({ content: trimmed }));
+
+    // If the WebSocket is still connecting, queue the message for onopen
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ content: trimmed }));
+    } else if (ws.readyState === WebSocket.CONNECTING) {
+      pendingSendRef.current = trimmed;
+    }
   }, [conversationId]);
 
-  return { send, streaming, toolActivity };
+  return { send, streaming, connected, toolActivity };
 }

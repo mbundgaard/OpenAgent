@@ -19,6 +19,7 @@ using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
 using OpenAgent.ScheduledTasks;
 using OpenAgent.Skills;
+using OpenAgent.Tools.ModelManagement;
 using OpenAgent.Tools.Shell;
 using OpenAgent.Tools.WebFetch;
 using Serilog;
@@ -71,6 +72,14 @@ builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
+builder.Services.AddSingleton<IToolHandler>(sp =>
+    new ModelToolHandler(
+        sp.GetRequiredService<IConversationStore>(),
+        () => new ILlmTextProvider[]
+        {
+            sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey),
+            sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey)
+        }));
 
 builder.Services.AddScheduledTasks(environment.DataPath);
 
@@ -178,6 +187,7 @@ app.MapLogEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
+app.MapToolEndpoints();
 
 // SPA fallback — serve index.html for unmatched routes (client-side routing)
 app.MapFallbackToFile("index.html");

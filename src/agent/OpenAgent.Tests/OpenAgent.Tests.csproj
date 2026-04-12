@@ -24,6 +24,7 @@
     <ProjectReference Include="..\OpenAgent.Tools.Expand\OpenAgent.Tools.Expand.csproj" />
     <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
     <ProjectReference Include="..\OpenAgent.ScheduledTasks\OpenAgent.ScheduledTasks.csproj" />
+    <ProjectReference Include="..\OpenAgent.Tools.ModelManagement\OpenAgent.Tools.ModelManagement.csproj" />
   </ItemGroup>
 
 </Project>

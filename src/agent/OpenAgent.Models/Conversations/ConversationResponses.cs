@@ -91,6 +91,18 @@ public sealed class ConversationDetailResponse
     [JsonPropertyName("active_skills")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? ActiveSkills { get; init; }
+
+    [JsonPropertyName("channel_type")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChannelType { get; init; }
+
+    [JsonPropertyName("connection_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ConnectionId { get; init; }
+
+    [JsonPropertyName("channel_chat_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChannelChatId { get; init; }
 }
 
 /// <summary>
@@ -106,4 +118,7 @@ public sealed class UpdateConversationRequest
 
     [JsonPropertyName("model")]
     public string? Model { get; init; }
+
+    [JsonPropertyName("channel_chat_id")]
+    public string? ChannelChatId { get; init; }
 }

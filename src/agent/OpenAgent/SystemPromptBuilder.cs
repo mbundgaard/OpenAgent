@@ -131,11 +131,13 @@ internal sealed class SystemPromptBuilder
             }
         }
 
-        // Inject current datetime so the agent always knows the time without shell calls
-        var tz = TimeZoneInfo.Local;
-        var now = DateTimeOffset.Now;
+        // Inject current datetime in the agent's configured timezone (Europe/Copenhagen)
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("Europe/Copenhagen");
+        var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz);
         var utcLabel = now.Offset == TimeSpan.Zero ? "UTC" : $"UTC{now.Offset.Hours:+0;-0}";
-        sections.Add($"Current time: {now:yyyy-MM-ddTHH:mm} {tz.Id} ({utcLabel})");
+        var weekNumber = System.Globalization.ISOWeek.GetWeekOfYear(now.DateTime);
+        var weekday = now.DateTime.ToString("dddd", System.Globalization.CultureInfo.InvariantCulture);
+        sections.Add($"Current time: {weekday} {now:yyyy-MM-ddTHH:mm} Europe/Copenhagen ({utcLabel}), week {weekNumber}");
 
         return string.Join("\n\n", sections);
     }

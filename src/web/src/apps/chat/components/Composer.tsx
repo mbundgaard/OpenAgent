@@ -23,7 +23,11 @@ export function Composer({ voiceState, textStreaming, voiceError, onSendText, on
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Re-focus input when streaming ends or voice stops
+  // Focus on mount (conversation selected) and when streaming ends or voice stops
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     if (!textStreaming && voiceState === 'idle') {
       inputRef.current?.focus();

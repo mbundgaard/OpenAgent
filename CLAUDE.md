@@ -6,6 +6,10 @@ Multi-channel AI agent platform. Connects LLM providers (text, voice) to inbound
 
 https://github.com/users/mbundgaard/projects/4 — managed via `gh project` and `gh issue` CLI commands. See [docs/project-api.md](docs/project-api.md) for API reference.
 
+Columns: Ideas → Backlog → Roadmap → In Progress → Done. Items within each column are prioritized top-to-bottom.
+
+Labels: `security`, `agent`, `tools`, `skills`, `channels`, `infrastructure`, `ui`, `llm` + `size:S`, `size:M`, `size:L`. All issues should have at least one domain label and a size label.
+
 ## Tech Stack
 
 - .NET 10, ASP.NET Core Minimal APIs, System.Text.Json
@@ -101,7 +105,7 @@ Endpoints validate the request and forward to the provider. No business logic in
 
 ### Endpoint organization
 All endpoints live in `OpenAgent.Api/Endpoints/`. They are ASP.NET Core extension methods on `WebApplication`. Grouped by transport and domain:
-- REST endpoints: `ConversationEndpoints`, `ChatEndpoints`, `ConnectionEndpoints`, `ScheduledTaskEndpoints`, `LogEndpoints`, `FileExplorerEndpoints`
+- REST endpoints: `ConversationEndpoints`, `ChatEndpoints`, `ConnectionEndpoints`, `ScheduledTaskEndpoints`, `LogEndpoints`, `FileExplorerEndpoints`, `ToolEndpoints`
 - WebSocket endpoints: `WebSocketVoiceEndpoints`, `WebSocketTextEndpoints`
 - Channel endpoints: `TelegramWebhookEndpoints`, `WhatsAppEndpoints` (QR pairing)
 
@@ -131,6 +135,13 @@ All endpoints require `X-Api-Key` header except `/health`.
 | `DELETE` | `/api/scheduled-tasks/{taskId}` | Delete task |
 | `POST` | `/api/scheduled-tasks/{taskId}/run` | Execute immediately |
 | `POST` | `/api/scheduled-tasks/{taskId}/trigger` | Trigger with optional webhook context body |
+
+#### Tools
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/tools` | List all tools with definitions (name, description, parameters schema) |
+| `GET` | `/api/tools/{toolName}` | Get single tool definition |
+| `POST` | `/api/tools/{toolName}/execute` | Execute a tool directly, returns result + duration |
 
 #### Logs
 | Method | Route | Description |
@@ -222,6 +233,7 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 - Data directory bootstrapped on first startup by `DataDirectoryBootstrap.Run()` — creates required folders (`projects/`, `repos/`, `memory/`, `config/`, `connections/`) and extracts embedded default personality files (AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md, MEMORY.md, BOOTSTRAP.md) if missing. Also writes empty `config/agent.json` and `config/connections.json`. Never overwrites existing files.
 - BOOTSTRAP.md is a first-run conversation ritual — guides the agent through identity discovery with the user, then self-deletes. AGENTS.md checks for its presence on session startup.
 - System prompt composed from markdown files in dataPath: AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md — loaded once at startup, filtered by ConversationType
+- System prompt includes current time in Europe/Copenhagen timezone with weekday and ISO week number (e.g. `Saturday 2026-04-11T17:10 Europe/Copenhagen (UTC+2), week 15`). Hardcoded timezone — does not rely on OS locale.
 - BuildChatMessages validates tool call rounds — skips orphaned tool calls to avoid API 400 errors
 - WhatsApp uses Baileys (Node.js) as a managed child process — .NET spawns `node baileys-bridge.js`, communicates via stdin/stdout JSON lines. No sidecar container needed.
 - WhatsApp auth state (Baileys creds) stored at `{dataPath}/connections/whatsApp/{connectionId}/`
@@ -242,6 +254,21 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 ## Memory
 
 Session-to-session notes. Save memories here in CLAUDE.md — do NOT create separate memory files. Update this section as decisions are made.
+
+### WebFetch SSRF Protection (Issue #7 — Closed)
+- IPv6: allows public addresses, blocks loopback (::1), link-local (fe80::/10), ULA (fc00::/7)
+- IPv4: blocks RFC 1918, loopback, link-local, CGN (100.64.0.0/10), benchmark (198.18.0.0/15)
+- HttpClient timeout: 30s (was default 100s)
+- DNS rebinding (TOCTOU): accepted risk — would require `ConnectCallback` rewrite, low value for auth-gated agent
+
+### Code Review
+- Full codebase review (11 domains) in [docs/review/code-review-prompts.md](docs/review/code-review-prompts.md)
+- Findings: [docs/review/review-by-opus-high.md](docs/review/review-by-opus-high.md) (17 high-severity), [docs/review/review-by-opus.md](docs/review/review-by-opus.md) (full)
+- All findings tracked as GitHub issues with fix instructions in the description
+
+### Memory System Design
+- Three-job architecture: Index → Digest → Background. See [docs/memory/DESIGN.md](docs/memory/DESIGN.md)
+- Issues: #17 (Index), #19 (Digest), #51 (Background) — must be built in order
 
 ### User Preferences
 - Prefers design discussions before implementation — brainstorm first, then plan, then build
