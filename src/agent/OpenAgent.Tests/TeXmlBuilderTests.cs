@@ -30,6 +30,7 @@ public class TeXmlBuilderTests
 
         Assert.Contains("<Gather", xml);
         Assert.Contains("<Say>The answer is 42.</Say>", xml);
+        Assert.Contains("action=\"https://example.com/api/webhook/telnyx/abc/speech\"", xml);
     }
 
     [Fact]
@@ -40,6 +41,7 @@ public class TeXmlBuilderTests
         Assert.Contains("<Say>Goodbye.</Say>", xml);
         Assert.Contains("<Hangup />", xml);
         Assert.DoesNotContain("<Gather", xml);
+        Assert.Contains("<Response>", xml);
     }
 
     [Fact]
@@ -49,6 +51,7 @@ public class TeXmlBuilderTests
 
         Assert.Contains("<Say>Not authorised.</Say>", xml);
         Assert.Contains("<Hangup />", xml);
+        Assert.Contains("<Response>", xml);
     }
 
     [Fact]
