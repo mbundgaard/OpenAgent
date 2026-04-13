@@ -251,6 +251,48 @@ public class TelnyxWebhookEndpointTests : IClassFixture<WebApplicationFactory<Pr
     }
 
     [Fact]
+    public async Task Voice_webhook_with_missing_From_returns_400()
+    {
+        var store = _factory.Services.GetRequiredService<IConnectionStore>();
+        var connectionManager = _factory.Services.GetRequiredService<IConnectionManager>();
+
+        var configJson = JsonSerializer.SerializeToElement(new
+        {
+            apiKey = "KEY",
+            phoneNumber = "+4598765432",
+            baseUrl = "http://localhost",
+            webhookId = "missing-from-webhook-id",
+            allowedNumbers = "",
+            // webhookPublicKey omitted — null triggers dev-mode bypass in TelnyxSignatureVerifier
+        });
+
+        var connection = new Connection
+        {
+            Id = "telnyx-missing-from-conn",
+            Name = "Telnyx Missing-From Test",
+            Type = "telnyx",
+            Enabled = true,
+            ConversationId = Guid.NewGuid().ToString(),
+            Config = configJson,
+        };
+
+        store.Save(connection);
+        await connectionManager.StartConnectionAsync(connection.Id, default);
+
+        var client = _factory.CreateClient();
+        // POST with CallSid and To but WITHOUT From
+        var form = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("To", "+4598765432"),
+            new KeyValuePair<string, string>("CallSid", "call-no-from"),
+        ]);
+
+        var resp = await client.PostAsync("/api/webhook/telnyx/missing-from-webhook-id/voice", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    [Fact]
     public async Task Voice_webhook_with_configured_key_rejects_missing_signature_as_404()
     {
         // Seed a connection with WebhookPublicKey set — dev-mode bypass is OFF

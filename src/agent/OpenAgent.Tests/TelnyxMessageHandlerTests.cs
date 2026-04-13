@@ -86,6 +86,19 @@ public class TelnyxMessageHandlerTests
     }
 
     [Fact]
+    public async Task Voice_sets_DisplayName_to_caller_E164()
+    {
+        var (handler, store, _) = BuildHandler(
+            options: new TelnyxOptions { BaseUrl = "https://example.com", WebhookId = "abc" });
+
+        await handler.HandleVoiceAsync("call-x", "+4512345678", "+4598765432", default);
+
+        var conv = store.FindChannelConversation("telnyx", "conn-1", "+4512345678");
+        Assert.NotNull(conv);
+        Assert.Equal("+4512345678", conv.DisplayName);
+    }
+
+    [Fact]
     public async Task Empty_speech_result_produces_reprompt_not_forwarded_to_provider()
     {
         var fakeProvider = new FakeTelnyxTextProvider(reply: "ignored");

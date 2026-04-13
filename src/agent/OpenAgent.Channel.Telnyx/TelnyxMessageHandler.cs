@@ -61,7 +61,7 @@ public sealed class TelnyxMessageHandler
         }
 
         // Find or create the conversation bound to this caller's E.164 number
-        _store.FindOrCreateChannelConversation(
+        var conversation = _store.FindOrCreateChannelConversation(
             channelType: ChannelType,
             connectionId: _connectionId,
             channelChatId: from,
@@ -69,6 +69,10 @@ public sealed class TelnyxMessageHandler
             type: ConversationType.Phone,
             provider: _agentConfig.TextProvider,
             model: _agentConfig.TextModel);
+
+        // Store the caller's E.164 number as DisplayName so the Conversations UI is usable
+        if (!string.Equals(conversation.DisplayName, from, StringComparison.Ordinal))
+            _store.UpdateDisplayName(conversation.Id, from);
 
         var actionUrl = BuildActionUrl("speech");
         return Task.FromResult(TeXmlBuilder.GreetAndGather(

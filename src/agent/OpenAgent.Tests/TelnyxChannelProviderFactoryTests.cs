@@ -171,4 +171,24 @@ public class TelnyxChannelProviderFactoryTests
         Assert.Null(provider.Options.WebhookPublicKey);
         Assert.Null(provider.Options.WebhookId);
     }
+
+    [Fact]
+    public async Task StartAsync_throws_when_BaseUrl_is_missing()
+    {
+        // Build a provider directly with BaseUrl absent — factory would also produce this state
+        var options = new TelnyxOptions { ApiKey = "KEY", PhoneNumber = "+4512345678", BaseUrl = null };
+        var provider = new TelnyxChannelProvider(
+            options,
+            connectionId: "conn-nobaseurl",
+            store: new InMemoryConversationStore(),
+            connectionStore: new FakeConnectionStore(),
+            textProviderResolver: _ => new FakeTelnyxTextProvider("stub"),
+            agentConfig: new AgentConfig { TextProvider = "fake", TextModel = "fake-1" },
+            loggerFactory: NullLoggerFactory.Instance);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.StartAsync(default));
+
+        Assert.Contains("BaseUrl", ex.Message);
+    }
 }

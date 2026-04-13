@@ -55,6 +55,15 @@ public static class TelnyxWebhookEndpoints
         var to = form["To"].ToString();
         var callSid = form["CallSid"].ToString();
 
+        // Reject requests missing required call identity fields — avoids bogus conversation creation
+        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(callSid))
+        {
+            loggerFactory.CreateLogger("TelnyxWebhook").LogWarning(
+                "Telnyx webhook missing required field From or CallSid (provider {ConnectionId})",
+                provider.ConnectionId);
+            return Results.BadRequest();
+        }
+
         var xml = await provider.Handler.HandleVoiceAsync(callSid, from, to, ct);
         return Results.Content(xml, "application/xml");
     }
@@ -75,6 +84,15 @@ public static class TelnyxWebhookEndpoints
         var callSid = form["CallSid"].ToString();
         // Pass string.Empty (not null) when SpeechResult is absent — handler's IsNullOrWhiteSpace guard covers it
         var speech = form["SpeechResult"].ToString();
+
+        // Reject requests missing required call identity fields — avoids speech being matched to wrong conversation
+        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(callSid))
+        {
+            loggerFactory.CreateLogger("TelnyxWebhook").LogWarning(
+                "Telnyx webhook missing required field From or CallSid (provider {ConnectionId})",
+                provider.ConnectionId);
+            return Results.BadRequest();
+        }
 
         var xml = await provider.Handler.HandleSpeechAsync(callSid, from, speech, ct);
         return Results.Content(xml, "application/xml");

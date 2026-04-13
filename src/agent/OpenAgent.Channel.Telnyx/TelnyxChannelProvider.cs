@@ -58,9 +58,14 @@ public sealed class TelnyxChannelProvider : IChannelProvider
 
     /// <summary>
     /// Starts the Telnyx channel. On first start, auto-generates and persists a WebhookId.
+    /// Throws <see cref="InvalidOperationException"/> if BaseUrl is not configured.
     /// </summary>
     public Task StartAsync(CancellationToken ct)
     {
+        // BaseUrl is required — without it TeXML action URLs become relative and Telnyx cannot call back
+        if (string.IsNullOrWhiteSpace(_options.BaseUrl))
+            throw new InvalidOperationException("Telnyx BaseUrl is required for TeXML webhooks. Set it in the connection config.");
+
         // Generate webhookId if not yet persisted — first start for this connection
         if (string.IsNullOrWhiteSpace(_options.WebhookId))
         {
