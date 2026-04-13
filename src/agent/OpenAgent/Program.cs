@@ -59,6 +59,7 @@ builder.Host.UseSerilog((context, serilog) =>
     serilog
         .MinimumLevel.ControlledBy(loggingConfig.DefaultLevel)
         .WriteTo.Console()
+        .WriteTo.Debug()
         .WriteTo.File(new CompactJsonFormatter(),
             Path.Combine(environment.DataPath, "logs", "log-.jsonl"), rollingInterval: RollingInterval.Day);
 
