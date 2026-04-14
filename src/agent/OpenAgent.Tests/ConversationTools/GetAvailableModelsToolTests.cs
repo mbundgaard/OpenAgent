@@ -1,9 +1,9 @@
 using System.Text.Json;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Providers;
-using OpenAgent.Tools.ModelManagement;
+using OpenAgent.Tools.Conversation;
 
-namespace OpenAgent.Tests.ModelManagement;
+namespace OpenAgent.Tests.ConversationTools;
 
 public class GetAvailableModelsToolTests
 {

@@ -40,7 +40,7 @@
     <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
     <ProjectReference Include="..\OpenAgent.Terminal\OpenAgent.Terminal.csproj" />
     <ProjectReference Include="..\OpenAgent.ScheduledTasks\OpenAgent.ScheduledTasks.csproj" />
-    <ProjectReference Include="..\OpenAgent.Tools.ModelManagement\OpenAgent.Tools.ModelManagement.csproj" />
+    <ProjectReference Include="..\OpenAgent.Tools.Conversation\OpenAgent.Tools.Conversation.csproj" />
   </ItemGroup>
 
   <ItemGroup>

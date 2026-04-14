@@ -45,6 +45,10 @@ public sealed class ConversationListItemResponse
     [JsonPropertyName("display_name")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DisplayName { get; init; }
+
+    [JsonPropertyName("intention")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Intention { get; init; }
 }
 
 /// <summary>
@@ -111,10 +115,16 @@ public sealed class ConversationDetailResponse
     [JsonPropertyName("display_name")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DisplayName { get; init; }
+
+    [JsonPropertyName("intention")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Intention { get; init; }
 }
 
 /// <summary>
 /// Request body for updating a conversation.
+/// Properties that are absent (null) leave the corresponding field unchanged.
+/// Use empty string ("") to explicitly clear a nullable field like Intention.
 /// </summary>
 public sealed class UpdateConversationRequest
 {
@@ -129,4 +139,7 @@ public sealed class UpdateConversationRequest
 
     [JsonPropertyName("channel_chat_id")]
     public string? ChannelChatId { get; init; }
+
+    [JsonPropertyName("intention")]
+    public string? Intention { get; init; }
 }

@@ -16,6 +16,7 @@ export interface ConversationSummary {
   connection_id?: string | null;
   channel_chat_id?: string | null;
   display_name?: string | null;
+  intention?: string | null;
 }
 
 export interface ConversationDetail extends ConversationSummary {
@@ -63,6 +64,7 @@ export async function updateConversation(conversationId: string, data: {
   source?: string;
   provider?: string;
   model?: string;
+  intention?: string;
 }): Promise<ConversationDetail> {
   const res = await apiFetch(`/api/conversations/${conversationId}`, {
     method: 'PATCH',

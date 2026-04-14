@@ -1,10 +1,10 @@
 using System.Text.Json;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Tests.Fakes;
-using OpenAgent.Tools.ModelManagement;
+using OpenAgent.Tools.Conversation;
 using OpenAgent.Contracts;
 
-namespace OpenAgent.Tests.ModelManagement;
+namespace OpenAgent.Tests.ConversationTools;
 
 public class SetModelToolTests
 {

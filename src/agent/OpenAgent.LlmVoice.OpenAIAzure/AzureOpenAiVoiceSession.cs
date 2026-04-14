@@ -133,7 +133,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         {
             Modalities = ["audio", "text"],
             Voice = _config.Voice ?? "alloy",
-            Instructions = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type, _conversation.ActiveSkills),
+            Instructions = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention),
             InputAudioFormat = codec,
             OutputAudioFormat = codec,
             InputAudioTranscription = new InputAudioTranscriptionConfig { Model = "whisper-1" },

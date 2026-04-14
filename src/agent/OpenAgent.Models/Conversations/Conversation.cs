@@ -124,4 +124,12 @@ public sealed class Conversation
     [JsonPropertyName("display_name")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// Topic or purpose that scopes the conversation. Injected into the system prompt
+    /// to keep the agent anchored on the intended subject across turns.
+    /// </summary>
+    [JsonPropertyName("intention")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Intention { get; set; }
 }

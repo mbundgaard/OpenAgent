@@ -95,7 +95,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         agentLogic.AddMessage(conversationId, userMessage);
 
         // Build the system prompt blocks and initial message list
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills);
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills, conversation.Intention);
         var systemBlocks = BuildSystemBlocks(systemPrompt);
         var messages = BuildMessages(conversation);
         var tools = BuildTools();

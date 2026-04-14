@@ -155,7 +155,7 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
 
     private async Task SendSetupAsync(CancellationToken ct)
     {
-        var systemPrompt = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type, _conversation.ActiveSkills);
+        var systemPrompt = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention);
 
         IReadOnlyList<GeminiToolSet>? tools = null;
         if (_agentLogic.Tools.Count > 0)

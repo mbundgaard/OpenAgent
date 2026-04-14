@@ -55,7 +55,7 @@ internal sealed class SystemPromptBuilder
     /// Builds the system prompt for the given conversation type by concatenating
     /// the relevant files in order, separated by blank lines.
     /// </summary>
-    public string Build(ConversationType type, IReadOnlyList<string>? activeSkills = null)
+    public string Build(ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null)
     {
         var sections = new List<string>();
 
@@ -138,6 +138,21 @@ internal sealed class SystemPromptBuilder
         var weekNumber = System.Globalization.ISOWeek.GetWeekOfYear(now.DateTime);
         var weekday = now.DateTime.ToString("dddd", System.Globalization.CultureInfo.InvariantCulture);
         sections.Add($"Current time: {weekday} {now:yyyy-MM-ddTHH:mm} Europe/Copenhagen ({utcLabel}), week {weekNumber}");
+
+        // Per-conversation intention — scopes the topic and anchors the agent across turns.
+        // Placed last so it's the most recent context the model sees before the user turns.
+        if (!string.IsNullOrWhiteSpace(intention))
+        {
+            sections.Add($"""
+                <conversation_intention>
+                This conversation is scoped to the following topic/purpose. Keep replies on-topic
+                and redirect off-topic turns back to it. If the user explicitly changes the topic,
+                acknowledge the shift but do not invent tangents on your own.
+
+                {intention.Trim()}
+                </conversation_intention>
+                """);
+        }
 
         return string.Join("\n\n", sections);
     }

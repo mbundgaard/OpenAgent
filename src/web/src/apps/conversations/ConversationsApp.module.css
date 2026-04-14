@@ -240,6 +240,46 @@
   border: 1px solid rgba(var(--color-accent-rgb, 100, 149, 237), 0.3);
 }
 
+.intentionRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.intentionLabel {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  flex-shrink: 0;
+  padding-top: 3px;
+}
+
+.intentionText {
+  font-size: 12px;
+  color: var(--color-text);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.intentionInput {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--color-text);
+  outline: none;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 36px;
+}
+
+.intentionInput:focus {
+  border-color: var(--color-accent);
+}
+
 .editInput {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--color-border);

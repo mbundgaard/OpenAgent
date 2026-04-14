@@ -8,8 +8,8 @@ namespace OpenAgent.Contracts;
 /// </summary>
 public interface IAgentLogic
 {
-    /// <summary>Returns the system-level prompt tailored to the conversation source, type, and active skills.</summary>
-    string GetSystemPrompt(string source, ConversationType type, IReadOnlyList<string>? activeSkills = null);
+    /// <summary>Returns the system-level prompt tailored to the conversation source, type, active skills, and intention.</summary>
+    string GetSystemPrompt(string source, ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null);
 
     /// <summary>Tools the agent can invoke during a conversation.</summary>
     IReadOnlyList<AgentToolDefinition> Tools { get; }

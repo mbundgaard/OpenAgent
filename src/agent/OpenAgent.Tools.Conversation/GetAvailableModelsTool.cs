@@ -1,7 +1,7 @@
 using System.Text.Json;
 using OpenAgent.Contracts;
 
-namespace OpenAgent.Tools.ModelManagement;
+namespace OpenAgent.Tools.Conversation;
 
 /// <summary>
 /// Returns all available models from all configured text LLM providers.

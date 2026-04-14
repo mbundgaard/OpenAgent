@@ -4,10 +4,10 @@ using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 
-namespace OpenAgent.Tests.ModelManagement;
+namespace OpenAgent.Tests.ConversationTools;
 
 /// <summary>
-/// Minimal ILlmTextProvider fake that exposes a key and model list for model management tool tests.
+/// Minimal ILlmTextProvider fake that exposes a key and model list for conversation tool tests.
 /// </summary>
 internal sealed class FakeModelProvider(string key, string[] models) : ILlmTextProvider
 {
@@ -17,7 +17,7 @@ internal sealed class FakeModelProvider(string key, string[] models) : ILlmTextP
     public void Configure(JsonElement configuration) { }
 
     public IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, CancellationToken ct = default)
+        Models.Conversations.Conversation conversation, Message userMessage, CancellationToken ct = default)
         => throw new NotImplementedException();
 
     public IAsyncEnumerable<CompletionEvent> CompleteAsync(

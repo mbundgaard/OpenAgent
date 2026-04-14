@@ -19,7 +19,7 @@ using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
 using OpenAgent.ScheduledTasks;
 using OpenAgent.Skills;
-using OpenAgent.Tools.ModelManagement;
+using OpenAgent.Tools.Conversation;
 using OpenAgent.Tools.Shell;
 using OpenAgent.Tools.WebFetch;
 using Serilog;
@@ -73,7 +73,7 @@ builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
 builder.Services.AddSingleton<IToolHandler>(sp =>
-    new ModelToolHandler(
+    new ConversationToolHandler(
         sp.GetRequiredService<IConversationStore>(),
         () => new ILlmTextProvider[]
         {

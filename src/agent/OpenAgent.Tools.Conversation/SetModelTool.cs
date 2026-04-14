@@ -1,7 +1,7 @@
 using System.Text.Json;
 using OpenAgent.Contracts;
 
-namespace OpenAgent.Tools.ModelManagement;
+namespace OpenAgent.Tools.Conversation;
 
 /// <summary>
 /// Changes the text LLM provider and model for the current conversation.
