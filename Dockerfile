@@ -32,9 +32,12 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=publish /app/publish .
 
-# Install Node.js for Baileys bridge
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs python3 jq curl && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3 /usr/bin/python
+# Install Node.js for Baileys bridge, plus Python tooling for shell_exec workflows
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs python3 python3-pip jq curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && pip install --break-system-packages --no-cache-dir requests
 
 # Copy Baileys bridge script and dependencies
 COPY --from=baileys-build /baileys/node_modules /app/node/node_modules
