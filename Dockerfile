@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs python3 python3-pip jq curl git \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3 /usr/bin/python \
-    && pip install --break-system-packages --no-cache-dir requests
+    && pip install --break-system-packages --no-cache-dir requests garminconnect
 
 # Copy Baileys bridge script and dependencies
 COPY --from=baileys-build /baileys/node_modules /app/node/node_modules
