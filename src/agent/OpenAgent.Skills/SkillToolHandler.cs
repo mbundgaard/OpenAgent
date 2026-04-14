@@ -19,7 +19,8 @@ public sealed class SkillToolHandler : IToolHandler
             new ActivateSkillTool(catalog, store, logger),
             new DeactivateSkillTool(store),
             new ListActiveSkillsTool(catalog, store),
-            new ActivateSkillResourceTool(catalog)
+            new ActivateSkillResourceTool(catalog),
+            new ReloadSkillsTool(catalog, logger)
         ];
     }
 }
@@ -175,6 +176,43 @@ internal sealed class ListActiveSkillsTool(SkillCatalog catalog, IConversationSt
         {
             active_skills = skills,
             count = skills.Count
+        }));
+    }
+}
+
+internal sealed class ReloadSkillsTool(SkillCatalog catalog, ILogger logger) : ITool
+{
+    public AgentToolDefinition Definition { get; } = new()
+    {
+        Name = "reload_skills",
+        Description = "Re-scan the skills directory to pick up newly added, removed, or edited skills without restarting the agent. Use after the user adds, removes, or edits a SKILL.md file.",
+        Parameters = new
+        {
+            type = "object",
+            properties = new { },
+            required = Array.Empty<string>()
+        }
+    };
+
+    public Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
+    {
+        var before = catalog.SkillNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        catalog.Reload();
+        var after = catalog.SkillNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var added = after.Except(before, StringComparer.OrdinalIgnoreCase).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToArray();
+        var removed = before.Except(after, StringComparer.OrdinalIgnoreCase).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToArray();
+
+        logger.LogInformation("reload_skills: total={Total}, added=[{Added}], removed=[{Removed}]",
+            after.Count, string.Join(", ", added), string.Join(", ", removed));
+
+        return Task.FromResult(JsonSerializer.Serialize(new
+        {
+            status = "reloaded",
+            total = after.Count,
+            skills = after.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToArray(),
+            added,
+            removed
         }));
     }
 }

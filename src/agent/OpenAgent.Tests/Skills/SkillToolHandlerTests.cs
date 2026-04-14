@@ -153,16 +153,36 @@ public class SkillToolHandlerTests : IDisposable
     }
 
     [Fact]
-    public void ToolHandler_exposes_four_tools()
+    public void ToolHandler_exposes_five_tools()
     {
         var catalog = new SkillCatalog(_tempDir);
         var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
 
-        Assert.Equal(4, handler.Tools.Count);
+        Assert.Equal(5, handler.Tools.Count);
         Assert.Contains(handler.Tools, t => t.Definition.Name == "activate_skill");
         Assert.Contains(handler.Tools, t => t.Definition.Name == "deactivate_skill");
         Assert.Contains(handler.Tools, t => t.Definition.Name == "list_active_skills");
         Assert.Contains(handler.Tools, t => t.Definition.Name == "activate_skill_resource");
+        Assert.Contains(handler.Tools, t => t.Definition.Name == "reload_skills");
+    }
+
+    [Fact]
+    public async Task Reload_skills_picks_up_new_skill_added_at_runtime()
+    {
+        CreateSkill("first", "Original skill", "First body");
+        var catalog = new SkillCatalog(_tempDir);
+        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var reload = handler.Tools.Single(t => t.Definition.Name == "reload_skills");
+
+        // New skill added after catalog was loaded
+        CreateSkill("second", "Added at runtime", "Second body");
+
+        var result = await reload.ExecuteAsync("{}", conversationId: "test", CancellationToken.None);
+
+        Assert.Contains("\"total\":2", result);
+        Assert.Contains("\"second\"", result);
+        Assert.Contains("\"first\"", result);
+        Assert.True(catalog.TryGetSkill("second", out _));
     }
 
     private void CreateSkill(string name, string description, string body)
