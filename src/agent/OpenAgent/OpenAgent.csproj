@@ -4,6 +4,10 @@
     <InternalsVisibleTo Include="OpenAgent.Tests" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
   <ItemGroup>
     <Compile Remove="config\**" />
     <Compile Remove="data\**" />
@@ -47,6 +51,8 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="Microsoft.Extensions.Logging.EventLog" />
   </ItemGroup>
 
   <ItemGroup>
