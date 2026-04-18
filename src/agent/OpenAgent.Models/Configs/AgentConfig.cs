@@ -46,4 +46,17 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("mainConversationId")]
     public string? MainConversationId { get; set; }
+
+    /// <summary>
+    /// Embedding provider key used by the memory index (e.g. "onnx"). Empty disables the
+    /// index entirely: the hosted service skips, search/load tools are hidden.
+    /// </summary>
+    [JsonPropertyName("embeddingProvider")]
+    public string EmbeddingProvider { get; set; } = "";
+
+    /// <summary>
+    /// Hour of the day (Europe/Copenhagen) at which the nightly memory index job runs.
+    /// </summary>
+    [JsonPropertyName("indexRunAtHour")]
+    public int IndexRunAtHour { get; set; } = 2;
 }
