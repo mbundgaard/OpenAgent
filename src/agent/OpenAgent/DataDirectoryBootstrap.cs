@@ -1,11 +1,15 @@
 using System.Reflection;
+using System.Text.Json;
+using OpenAgent.Installer;
 
 namespace OpenAgent;
 
 /// <summary>
 /// Ensures the data directory has the required folder structure and default files.
-/// Runs once at startup — creates missing folders and extracts embedded default files
-/// that don't exist yet. Never overwrites existing files.
+/// Runs once at startup — creates missing folders, extracts embedded default files,
+/// and creates configured directory links (junctions on Windows, symlinks on Linux).
+/// Never overwrites existing files; reacts to invalid symlink configuration with warnings,
+/// not failures.
 /// </summary>
 public static class DataDirectoryBootstrap
 {
@@ -19,11 +23,11 @@ public static class DataDirectoryBootstrap
         "skills"
     ];
 
-    /// <summary>
-    /// Creates missing directories, extracts embedded default markdown files,
-    /// and writes default config JSON files if they don't exist.
-    /// </summary>
-    public static void Run(string dataPath)
+    /// <summary>Production entry point. Uses <see cref="SystemCommandRunner"/> for link creation on Windows.</summary>
+    public static void Run(string dataPath) => Run(dataPath, new DirectoryLinkCreator(new SystemCommandRunner()));
+
+    /// <summary>Test-friendly overload that accepts an injected link creator.</summary>
+    public static void Run(string dataPath, IDirectoryLinkCreator linkCreator)
     {
         // Ensure required directories exist
         foreach (var dir in RequiredDirectories)
@@ -41,14 +45,12 @@ public static class DataDirectoryBootstrap
             if (!resourceName.StartsWith(prefix))
                 continue;
 
-            // Resource name: OpenAgent.defaults.AGENTS.md -> AGENTS.md
             var fileName = resourceName[prefix.Length..];
             var targetPath = Path.Combine(dataPath, fileName);
 
             if (File.Exists(targetPath))
                 continue;
 
-            // BOOTSTRAP.md is a first-run ritual — only create on fresh installs
             if (fileName == "BOOTSTRAP.md" && !isFirstRun)
                 continue;
 
@@ -65,5 +67,81 @@ public static class DataDirectoryBootstrap
         var connectionsPath = Path.Combine(dataPath, "config", "connections.json");
         if (!File.Exists(connectionsPath))
             File.WriteAllText(connectionsPath, "[]");
+
+        // Create configured directory links
+        CreateConfiguredLinks(dataPath, agentConfigPath, linkCreator);
     }
+
+    private static void CreateConfiguredLinks(string dataPath, string agentConfigPath, IDirectoryLinkCreator linkCreator)
+    {
+        Dictionary<string, string>? symlinks = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(agentConfigPath));
+            if (doc.RootElement.TryGetProperty("symlinks", out var symlinksElement)
+                && symlinksElement.ValueKind == JsonValueKind.Object)
+            {
+                symlinks = new Dictionary<string, string>();
+                foreach (var prop in symlinksElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                        symlinks[prop.Name] = prop.Value.GetString()!;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            Console.Error.WriteLine($"[bootstrap] Failed to parse {agentConfigPath}; skipping symlink creation.");
+            return;
+        }
+
+        if (symlinks is null)
+            return;
+
+        foreach (var (name, target) in symlinks)
+        {
+            var linkPath = Path.Combine(dataPath, name);
+
+            if (linkCreator.LinkExists(linkPath))
+            {
+                var existingTarget = linkCreator.ReadLinkTarget(linkPath);
+                if (existingTarget is not null && PathsEqual(existingTarget, target))
+                    continue;
+
+                Console.Error.WriteLine(
+                    $"[bootstrap] Link {linkPath} already exists and points to {existingTarget ?? "<unknown>"}; " +
+                    $"configured target {target} ignored.");
+                continue;
+            }
+
+            if (Directory.Exists(linkPath) || File.Exists(linkPath))
+            {
+                Console.Error.WriteLine(
+                    $"[bootstrap] {linkPath} exists as a regular directory/file; skipping junction creation.");
+                continue;
+            }
+
+            if (!Directory.Exists(target))
+            {
+                Console.Error.WriteLine(
+                    $"[bootstrap] Symlink target {target} does not exist; skipping junction {linkPath}.");
+                continue;
+            }
+
+            try
+            {
+                linkCreator.CreateLink(linkPath, target);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[bootstrap] Failed to create junction {linkPath} -> {target}: {ex.Message}");
+            }
+        }
+    }
+
+    private static bool PathsEqual(string a, string b) =>
+        string.Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 }
