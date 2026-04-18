@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using OpenAgent.Contracts;
@@ -37,7 +38,13 @@ public sealed class FileWriteTool(string basePath, Encoding encoding, int maxFil
         // Resolve against base path and prevent directory traversal
         var fullPath = Path.GetFullPath(Path.Combine(basePath, path));
         if (!fullPath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase))
-            return JsonSerializer.Serialize(new { error = "path is outside allowed directory" });
+        {
+            var roots = SymlinkRoots.List(basePath);
+            var hint = roots.Count > 0
+                ? $"path is outside allowed directory. Configured mount points: {string.Join(", ", roots.Select(r => r + "/"))} — use one of these prefixes for external paths."
+                : "path is outside allowed directory";
+            return JsonSerializer.Serialize(new { error = hint });
+        }
 
         // Guard against writing excessively large content
         if (content.Length > maxFileSize)

@@ -3,6 +3,7 @@ using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Skills;
+using System.Linq;
 
 namespace OpenAgent;
 
@@ -131,6 +132,20 @@ internal sealed class SystemPromptBuilder
             }
         }
 
+        // Inject mount-point conventions when symlink roots are present — helps the agent
+        // translate real paths from shell output to the short form expected by file tools.
+        var symlinkRoots = EnumerateTopLevelReparsePoints(_dataPath);
+        if (symlinkRoots.Count > 0)
+        {
+            var lines = symlinkRoots.Select(name =>
+                $"  - {name}/... — reaches a mounted external path; shell output may show real paths under this mount, translate to the short form when passing to file tools.");
+            sections.Add(
+                "<path_conventions>\n" +
+                "When passing paths to file tools, use paths relative to the agent's root. Configured mount points:\n" +
+                string.Join("\n", lines) + "\n" +
+                "</path_conventions>");
+        }
+
         // Inject current datetime in the agent's configured timezone (Europe/Copenhagen)
         var tz = TimeZoneInfo.FindSystemTimeZoneById("Europe/Copenhagen");
         var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz);
@@ -180,5 +195,21 @@ internal sealed class SystemPromptBuilder
         if (!File.Exists(fullPath)) return;
         var content = File.ReadAllText(fullPath).Trim();
         if (content.Length > 0) sections.Add(content);
+    }
+
+    private static List<string> EnumerateTopLevelReparsePoints(string dataPath)
+    {
+        var names = new List<string>();
+        if (!Directory.Exists(dataPath))
+            return names;
+
+        foreach (var dir in Directory.EnumerateDirectories(dataPath, "*", SearchOption.TopDirectoryOnly))
+        {
+            var info = new DirectoryInfo(dir);
+            if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+                names.Add(info.Name);
+        }
+        names.Sort(StringComparer.Ordinal);
+        return names;
     }
 }
