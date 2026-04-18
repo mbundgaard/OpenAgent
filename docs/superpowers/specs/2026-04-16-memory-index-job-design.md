@@ -64,9 +64,7 @@ MemoryIndexHostedService (timer)
             └── ILlmTextProvider (summary generation via Func<string, ILlmTextProvider>)
 
 MemoryToolHandler (agent tools)
-    ├── MemoryIndexStore (search)
-    ├── EmbeddingClient (query embedding)
-    └── AgentEnvironment (file reading)
+    └── MemoryIndexService (search, file loading)
 
 MemoryIndexEndpoints (REST API)
     └── MemoryIndexService (manual trigger, stats)
@@ -180,6 +178,8 @@ Used by the `search_memory` tool during agent sessions.
 4. Compute cosine similarity between query embedding and each stored embedding
 5. Sort by similarity descending, take top N (default 5)
 6. Return results: `{ file_path, summary, score }`
+
+Entries are cached in `MemoryIndexService` after first load. Cache invalidated when `RunAsync` indexes new files.
 
 ### Cosine similarity
 

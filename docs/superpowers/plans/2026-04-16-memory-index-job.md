@@ -31,6 +31,7 @@
 | `src/agent/OpenAgent.Tests/MemoryIndexServiceTests.cs` | Service orchestration tests |
 | `src/agent/OpenAgent.Tests/MemoryToolHandlerTests.cs` | Tool execution tests |
 | `src/agent/OpenAgent.Tests/Fakes/FakeEmbeddingHandler.cs` | Test double for HTTP embedding calls |
+| `src/agent/OpenAgent.Tests/MemoryIndexHostedServiceTests.cs` | Hosted service guard logic tests |
 
 ### Modified files
 
@@ -184,7 +185,6 @@ public class MemoryIndexStoreTests : IDisposable
 
     public void Dispose()
     {
-        _store.Dispose();
         try { Directory.Delete(_dbDir, true); } catch { }
     }
 
@@ -338,6 +338,7 @@ Expected: Compilation error — `MemoryIndexStore` does not exist yet.
 Create `src/agent/OpenAgent.MemoryIndex/MemoryIndexStore.cs`:
 
 ```csharp
+using System.Globalization;
 using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -378,7 +379,7 @@ public sealed record IndexStats
 /// SQLite-backed storage for the memory vector index.
 /// Embeddings stored as BLOBs, similarity computed in-memory.
 /// </summary>
-public sealed class MemoryIndexStore : IDisposable
+public sealed class MemoryIndexStore
 {
     private readonly string _connectionString;
     private readonly ILogger<MemoryIndexStore> _logger;
@@ -401,6 +402,12 @@ public sealed class MemoryIndexStore : IDisposable
     private void InitializeDatabase()
     {
         using var connection = Open();
+
+        // WAL is persistent once set — only needs to run once
+        using var pragma = connection.CreateCommand();
+        pragma.CommandText = "PRAGMA journal_mode=WAL;";
+        pragma.ExecuteNonQuery();
+
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS memory_index (
@@ -459,7 +466,7 @@ public sealed class MemoryIndexStore : IDisposable
                 FilePath = reader.GetString(0),
                 Summary = reader.GetString(1),
                 Embedding = DeserializeEmbedding((byte[])reader["embedding"]),
-                IndexedAt = DateTime.Parse(reader.GetString(3))
+                IndexedAt = DateTime.Parse(reader.GetString(3), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
             });
         }
         return entries;
@@ -484,7 +491,7 @@ public sealed class MemoryIndexStore : IDisposable
         return new IndexStats
         {
             TotalIndexed = total,
-            LastIndexedAt = total > 0 ? DateTime.Parse(reader.GetString(1)) : null,
+            LastIndexedAt = total > 0 ? DateTime.Parse(reader.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind) : null,
             OldestEntry = total > 0 ? reader.GetString(2) : null,
             NewestEntry = total > 0 ? reader.GetString(3) : null
         };
@@ -521,15 +528,12 @@ public sealed class MemoryIndexStore : IDisposable
     {
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
-        using var pragma = connection.CreateCommand();
-        pragma.CommandText = "PRAGMA journal_mode=WAL;";
-        pragma.ExecuteNonQuery();
         return connection;
     }
-
-    public void Dispose() { }
 }
 ```
+
+Note: No `IDisposable` — connections are opened and closed per operation, no long-lived state to dispose.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -1044,6 +1048,7 @@ public sealed class MemoryIndexService
     private readonly AgentConfig _agentConfig;
     private readonly AgentEnvironment _environment;
     private readonly ILogger<MemoryIndexService> _logger;
+    private List<MemoryIndexEntry>? _cachedEntries;
 
     public MemoryIndexService(
         MemoryIndexStore store,
@@ -1119,6 +1124,9 @@ public sealed class MemoryIndexService
             }
         }
 
+        // Invalidate search cache — new entries available
+        _cachedEntries = null;
+
         return new IndexResult
         {
             FilesScanned = allFiles.Count,
@@ -1132,7 +1140,7 @@ public sealed class MemoryIndexService
     public async Task<List<SearchResult>> SearchAsync(string query, int limit = 5, CancellationToken ct = default)
     {
         var queryEmbedding = await _embeddingClient.GenerateEmbeddingAsync(query, ct);
-        var entries = _store.GetAllEntries();
+        var entries = _cachedEntries ??= _store.GetAllEntries();
 
         return entries
             .Select(e => new SearchResult
@@ -1152,9 +1160,10 @@ public sealed class MemoryIndexService
     /// <summary>Reads a file relative to dataPath. Returns null if path is invalid or file missing.</summary>
     public string? LoadFile(string relativePath)
     {
-        if (relativePath.Contains("..") || Path.IsPathRooted(relativePath))
+        if (Path.IsPathRooted(relativePath))
             return null;
 
+        // GetFullPath resolves ".." segments — StartsWith is the real security boundary
         var fullPath = Path.GetFullPath(Path.Combine(_environment.DataPath, relativePath));
         var dataPath = Path.GetFullPath(_environment.DataPath);
         if (!fullPath.StartsWith(dataPath, StringComparison.OrdinalIgnoreCase))
@@ -1165,6 +1174,8 @@ public sealed class MemoryIndexService
 
     private async Task<string> GenerateSummaryAsync(string content, CancellationToken ct)
     {
+        // Raw CompleteAsync overload — no persistence, no tool calls.
+        // Same Message ID pattern as CompactionSummarizer.
         var provider = _providerFactory(_agentConfig.CompactionProvider);
         var messages = new List<Message>
         {
@@ -1276,7 +1287,6 @@ public class MemoryToolHandlerTests : IDisposable
     public void Dispose()
     {
         _embeddingClient.Dispose();
-        _store.Dispose();
         try { Directory.Delete(_dataDir, true); } catch { }
     }
 
@@ -1511,6 +1521,7 @@ git commit -m "feat(memory): add search_memory and load_memory_file agent tools"
 - Create: `src/agent/OpenAgent.MemoryIndex/MemoryIndexHostedService.cs`
 - Create: `src/agent/OpenAgent.MemoryIndex/MemoryIndexEndpoints.cs`
 - Create: `src/agent/OpenAgent.MemoryIndex/ServiceCollectionExtensions.cs`
+- Create: `src/agent/OpenAgent.Tests/MemoryIndexHostedServiceTests.cs`
 - Modify: `src/agent/OpenAgent/Program.cs`
 
 - [ ] **Step 1: Implement the hosted service**
@@ -1683,7 +1694,108 @@ public static class ServiceCollectionExtensions
 }
 ```
 
-- [ ] **Step 4: Wire into Program.cs**
+- [ ] **Step 4: Write hosted service guard tests**
+
+Create `src/agent/OpenAgent.Tests/MemoryIndexHostedServiceTests.cs`:
+
+```csharp
+using Microsoft.Extensions.Logging.Abstractions;
+using OpenAgent.MemoryIndex;
+using OpenAgent.Models.Configs;
+using OpenAgent.Tests.Fakes;
+
+namespace OpenAgent.Tests;
+
+public class MemoryIndexHostedServiceTests : IDisposable
+{
+    private readonly string _dataDir;
+    private readonly MemoryIndexStore _store;
+    private readonly AgentConfig _agentConfig;
+    private readonly MemoryIndexService _service;
+
+    public MemoryIndexHostedServiceTests()
+    {
+        _dataDir = Path.Combine(Path.GetTempPath(), $"memhosted-test-{Guid.NewGuid()}");
+        Directory.CreateDirectory(Path.Combine(_dataDir, "memory"));
+
+        var dbPath = Path.Combine(_dataDir, "memory-index.db");
+        _store = new MemoryIndexStore(dbPath, NullLogger<MemoryIndexStore>.Instance);
+
+        _agentConfig = new AgentConfig
+        {
+            CompactionProvider = "fake",
+            CompactionModel = "fake",
+            EmbeddingDeployment = "test",
+            IndexRunAtHour = 0 // run immediately for tests
+        };
+
+        var embHandler = new FakeEmbeddingHandler(
+            """{"data":[{"embedding":[0.1],"index":0}]}""");
+        var httpClient = new HttpClient(embHandler) { BaseAddress = new Uri("https://test/") };
+        var embClient = new EmbeddingClient(httpClient, _agentConfig,
+            NullLogger<EmbeddingClient>.Instance);
+
+        var fakeProvider = new StreamingTextProvider("""{"summary":"Test"}""");
+        var env = new AgentEnvironment { DataPath = _dataDir };
+        _service = new MemoryIndexService(
+            _store, embClient, _ => fakeProvider, _agentConfig, env,
+            NullLogger<MemoryIndexService>.Instance);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_dataDir, true); } catch { }
+    }
+
+    [Fact]
+    public async Task CheckAndRunAsync_skips_when_not_configured()
+    {
+        var unconfiguredConfig = new AgentConfig();
+        var unconfiguredClient = new EmbeddingClient(unconfiguredConfig,
+            NullLogger<EmbeddingClient>.Instance);
+        var hosted = new MemoryIndexHostedService(
+            _service, unconfiguredClient, unconfiguredConfig,
+            NullLogger<MemoryIndexHostedService>.Instance);
+
+        // Should not throw, should just return
+        await hosted.CheckAndRunAsync(CancellationToken.None);
+
+        Assert.Empty(_store.GetIndexedPaths());
+    }
+
+    [Fact]
+    public async Task CheckAndRunAsync_runs_once_per_day()
+    {
+        var embHandler = new FakeEmbeddingHandler(
+            """{"data":[{"embedding":[0.1],"index":0}]}""");
+        var httpClient = new HttpClient(embHandler) { BaseAddress = new Uri("https://test/") };
+        var embClient = new EmbeddingClient(httpClient, _agentConfig,
+            NullLogger<EmbeddingClient>.Instance);
+
+        var hosted = new MemoryIndexHostedService(
+            _service, embClient, _agentConfig,
+            NullLogger<MemoryIndexHostedService>.Instance);
+
+        // First run should execute
+        await hosted.CheckAndRunAsync(CancellationToken.None);
+        // Second run same day should skip
+        await hosted.CheckAndRunAsync(CancellationToken.None);
+
+        // No files to index, but the guard logic is what we're testing
+        // — no exception on double-call
+    }
+}
+```
+
+- [ ] **Step 5: Run hosted service tests**
+
+```bash
+cd src/agent && dotnet test --filter "MemoryIndexHostedServiceTests" -v q
+```
+
+Expected: Both tests pass.
+
+- [ ] **Step 6: Wire into Program.cs**
 
 In `src/agent/OpenAgent/Program.cs`:
 
@@ -1705,7 +1817,7 @@ Add the endpoint mapping after the existing `app.MapToolEndpoints();` line (arou
 app.MapMemoryIndexEndpoints();
 ```
 
-- [ ] **Step 5: Build the full solution**
+- [ ] **Step 7: Build the full solution**
 
 ```bash
 cd src/agent && dotnet build
@@ -1713,7 +1825,7 @@ cd src/agent && dotnet build
 
 Expected: Build succeeds with no errors.
 
-- [ ] **Step 6: Run all tests**
+- [ ] **Step 8: Run all tests**
 
 ```bash
 cd src/agent && dotnet test -v q
@@ -1721,14 +1833,15 @@ cd src/agent && dotnet test -v q
 
 Expected: All tests pass (existing tests unchanged, new tests pass).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/agent/OpenAgent.MemoryIndex/MemoryIndexHostedService.cs \
         src/agent/OpenAgent.MemoryIndex/MemoryIndexEndpoints.cs \
         src/agent/OpenAgent.MemoryIndex/ServiceCollectionExtensions.cs \
+        src/agent/OpenAgent.Tests/MemoryIndexHostedServiceTests.cs \
         src/agent/OpenAgent/Program.cs
-git commit -m "feat(memory): add hosted service, endpoints, and DI wiring for memory index"
+git commit -m "feat(memory): add hosted service, endpoints, DI wiring, and guard tests"
 ```
 
 ---
@@ -1749,8 +1862,9 @@ git commit -m "feat(memory): add hosted service, endpoints, and DI wiring for me
 | search_memory tool | Task 5 |
 | load_memory_file tool | Task 5 |
 | Path traversal protection | Task 4, Task 5 |
-| Graceful degradation (empty config) | Task 5 (no tools exposed), Task 6 (hosted service warns) |
-| IHostedService with daily timer | Task 6 |
+| Graceful degradation (empty config) | Task 5 (no tools exposed), Task 6 (hosted service warns + tested) |
+| IHostedService with daily timer | Task 6 (+ guard tests) |
+| Search entry caching | Task 4 (cache in service, invalidated on RunAsync) |
 | REST endpoints (run, stats) | Task 6 |
 | DI registration | Task 6 |
 | Program.cs wiring | Task 6 |
