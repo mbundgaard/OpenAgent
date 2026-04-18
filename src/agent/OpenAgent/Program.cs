@@ -29,7 +29,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 var environment = new AgentEnvironment
 {
-    DataPath = Environment.GetEnvironmentVariable("DATA_DIR") ?? "/home/data"
+    DataPath = RootResolver.Resolve()
 };
 Directory.CreateDirectory(environment.DataPath);
 
