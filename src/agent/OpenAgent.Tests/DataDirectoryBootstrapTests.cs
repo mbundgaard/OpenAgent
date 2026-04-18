@@ -107,4 +107,38 @@ public class DataDirectoryBootstrapTests : IDisposable
         Assert.True(File.Exists(marker));
         Assert.Equal("do not delete", File.ReadAllText(marker));
     }
+
+    [Fact]
+    public void Run_WithExistingSymlinkToDifferentTarget_LeavesItUntouched()
+    {
+        var originalTarget = Path.Combine(_tempDir, "original-target");
+        Directory.CreateDirectory(originalTarget);
+        var configuredTarget = Path.Combine(_tempDir, "configured-target");
+        Directory.CreateDirectory(configuredTarget);
+
+        // Create an existing junction pointing at originalTarget via the production link creator
+        // (cross-platform: mklink /J on Windows, Directory.CreateSymbolicLink on Linux).
+        var linkPath = Path.Combine(_tempDir, "media");
+        new OpenAgent.Installer.DirectoryLinkCreator(new OpenAgent.Installer.SystemCommandRunner())
+            .CreateLink(linkPath, originalTarget);
+
+        // Now configure a DIFFERENT target for the same link name.
+        var configDir = Path.Combine(_tempDir, "config");
+        Directory.CreateDirectory(configDir);
+        File.WriteAllText(
+            Path.Combine(configDir, "agent.json"),
+            $"{{\"symlinks\":{{\"media\":\"{configuredTarget.Replace("\\", "\\\\")}\"}}}}");
+
+        DataDirectoryBootstrap.Run(_tempDir);
+
+        // Existing link preserved — must still resolve to originalTarget, not configuredTarget.
+        var info = new DirectoryInfo(linkPath);
+        Assert.True((info.Attributes & FileAttributes.ReparsePoint) != 0);
+        var resolved = info.LinkTarget ?? info.ResolveLinkTarget(returnFinalTarget: true)?.FullName;
+        Assert.NotNull(resolved);
+        Assert.True(string.Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(originalTarget)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(resolved!)),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+    }
 }
