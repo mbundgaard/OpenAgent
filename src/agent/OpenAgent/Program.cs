@@ -25,7 +25,25 @@ using OpenAgent.Tools.WebFetch;
 using Serilog;
 using Serilog.Formatting.Compact;
 
+// Install-mode dispatch — runs before the web host is built.
+// Returns an exit code if args match --install / --uninstall / --restart / --status; otherwise proceeds.
+var installerExit = OpenAgent.Installer.InstallerCli.TryHandle(args);
+if (installerExit.HasValue)
+    return installerExit.Value;
+
 var builder = WebApplication.CreateBuilder(args);
+
+var runningAsService = args.Contains("--service");
+if (runningAsService)
+{
+    builder.Host.UseWindowsService(options => options.ServiceName = OpenAgent.Installer.InstallerCli.ServiceName);
+    if (OperatingSystem.IsWindows())
+    {
+#pragma warning disable CA1416 // OperatingSystem.IsWindows() guard above satisfies platform check
+        builder.Logging.AddEventLog(options => options.SourceName = OpenAgent.Installer.EventLogRegistrar.SourceName);
+#pragma warning restore CA1416
+    }
+}
 
 var environment = new AgentEnvironment
 {
@@ -193,6 +211,8 @@ app.MapToolEndpoints();
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+return 0;
 
 // Make Program accessible to integration tests
 namespace OpenAgent
