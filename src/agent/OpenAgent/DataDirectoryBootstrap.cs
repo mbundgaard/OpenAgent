@@ -60,7 +60,7 @@ public static class DataDirectoryBootstrap
         // Write default config files if missing
         var agentConfigPath = Path.Combine(dataPath, "config", "agent.json");
         if (!File.Exists(agentConfigPath))
-            File.WriteAllText(agentConfigPath, "{}");
+            File.WriteAllText(agentConfigPath, "{\"symlinks\": {}}");
 
         var connectionsPath = Path.Combine(dataPath, "config", "connections.json");
         if (!File.Exists(connectionsPath))
