@@ -54,11 +54,13 @@ The `EmbeddingPurpose` parameter lets providers that distinguish query vs. docum
 
 ### First implementation: ONNX (`OpenAgent.Embedding.Onnx`)
 
-- **Model:** `multilingual-e5-base` — 768 dims, 512 max sequence length, multilingual (Danish + English). Tokenizer is XLM-RoBERTa SentencePiece/BPE via HuggingFace `tokenizer.json`.
-- **Runtime:** `Microsoft.ML.OnnxRuntime` for inference, `Microsoft.ML.Tokenizers` for tokenization. The exact tokenizer loader API for XLM-RoBERTa needs a short spike before Task 3 — if unsupported, fall back to shelling out or vendoring a BPE implementation.
-- **Model files:** `{dataPath}/models/multilingual-e5-base/` — contains `model.onnx`, `tokenizer.json`, `tokenizer_config.json`
+- **Model:** `multilingual-e5-base` — 768 dims, 512 max sequence length, multilingual (Danish + English). Tokenizer is XLM-RoBERTa **Unigram SentencePiece** (confirmed via spike on the `tokenizer.json` metadata).
+- **Runtime:** `Microsoft.ML.OnnxRuntime` for inference, `Microsoft.ML.Tokenizers` **`3.0.0-preview.26160.2`** for tokenization. The stable 1.0 release does not expose a public Unigram loader; the preview's `SentencePieceTokenizer.Create(stream, ...)` does.
+- **Model files:** `{dataPath}/models/multilingual-e5-base/` — requires `model.onnx` and `sentencepiece.bpe.model` (the SentencePiece protobuf). `tokenizer.json` is not used — Microsoft.ML.Tokenizers has no HuggingFace tokenizer.json parser.
 - **e5 prefix convention:** `"query: {text}"` for search queries, `"passage: {text}"` for chunk content during indexing
-- **Pipeline:** Tokenize → truncate to 512 tokens → ONNX inference → mean pooling (over non-padding tokens) → L2 normalize → `float[768]`
+- **ID-space offset:** Microsoft.ML.Tokenizers returns raw SentencePiece IDs. The trained ONNX model expects XLM-R's ID space: `xlmr_id = sp_id + 1` (XLM-R prepends `<s>` at 0, shifting all real tokens up by 1). Apply `+1` in the provider.
+- **Special tokens:** `<s>` = 0, `<pad>` = 1, `</s>` = 2, `<unk>` = 3, `<mask>` = 250001. Pipeline wraps tokens as `[<s>, ...shifted, </s>]`, right-pads with `<pad>` to 512, and builds a matching attention mask.
+- **Pipeline:** Prefix → tokenize → `+1` offset → wrap with `<s>`/`</s>` → truncate/pad to 512 → ONNX inference → mean pooling over non-padding positions → L2 normalize → `float[768]`
 - **RAM:** ~1-1.5 GB for the model
 
 ### Resolution

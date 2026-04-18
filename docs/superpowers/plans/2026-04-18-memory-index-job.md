@@ -110,16 +110,30 @@
 
 ## Task 3: OnnxEmbeddingProvider
 
-**Pre-work spike (do first, commit alone):** multilingual-e5-base uses an XLM-RoBERTa SentencePiece/BPE tokenizer, not WordPiece. Before writing the provider, verify that `Microsoft.ML.Tokenizers` can load the model's `tokenizer.json` and produces the same token IDs as HuggingFace for a known input. If the library can't load it, fall back to shelling out or vendoring a BPE implementation — but *know* that before Task 3 architecture lands. Drop a ~20-line console scratch test and delete it after, or keep it as a disabled integration test.
+**Tokenizer findings (from pre-Task 3 spike):**
+- multilingual-e5-base is XLM-RoBERTa based; its tokenizer is **Unigram SentencePiece**, not BPE or WordPiece.
+- `Microsoft.ML.Tokenizers` **1.0 stable does not expose a Unigram loader**. The **3.0.0-preview.26160.2** release does — it exposes `SentencePieceTokenizer.Create(Stream modelStream, bool addBeginningOfSentence, bool addEndOfSentence, IReadOnlyDictionary<string,int>? specialTokens)` which loads the model's `sentencepiece.bpe.model` file (the `.model` file is a SentencePiece protobuf despite the `.bpe` name).
+- **Use the `.model` file, not `tokenizer.json`.** Microsoft.ML.Tokenizers has no HuggingFace `tokenizer.json` parser.
+- **ID-space offset:** Microsoft returns raw SentencePiece IDs. HuggingFace / the trained ONNX model expects **SP id + 1** (XLM-R prepends `<s>` at position 0, shifting every real token up by one). Apply `+1` in the provider before feeding IDs to ONNX.
+- **Special tokens:** prepend `<s>` = 0 and append `</s>` = 2 manually; call `Create` with `addBeginningOfSentence: false, addEndOfSentence: false`. Pad missing positions with `<pad>` = 1. Attention mask: 1 for real tokens + specials, 0 for padding.
+- Verified tokenization matches HF (e.g., `"query"` splits to `▁que` + `ry` in both — `▁query` is not in the 250 000-piece vocab).
 
 **Implementation** (`OnnxEmbeddingProvider.cs`):
 - Implements `IEmbeddingProvider`, `IDisposable`
 - Key: `"onnx"`, Dimensions: `768`
-- Constructor loads ONNX model from `{dataPath}/models/multilingual-e5-base/model.onnx` and tokenizer from `tokenizer.json` in same directory
-- `GenerateEmbeddingAsync(text, purpose, ct)`: prepends `"query: "` (Search) or `"passage: "` (Indexing), tokenizes, **truncates to 512 tokens** (model max sequence length), runs ONNX inference, mean-pools over non-padding tokens, L2 normalizes
-- Internal static methods `MeanPool` and `L2Normalize` for testability
+- Constructor loads ONNX model from `{dataPath}/models/multilingual-e5-base/model.onnx` and the SentencePiece model from `sentencepiece.bpe.model` in the same directory
+- `GenerateEmbeddingAsync(text, purpose, ct)`:
+  1. Prepend `"query: "` (Search) or `"passage: "` (Indexing)
+  2. Tokenize via `SentencePieceTokenizer`, add `+1` to every ID
+  3. Wrap: `[<s>, ...shifted_ids, </s>]`, truncate the middle to keep within 512 total tokens, right-pad with `<pad>` to 512
+  4. Build attention mask (1 for real, 0 for pad)
+  5. Run ONNX inference (inputs: `input_ids`, `attention_mask`)
+  6. Mean-pool over non-padding positions, L2 normalize → `float[768]`
+- Internal static helpers `MeanPool(embeddings, attentionMask)` and `L2Normalize(vector)` for testability
 
-**Model files:** Downloaded from HuggingFace and placed at `{dataPath}/models/multilingual-e5-base/` before running (or bundled into the Docker image). The provider must throw a clear error on construction if the files are missing rather than at first-use.
+**Model files:** Downloaded from HuggingFace and placed at `{dataPath}/models/multilingual-e5-base/` before running (or bundled into the Docker image). Required files: `model.onnx`, `sentencepiece.bpe.model`. `tokenizer.json` is not used. The provider must throw a clear error on construction if files are missing rather than at first-use.
+
+**Package note:** `Microsoft.ML.Tokenizers` is referenced as the `3.0.0-preview.26160.2` prerelease. Pin the exact version in `Directory.Packages.props`.
 
 **Tests** (`OnnxEmbeddingProviderTests`):
 - [ ] `MeanPool` with known input + attention mask produces expected output (ignores padding positions)
