@@ -45,28 +45,55 @@ public class MemoryToolHandlerTests : IDisposable
     }
 
     [Fact]
-    public void Exposes_two_tools_when_embedding_provider_configured()
+    public void Always_exposes_two_tools_regardless_of_embedding_provider_config()
     {
-        var config = new AgentConfig { EmbeddingProvider = "fake" };
-        var service = BuildService(config);
+        // Tools must be registered unconditionally because MemoryToolHandler can be constructed
+        // before AgentConfig.Configure runs (provider-IConfigurable factories trigger IAgentLogic
+        // which transitively pulls in all IToolHandler singletons). Conditional exposure at ctor
+        // time would miss the live config. Empty-provider behavior is enforced inside the tool
+        // executions instead.
+        var configOn = new AgentConfig { EmbeddingProvider = "fake" };
+        var configOff = new AgentConfig { EmbeddingProvider = "" };
 
-        var handler = new MemoryToolHandler(service, config);
+        var handlerOn = new MemoryToolHandler(BuildService(configOn), configOn);
+        var handlerOff = new MemoryToolHandler(BuildService(configOff), configOff);
 
-        Assert.Equal(2, handler.Tools.Count);
-        var names = handler.Tools.Select(t => t.Definition.Name).ToHashSet();
-        Assert.Contains("search_memory", names);
-        Assert.Contains("load_memory_chunks", names);
+        Assert.Equal(2, handlerOn.Tools.Count);
+        Assert.Equal(2, handlerOff.Tools.Count);
+        foreach (var handler in new[] { handlerOn, handlerOff })
+        {
+            var names = handler.Tools.Select(t => t.Definition.Name).ToHashSet();
+            Assert.Contains("search_memory", names);
+            Assert.Contains("load_memory_chunks", names);
+        }
     }
 
     [Fact]
-    public void Exposes_no_tools_when_embedding_provider_unset()
+    public async Task search_memory_returns_error_when_embedding_provider_unset()
     {
         var config = new AgentConfig { EmbeddingProvider = "" };
-        var service = BuildService(config);
+        var handler = new MemoryToolHandler(BuildService(config), config);
+        var tool = handler.Tools.First(t => t.Definition.Name == "search_memory");
 
-        var handler = new MemoryToolHandler(service, config);
+        var raw = await tool.ExecuteAsync("""{"query":"anything"}""", "conv-1");
 
-        Assert.Empty(handler.Tools);
+        using var doc = JsonDocument.Parse(raw);
+        Assert.True(doc.RootElement.TryGetProperty("error", out var err));
+        Assert.Contains("embeddingProvider", err.GetString());
+    }
+
+    [Fact]
+    public async Task load_memory_chunks_returns_error_when_embedding_provider_unset()
+    {
+        var config = new AgentConfig { EmbeddingProvider = "" };
+        var handler = new MemoryToolHandler(BuildService(config), config);
+        var tool = handler.Tools.First(t => t.Definition.Name == "load_memory_chunks");
+
+        var raw = await tool.ExecuteAsync("""{"ids":[1]}""", "conv-1");
+
+        using var doc = JsonDocument.Parse(raw);
+        Assert.True(doc.RootElement.TryGetProperty("error", out var err));
+        Assert.Contains("embeddingProvider", err.GetString());
     }
 
     [Fact]

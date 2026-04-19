@@ -5,9 +5,11 @@ using OpenAgent.Models.Configs;
 namespace OpenAgent.MemoryIndex;
 
 /// <summary>
-/// Exposes `search_memory` and `load_memory_chunks` tools. Tools are only advertised
-/// when an embedding provider is configured — with it unset the memory index is
-/// essentially offline, so there's nothing for the agent to search or load.
+/// Exposes `search_memory` and `load_memory_chunks` tools. The tools are always advertised
+/// (registration happens at DI-resolution time, which can fire before AgentConfig is loaded —
+/// reading config state in the ctor leaves us with stale defaults). When the tools are
+/// invoked without an embedding provider configured, they return a clear error to the LLM
+/// rather than silently doing nothing.
 /// </summary>
 public sealed class MemoryToolHandler : IToolHandler
 {
@@ -15,9 +17,10 @@ public sealed class MemoryToolHandler : IToolHandler
 
     public MemoryToolHandler(MemoryIndexService service, AgentConfig agentConfig)
     {
-        Tools = string.IsNullOrEmpty(agentConfig.EmbeddingProvider)
-            ? []
-            : [new SearchMemoryTool(service), new LoadMemoryChunksTool(service)];
+        Tools = [
+            new SearchMemoryTool(service, agentConfig),
+            new LoadMemoryChunksTool(service, agentConfig),
+        ];
     }
 }
 
@@ -25,7 +28,7 @@ public sealed class MemoryToolHandler : IToolHandler
 /// Returns lightweight summaries ranked by hybrid vector+keyword score. The agent
 /// scans these and calls load_memory_chunks for the ones it actually wants to read.
 /// </summary>
-internal sealed class SearchMemoryTool(MemoryIndexService service) : ITool
+internal sealed class SearchMemoryTool(MemoryIndexService service, AgentConfig agentConfig) : ITool
 {
     private const int DefaultLimit = 5;
 
@@ -47,6 +50,9 @@ internal sealed class SearchMemoryTool(MemoryIndexService service) : ITool
 
     public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
+        if (string.IsNullOrEmpty(agentConfig.EmbeddingProvider))
+            return JsonSerializer.Serialize(new { error = "memory index disabled: embeddingProvider is not configured" });
+
         var args = JsonDocument.Parse(arguments).RootElement;
         var query = args.GetProperty("query").GetString() ?? throw new ArgumentException("query is required");
         var limit = args.TryGetProperty("limit", out var lEl) && lEl.ValueKind == JsonValueKind.Number
@@ -62,7 +68,7 @@ internal sealed class SearchMemoryTool(MemoryIndexService service) : ITool
 /// Loads the full content of specific chunks by id. Paired with search_memory —
 /// the agent chooses which summaries are worth expanding and loads just those.
 /// </summary>
-internal sealed class LoadMemoryChunksTool(MemoryIndexService service) : ITool
+internal sealed class LoadMemoryChunksTool(MemoryIndexService service, AgentConfig agentConfig) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -86,6 +92,9 @@ internal sealed class LoadMemoryChunksTool(MemoryIndexService service) : ITool
 
     public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
+        if (string.IsNullOrEmpty(agentConfig.EmbeddingProvider))
+            return JsonSerializer.Serialize(new { error = "memory index disabled: embeddingProvider is not configured" });
+
         var args = JsonDocument.Parse(arguments).RootElement;
         var idsEl = args.GetProperty("ids");
         var ids = new List<int>(idsEl.GetArrayLength());
