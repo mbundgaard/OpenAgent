@@ -94,11 +94,13 @@ builder.Services.AddScheduledTasks(environment.DataPath);
 builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxMultilingualE5EmbeddingProvider.ProviderKey, (sp, _) =>
     new OnnxMultilingualE5EmbeddingProvider(
         sp.GetRequiredService<AgentEnvironment>(),
-        sp.GetRequiredService<AgentConfig>()));
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<ILogger<OnnxMultilingualE5EmbeddingProvider>>()));
 builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxBgeEmbeddingProvider.ProviderKey, (sp, _) =>
     new OnnxBgeEmbeddingProvider(
         sp.GetRequiredService<AgentEnvironment>(),
-        sp.GetRequiredService<AgentConfig>()));
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<ILogger<OnnxBgeEmbeddingProvider>>()));
 builder.Services.AddSingleton<Func<string, IEmbeddingProvider>>(sp =>
     key => sp.GetRequiredKeyedService<IEmbeddingProvider>(key));
 builder.Services.AddMemoryIndex();

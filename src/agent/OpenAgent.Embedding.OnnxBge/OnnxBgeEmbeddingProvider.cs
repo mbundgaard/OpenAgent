@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.ML.Tokenizers;
@@ -12,10 +14,14 @@ namespace OpenAgent.Embedding.OnnxBge;
 /// special-token layout — they only differ in hidden size. The specific model to load is
 /// chosen via <see cref="AgentConfig.EmbeddingModel"/>.
 ///
+/// Missing model files are downloaded from HuggingFace on first use
+/// (<c>https://huggingface.co/BAAI/{model}/</c>). Files land in
+/// <c>{dataPath}/models/{model}/</c> and are kept across restarts.
+///
 /// Pipeline: prepend the BGE query instruction when <see cref="EmbeddingPurpose.Search"/>
 /// (passages get no prefix — BGE v1.5 asymmetric retrieval), tokenize via BERT WordPiece,
 /// wrap with [CLS]/[SEP], pad to 512, run ONNX inference with input_ids + attention_mask
-/// (+ token_type_ids=0 if the model expects it), take the [CLS] token's hidden state
+/// (+ token_type_ids=0 when the session expects it), take the [CLS] token's hidden state
 /// (position 0 of last_hidden_state), L2 normalize.
 ///
 /// Distinct from the multilingual-e5 provider in three ways:
@@ -28,10 +34,8 @@ public sealed class OnnxBgeEmbeddingProvider : IEmbeddingProvider, IDisposable
     public const string ProviderKey = "bge";
     public const int MaxSequenceLength = 512;
 
-    /// <summary>Query-side instruction prescribed by BGE v1.5 for asymmetric retrieval.</summary>
     private const string QueryInstruction = "Represent this sentence for searching relevant passages: ";
 
-    /// <summary>Known BGE EN v1.5 variants and their embedding dimensions.</summary>
     public static readonly IReadOnlyDictionary<string, int> KnownModels = new Dictionary<string, int>
     {
         ["bge-small-en-v1.5"] = 384,
@@ -47,6 +51,9 @@ public sealed class OnnxBgeEmbeddingProvider : IEmbeddingProvider, IDisposable
     private readonly string _modelDirectory;
     private readonly string _model;
     private readonly int _dimensions;
+    private readonly ILogger<OnnxBgeEmbeddingProvider> _logger;
+    private readonly bool _autoDownload;
+    private readonly SemaphoreSlim _loadLock = new(1, 1);
 
     private BertTokenizer? _tokenizer;
     private InferenceSession? _session;
@@ -59,7 +66,11 @@ public sealed class OnnxBgeEmbeddingProvider : IEmbeddingProvider, IDisposable
     public string Model => _model;
     public int Dimensions => _dimensions;
 
-    public OnnxBgeEmbeddingProvider(AgentEnvironment environment, AgentConfig agentConfig)
+    public OnnxBgeEmbeddingProvider(
+        AgentEnvironment environment,
+        AgentConfig agentConfig,
+        ILogger<OnnxBgeEmbeddingProvider> logger,
+        bool autoDownload = true)
     {
         _model = agentConfig.EmbeddingModel;
         if (!KnownModels.TryGetValue(_model, out _dimensions))
@@ -68,16 +79,17 @@ public sealed class OnnxBgeEmbeddingProvider : IEmbeddingProvider, IDisposable
                 $"Unknown BGE model: '{_model}'. Supported: {string.Join(", ", KnownModels.Keys)}");
         }
         _modelDirectory = Path.Combine(environment.DataPath, "models", _model);
+        _logger = logger;
+        _autoDownload = autoDownload;
     }
 
-    public Task<float[]> GenerateEmbeddingAsync(string text, EmbeddingPurpose purpose, CancellationToken ct = default)
+    public async Task<float[]> GenerateEmbeddingAsync(string text, EmbeddingPurpose purpose, CancellationToken ct = default)
     {
-        EnsureLoaded();
+        await EnsureLoadedAsync(ct);
 
         var prefixed = purpose == EmbeddingPurpose.Search ? QueryInstruction + text : text;
 
-        // Ask the tokenizer for bare subword ids — we add [CLS]/[SEP] ourselves so the
-        // truncation/padding logic lives in one place.
+        // Bare subword ids — we add [CLS]/[SEP] ourselves so truncation/padding lives in one place.
         var rawIds = _tokenizer!.EncodeToIds(prefixed, addSpecialTokens: false);
 
         var maxBodyTokens = MaxSequenceLength - 2;
@@ -85,7 +97,7 @@ public sealed class OnnxBgeEmbeddingProvider : IEmbeddingProvider, IDisposable
 
         var inputIds = new long[MaxSequenceLength];
         var attentionMask = new long[MaxSequenceLength];
-        var tokenTypeIds = new long[MaxSequenceLength]; // all zeros (single-sentence)
+        var tokenTypeIds = new long[MaxSequenceLength];
 
         inputIds[0] = ClsTokenId;
         attentionMask[0] = 1;
@@ -96,16 +108,95 @@ public sealed class OnnxBgeEmbeddingProvider : IEmbeddingProvider, IDisposable
         }
         inputIds[bodyCount + 1] = SepTokenId;
         attentionMask[bodyCount + 1] = 1;
-        // Positions past bodyCount + 2 are already 0 = [PAD], attention_mask already 0.
+        // Positions past bodyCount + 2 stay at 0 = [PAD] with attention_mask = 0.
 
-        var embedding = RunInference(inputIds, attentionMask, tokenTypeIds);
-        return Task.FromResult(embedding);
+        return RunInference(inputIds, attentionMask, tokenTypeIds);
     }
 
-    private void EnsureLoaded()
+    private async Task EnsureLoadedAsync(CancellationToken ct)
     {
         if (_session is not null) return;
+        await _loadLock.WaitAsync(ct);
+        try
+        {
+            if (_session is not null) return;
+            if (_autoDownload)
+                await DownloadIfMissingAsync(ct);
+            LoadLocalFiles();
+        }
+        finally
+        {
+            _loadLock.Release();
+        }
+    }
 
+    private async Task DownloadIfMissingAsync(CancellationToken ct)
+    {
+        Directory.CreateDirectory(_modelDirectory);
+
+        var sources = new (string FileName, string Url)[]
+        {
+            ("model.onnx", $"https://huggingface.co/BAAI/{_model}/resolve/main/onnx/model.onnx"),
+            ("vocab.txt",  $"https://huggingface.co/BAAI/{_model}/resolve/main/vocab.txt"),
+        };
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+
+        foreach (var (fileName, url) in sources)
+        {
+            var path = Path.Combine(_modelDirectory, fileName);
+            if (File.Exists(path) && new FileInfo(path).Length > 0)
+                continue;
+
+            _logger.LogInformation("Downloading {File} for {Model} from {Url}", fileName, _model, url);
+            var sw = Stopwatch.StartNew();
+            var tmpPath = path + ".tmp";
+            try
+            {
+                using (var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using var src = await response.Content.ReadAsStreamAsync(ct);
+                    using var dst = File.Create(tmpPath);
+                    await CopyWithProgressAsync(src, dst, fileName, ct);
+                }
+                File.Move(tmpPath, path, overwrite: true);
+                sw.Stop();
+                _logger.LogInformation(
+                    "Downloaded {File} for {Model}: {MB:N1} MB in {Seconds:N1}s",
+                    fileName, _model, new FileInfo(path).Length / 1024.0 / 1024.0, sw.Elapsed.TotalSeconds);
+            }
+            catch
+            {
+                try { File.Delete(tmpPath); } catch { /* best-effort cleanup */ }
+                throw;
+            }
+        }
+    }
+
+    private async Task CopyWithProgressAsync(Stream src, Stream dst, string fileName, CancellationToken ct)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        long lastLogged = 0;
+        const long logEvery = 100L * 1024 * 1024;
+
+        while (true)
+        {
+            var read = await src.ReadAsync(buffer, ct);
+            if (read == 0) break;
+            await dst.WriteAsync(buffer.AsMemory(0, read), ct);
+            total += read;
+            if (total - lastLogged >= logEvery)
+            {
+                _logger.LogInformation("Downloading {File}: {MB:N0} MB so far", fileName, total / 1024.0 / 1024.0);
+                lastLogged = total;
+            }
+        }
+    }
+
+    private void LoadLocalFiles()
+    {
         if (!Directory.Exists(_modelDirectory))
             throw new DirectoryNotFoundException($"BGE model directory not found: {_modelDirectory}");
 
@@ -148,7 +239,7 @@ public sealed class OnnxBgeEmbeddingProvider : IEmbeddingProvider, IDisposable
         using var results = _session!.Run(inputs);
         var output = results.First(r => r.Name == _outputName).AsTensor<float>();
 
-        // CLS pooling: take position 0 of last_hidden_state [1, seq, hidden].
+        // CLS pooling: position 0 of last_hidden_state [1, seq, hidden].
         var hiddenSize = output.Dimensions[2];
         var cls = new float[hiddenSize];
         for (var j = 0; j < hiddenSize; j++)
@@ -178,5 +269,6 @@ public sealed class OnnxBgeEmbeddingProvider : IEmbeddingProvider, IDisposable
     public void Dispose()
     {
         _session?.Dispose();
+        _loadLock.Dispose();
     }
 }

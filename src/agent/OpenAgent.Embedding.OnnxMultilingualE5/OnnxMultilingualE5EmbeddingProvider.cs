@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.ML.Tokenizers;
@@ -11,6 +13,10 @@ namespace OpenAgent.Embedding.OnnxMultilingualE5;
 /// running on ONNX Runtime. All three variants share the same XLM-RoBERTa Unigram SentencePiece
 /// tokenizer and special-token layout — they only differ in hidden size. The specific model to
 /// load is chosen via <see cref="AgentConfig.EmbeddingModel"/>.
+///
+/// Missing model files are downloaded from HuggingFace on first use
+/// (<c>https://huggingface.co/intfloat/{model}/</c>). Files land in
+/// <c>{dataPath}/models/{model}/</c> and are kept across restarts.
 ///
 /// Pipeline: prefix with "query: " or "passage: ", tokenize via XLM-RoBERTa's Unigram
 /// SentencePiece model, shift raw SentencePiece IDs by +1 to match HF's XLM-R ID space,
@@ -34,7 +40,6 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
         ["multilingual-e5-large"] = 1024,
     };
 
-    // XLM-RoBERTa special-token ids. Confirmed in tokenizer.json added_tokens during the spike.
     private const int BosTokenId = 0;   // <s>
     private const int PadTokenId = 1;   // <pad>
     private const int EosTokenId = 2;   // </s>
@@ -42,6 +47,9 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
     private readonly string _modelDirectory;
     private readonly string _model;
     private readonly int _dimensions;
+    private readonly ILogger<OnnxMultilingualE5EmbeddingProvider> _logger;
+    private readonly bool _autoDownload;
+    private readonly SemaphoreSlim _loadLock = new(1, 1);
 
     private SentencePieceTokenizer? _tokenizer;
     private InferenceSession? _session;
@@ -53,13 +61,11 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
     public string Model => _model;
     public int Dimensions => _dimensions;
 
-    /// <summary>
-    /// Resolves the model directory from <see cref="AgentEnvironment"/> + <see cref="AgentConfig.EmbeddingModel"/>
-    /// and stores it. Files are loaded lazily on first use so that a misconfigured or
-    /// not-yet-downloaded model doesn't crash app startup — the error surfaces on the first
-    /// embedding call, where it's caught by the indexing loop's per-file try/catch.
-    /// </summary>
-    public OnnxMultilingualE5EmbeddingProvider(AgentEnvironment environment, AgentConfig agentConfig)
+    public OnnxMultilingualE5EmbeddingProvider(
+        AgentEnvironment environment,
+        AgentConfig agentConfig,
+        ILogger<OnnxMultilingualE5EmbeddingProvider> logger,
+        bool autoDownload = true)
     {
         _model = agentConfig.EmbeddingModel;
         if (!KnownModels.TryGetValue(_model, out _dimensions))
@@ -68,15 +74,13 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
                 $"Unknown multilingual-e5 model: '{_model}'. Supported: {string.Join(", ", KnownModels.Keys)}");
         }
         _modelDirectory = Path.Combine(environment.DataPath, "models", _model);
+        _logger = logger;
+        _autoDownload = autoDownload;
     }
 
-    /// <summary>
-    /// Embed a single text. Applies the e5 prefix convention (query: / passage:) based on purpose.
-    /// Returned vector is L2-normalized and has exactly <see cref="Dimensions"/> components.
-    /// </summary>
-    public Task<float[]> GenerateEmbeddingAsync(string text, EmbeddingPurpose purpose, CancellationToken ct = default)
+    public async Task<float[]> GenerateEmbeddingAsync(string text, EmbeddingPurpose purpose, CancellationToken ct = default)
     {
-        EnsureLoaded();
+        await EnsureLoadedAsync(ct);
 
         // e5 was trained to expect these prefixes; embedding quality drops sharply without them
         var prefixed = purpose == EmbeddingPurpose.Search ? "query: " + text : "passage: " + text;
@@ -84,7 +88,6 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
         var rawIds = _tokenizer!.EncodeToIds(prefixed);
 
         // Shift to XLM-R ID space. HF prepends <s> at 0, pushing every real token's id up by 1.
-        // Truncate to leave room for <s> + </s>.
         var maxBodyTokens = MaxSequenceLength - 2;
         var bodyCount = Math.Min(rawIds.Count, maxBodyTokens);
 
@@ -100,19 +103,97 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
         }
         inputIds[bodyCount + 1] = EosTokenId;
         attentionMask[bodyCount + 1] = 1;
-        // Positions past bodyCount + 2 are zero-filled; attention_mask of 0 ensures they don't
-        // contribute to pooling. We then overwrite with PadTokenId for completeness.
         for (var i = bodyCount + 2; i < MaxSequenceLength; i++)
             inputIds[i] = PadTokenId;
 
-        var embedding = RunInference(inputIds, attentionMask);
-        return Task.FromResult(embedding);
+        return RunInference(inputIds, attentionMask);
     }
 
-    private void EnsureLoaded()
+    private async Task EnsureLoadedAsync(CancellationToken ct)
     {
         if (_session is not null) return;
+        await _loadLock.WaitAsync(ct);
+        try
+        {
+            if (_session is not null) return;
+            if (_autoDownload)
+                await DownloadIfMissingAsync(ct);
+            LoadLocalFiles();
+        }
+        finally
+        {
+            _loadLock.Release();
+        }
+    }
 
+    private async Task DownloadIfMissingAsync(CancellationToken ct)
+    {
+        Directory.CreateDirectory(_modelDirectory);
+
+        var sources = new (string FileName, string Url)[]
+        {
+            ("model.onnx",                $"https://huggingface.co/intfloat/{_model}/resolve/main/onnx/model.onnx"),
+            ("sentencepiece.bpe.model",   $"https://huggingface.co/intfloat/{_model}/resolve/main/sentencepiece.bpe.model"),
+        };
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+
+        foreach (var (fileName, url) in sources)
+        {
+            var path = Path.Combine(_modelDirectory, fileName);
+            if (File.Exists(path) && new FileInfo(path).Length > 0)
+                continue;
+
+            _logger.LogInformation("Downloading {File} for {Model} from {Url}", fileName, _model, url);
+            var sw = Stopwatch.StartNew();
+            var tmpPath = path + ".tmp";
+            try
+            {
+                using (var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using var src = await response.Content.ReadAsStreamAsync(ct);
+                    using var dst = File.Create(tmpPath);
+                    await CopyWithProgressAsync(src, dst, fileName, ct);
+                }
+                File.Move(tmpPath, path, overwrite: true);
+                sw.Stop();
+                _logger.LogInformation(
+                    "Downloaded {File} for {Model}: {MB:N1} MB in {Seconds:N1}s",
+                    fileName, _model, new FileInfo(path).Length / 1024.0 / 1024.0, sw.Elapsed.TotalSeconds);
+            }
+            catch
+            {
+                try { File.Delete(tmpPath); } catch { /* best-effort cleanup */ }
+                throw;
+            }
+        }
+    }
+
+    private async Task CopyWithProgressAsync(Stream src, Stream dst, string fileName, CancellationToken ct)
+    {
+        // Log every 100 MB so a multi-gigabyte download isn't silent.
+        var buffer = new byte[81920];
+        long total = 0;
+        long lastLogged = 0;
+        const long logEvery = 100L * 1024 * 1024;
+
+        while (true)
+        {
+            var read = await src.ReadAsync(buffer, ct);
+            if (read == 0) break;
+            await dst.WriteAsync(buffer.AsMemory(0, read), ct);
+            total += read;
+            if (total - lastLogged >= logEvery)
+            {
+                _logger.LogInformation("Downloading {File}: {MB:N0} MB so far", fileName, total / 1024.0 / 1024.0);
+                lastLogged = total;
+            }
+        }
+    }
+
+    private void LoadLocalFiles()
+    {
         if (!Directory.Exists(_modelDirectory))
             throw new DirectoryNotFoundException($"e5 model directory not found: {_modelDirectory}");
 
@@ -149,7 +230,6 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
         using var results = _session!.Run(inputs);
         var output = results.First(r => r.Name == _outputName).AsTensor<float>();
 
-        // last_hidden_state shape: [1, seq, hidden]. Mean-pool over seq dimension using the mask.
         var seqLen = output.Dimensions[1];
         var hiddenSize = output.Dimensions[2];
         var tokenEmbeddings = new float[seqLen * hiddenSize];
@@ -164,7 +244,6 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
 
     /// <summary>
     /// Mean-pool a [seq, hidden] flattened tensor weighted by a binary attention mask.
-    /// Padding positions (mask = 0) are excluded.
     /// </summary>
     internal static float[] MeanPool(float[] tokenEmbeddings, long[] attentionMask, int hiddenSize)
     {
@@ -207,5 +286,6 @@ public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, ID
     public void Dispose()
     {
         _session?.Dispose();
+        _loadLock.Dispose();
     }
 }

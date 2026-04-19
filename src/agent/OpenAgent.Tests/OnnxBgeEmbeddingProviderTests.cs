@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent.Contracts;
 using OpenAgent.Embedding.OnnxBge;
 using OpenAgent.Models.Configs;
@@ -36,9 +37,9 @@ public class OnnxBgeEmbeddingProviderTests
         using var tempDir = new TempDataDir();
         var env = new AgentEnvironment { DataPath = tempDir.Path };
 
-        using var small = new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "bge-small-en-v1.5" });
-        using var baseP = new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "bge-base-en-v1.5" });
-        using var large = new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "bge-large-en-v1.5" });
+        using var small = new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "bge-small-en-v1.5" }, NullLogger<OnnxBgeEmbeddingProvider>.Instance, autoDownload: false);
+        using var baseP = new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "bge-base-en-v1.5" }, NullLogger<OnnxBgeEmbeddingProvider>.Instance, autoDownload: false);
+        using var large = new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "bge-large-en-v1.5" }, NullLogger<OnnxBgeEmbeddingProvider>.Instance, autoDownload: false);
 
         Assert.Equal("bge", small.Key);
         Assert.Equal("bge-small-en-v1.5", small.Model);
@@ -55,7 +56,7 @@ public class OnnxBgeEmbeddingProviderTests
         var env = new AgentEnvironment { DataPath = tempDir.Path };
 
         Assert.Throws<InvalidOperationException>(() =>
-            new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "not-a-bge-model" }));
+            new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "not-a-bge-model" }, NullLogger<OnnxBgeEmbeddingProvider>.Instance, autoDownload: false));
     }
 
     [Fact]
@@ -63,7 +64,7 @@ public class OnnxBgeEmbeddingProviderTests
     {
         using var tempDir = new TempDataDir();
         var env = new AgentEnvironment { DataPath = tempDir.Path };
-        using var provider = new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "bge-base-en-v1.5" });
+        using var provider = new OnnxBgeEmbeddingProvider(env, new AgentConfig { EmbeddingModel = "bge-base-en-v1.5" }, NullLogger<OnnxBgeEmbeddingProvider>.Instance, autoDownload: false);
 
         await Assert.ThrowsAnyAsync<Exception>(
             () => provider.GenerateEmbeddingAsync("hello", EmbeddingPurpose.Indexing));
@@ -79,7 +80,7 @@ public class OnnxBgeEmbeddingProviderTests
         var env = new AgentEnvironment { DataPath = dataDir };
         var config = new AgentConfig { EmbeddingModel = "bge-base-en-v1.5" };
 
-        using var provider = new OnnxBgeEmbeddingProvider(env, config);
+        using var provider = new OnnxBgeEmbeddingProvider(env, config, NullLogger<OnnxBgeEmbeddingProvider>.Instance, autoDownload: false);
 
         var passage = await provider.GenerateEmbeddingAsync("The quick brown fox jumps over the lazy dog.", EmbeddingPurpose.Indexing);
         var query = await provider.GenerateEmbeddingAsync("The quick brown fox jumps over the lazy dog.", EmbeddingPurpose.Search);

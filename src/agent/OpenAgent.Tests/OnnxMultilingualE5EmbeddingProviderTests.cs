@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent.Contracts;
 using OpenAgent.Embedding.OnnxMultilingualE5;
 using OpenAgent.Models.Configs;
@@ -73,7 +74,7 @@ public class OnnxMultilingualE5EmbeddingProviderTests
         var env = new AgentEnvironment { DataPath = tempDir.Path };
         var config = new AgentConfig { EmbeddingModel = "multilingual-e5-small" };
 
-        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config);
+        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config, NullLogger<OnnxMultilingualE5EmbeddingProvider>.Instance, autoDownload: false);
 
         Assert.Equal("multilingual-e5", provider.Key);
         Assert.Equal("multilingual-e5-small", provider.Model);
@@ -87,7 +88,7 @@ public class OnnxMultilingualE5EmbeddingProviderTests
         var env = new AgentEnvironment { DataPath = tempDir.Path };
         var config = new AgentConfig { EmbeddingModel = "multilingual-e5-base" };
 
-        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config);
+        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config, NullLogger<OnnxMultilingualE5EmbeddingProvider>.Instance, autoDownload: false);
 
         Assert.Equal(768, provider.Dimensions);
     }
@@ -99,7 +100,7 @@ public class OnnxMultilingualE5EmbeddingProviderTests
         var env = new AgentEnvironment { DataPath = tempDir.Path };
         var config = new AgentConfig { EmbeddingModel = "multilingual-e5-large" };
 
-        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config);
+        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config, NullLogger<OnnxMultilingualE5EmbeddingProvider>.Instance, autoDownload: false);
 
         Assert.Equal(1024, provider.Dimensions);
     }
@@ -111,7 +112,7 @@ public class OnnxMultilingualE5EmbeddingProviderTests
         var env = new AgentEnvironment { DataPath = tempDir.Path };
         var config = new AgentConfig { EmbeddingModel = "not-a-real-model" };
 
-        Assert.Throws<InvalidOperationException>(() => new OnnxMultilingualE5EmbeddingProvider(env, config));
+        Assert.Throws<InvalidOperationException>(() => new OnnxMultilingualE5EmbeddingProvider(env, config, NullLogger<OnnxMultilingualE5EmbeddingProvider>.Instance, autoDownload: false));
     }
 
     [Fact]
@@ -122,7 +123,7 @@ public class OnnxMultilingualE5EmbeddingProviderTests
         var env = new AgentEnvironment { DataPath = tempDir.Path };
         var config = new AgentConfig { EmbeddingModel = "multilingual-e5-base" };
 
-        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config);
+        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config, NullLogger<OnnxMultilingualE5EmbeddingProvider>.Instance, autoDownload: false);
 
         // Model dir doesn't exist under the temp dir, so first call must surface an error
         await Assert.ThrowsAnyAsync<Exception>(
@@ -139,7 +140,7 @@ public class OnnxMultilingualE5EmbeddingProviderTests
         var env = new AgentEnvironment { DataPath = dataDir };
         var config = new AgentConfig { EmbeddingModel = "multilingual-e5-base" };
 
-        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config);
+        using var provider = new OnnxMultilingualE5EmbeddingProvider(env, config, NullLogger<OnnxMultilingualE5EmbeddingProvider>.Instance, autoDownload: false);
 
         var passage = await provider.GenerateEmbeddingAsync("The quick brown fox jumps over the lazy dog.", EmbeddingPurpose.Indexing);
         var query = await provider.GenerateEmbeddingAsync("The quick brown fox jumps over the lazy dog.", EmbeddingPurpose.Search);
