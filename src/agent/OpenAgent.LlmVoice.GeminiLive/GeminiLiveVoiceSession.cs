@@ -492,7 +492,8 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = ToolResultSummary.Create(capturedName, result),
+                        Content = result,
+                        ToolType = capturedName,
                         ToolCallId = capturedCallId
                     });
 
@@ -509,7 +510,8 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = ToolResultSummary.Create(capturedName, errorResult),
+                        Content = errorResult,
+                        ToolType = capturedName,
                         ToolCallId = capturedCallId
                     });
 

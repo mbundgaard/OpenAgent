@@ -207,13 +207,14 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
                     yield return new ToolResultEvent(id, name, result);
 
-                    // Persist tool result summary (compact), keep full result in-memory for current turn
+                    // Persist full tool result + ToolType for the purge job; see context-pruning design.
                     agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = ToolResultSummary.Create(name, result),
+                        Content = result,
+                        ToolType = name,
                         ToolCallId = id,
                         Modality = MessageModality.Text
                     });
@@ -335,6 +336,14 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         {
             var msg = storedMessages[i];
 
+            // Skip purged tool-result rows outright — they have null content and no parent tool_calls
+            if (msg.Role == "tool" && msg.ToolResultPurgedAt is not null)
+                continue;
+
+            // Skip empty assistant rows (purged tool_calls with no text content)
+            if (msg.Role == "assistant" && msg.Content is null && msg.ToolCalls is null)
+                continue;
+
             // Assistant message with tool calls — verify all tool results follow
             if (msg.ToolCalls is not null)
             {
@@ -344,14 +353,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     // Collect the expected tool_call_ids
                     var expectedIds = toolCalls.Select(tc => tc.Id).ToHashSet();
 
-                    // Look ahead for matching tool result messages
+                    // Look ahead for matching tool result messages — skipping purged ones
                     var foundIds = new HashSet<string>();
-                    for (var j = i + 1; j < storedMessages.Count && foundIds.Count < expectedIds.Count; j++)
+                    var j = i + 1;
+                    while (j < storedMessages.Count && foundIds.Count < expectedIds.Count)
                     {
-                        if (storedMessages[j].Role == "tool" && storedMessages[j].ToolCallId is not null)
-                            foundIds.Add(storedMessages[j].ToolCallId!);
-                        else
-                            break; // Tool results must be contiguous
+                        var child = storedMessages[j];
+                        if (child.Role != "tool" || child.ToolCallId is null) break;
+                        if (child.ToolResultPurgedAt is null)
+                            foundIds.Add(child.ToolCallId);
+                        j++;
                     }
 
                     // Skip this tool call round if incomplete — avoids API 400 errors
@@ -359,7 +370,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     {
                         logger.LogWarning("Skipping orphaned tool call round at message {MessageId}: expected [{Expected}], found [{Found}]",
                             msg.Id, string.Join(", ", expectedIds), string.Join(", ", foundIds));
-                        // Skip the assistant message and any partial tool results
+                        // Skip the assistant message and any contiguous tool result siblings
                         while (i + 1 < storedMessages.Count && storedMessages[i + 1].Role == "tool")
                             i++;
                         continue;
@@ -368,16 +379,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     // Complete round — add assistant message with tool calls
                     chatMessages.Add(new ChatMessage { Role = "assistant", Content = msg.Content, Name = ChannelMessageName(msg), ToolCalls = toolCalls });
 
-                    // Add the matching tool result messages
-                    foreach (var id in expectedIds)
+                    // Add the matching tool result messages (skip purged children seen during lookahead)
+                    var added = 0;
+                    while (added < expectedIds.Count && i + 1 < storedMessages.Count)
                     {
                         i++;
-                        chatMessages.Add(new ChatMessage
-                        {
-                            Role = "tool",
-                            Content = storedMessages[i].Content,
-                            ToolCallId = storedMessages[i].ToolCallId
-                        });
+                        var child = storedMessages[i];
+                        if (child.Role != "tool" || child.ToolCallId is null) { i--; break; }
+                        if (child.ToolResultPurgedAt is not null) continue; // skip purged
+                        chatMessages.Add(new ChatMessage { Role = "tool", Content = child.Content, ToolCallId = child.ToolCallId });
+                        added++;
                     }
                     continue;
                 }

@@ -62,4 +62,21 @@ public interface IConversationStore : IConfigurable
 
     /// <summary>Returns messages by their IDs, regardless of compaction state. Used by the expand tool.</summary>
     IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds);
+
+    /// <summary>
+    /// Purges old tool rounds from a conversation. Within a single transaction:
+    /// assistant rows with ToolCalls and their matching tool-result children are nulled out together,
+    /// but only if the assistant row falls outside the last <paramref name="keepLast"/> such rows
+    /// AND its CreatedAt is older than <paramref name="cutoff"/>. Returns (roundsPurged, resultRowsPurged).
+    /// See docs/plans/2026-04-19-context-pruning-design.md.
+    /// </summary>
+    (int RoundsPurged, int ResultRowsPurged) PurgeOldToolRounds(
+        string conversationId, int keepLast, DateTimeOffset cutoff);
+
+    /// <summary>
+    /// Purges all unpurged activate_skill_resource results in this conversation, regardless of age
+    /// or recency. Called by DeactivateSkillTool so resources don't linger when the user declares
+    /// a skill is done. Returns the number of rows nulled.
+    /// </summary>
+    int PurgeSkillResourceResults(string conversationId);
 }

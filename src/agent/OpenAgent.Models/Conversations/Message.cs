@@ -84,4 +84,29 @@ public sealed class Message
     [JsonPropertyName("elapsed_ms")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? ElapsedMs { get; init; }
+
+    /// <summary>
+    /// The tool name (e.g. "file_read") this row's Content is a result of. Set only on tool-role
+    /// rows — NULL for user/assistant/system rows and for pre-pruning-feature rows. Enables the
+    /// round-based purge job to identify and rank tool-result rows without parsing Content JSON.
+    /// </summary>
+    [JsonPropertyName("tool_type")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolType { get; init; }
+
+    /// <summary>
+    /// Timestamp when this row's Content was nulled by the purge job (tool-role rows only).
+    /// NULL = still live. Stored in the same format as CreatedAt (DateTimeOffset "O").
+    /// </summary>
+    [JsonPropertyName("tool_result_purged_at")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? ToolResultPurgedAt { get; init; }
+
+    /// <summary>
+    /// Timestamp when this row's ToolCalls JSON was nulled by the purge job (assistant rows only).
+    /// NULL = still live. Stored in the same format as CreatedAt.
+    /// </summary>
+    [JsonPropertyName("tool_calls_purged_at")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? ToolCallsPurgedAt { get; init; }
 }

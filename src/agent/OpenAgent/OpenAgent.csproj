@@ -37,6 +37,7 @@
     <ProjectReference Include="..\OpenAgent.Channel.WhatsApp\OpenAgent.Channel.WhatsApp.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.Expand\OpenAgent.Tools.Expand.csproj" />
     <ProjectReference Include="..\OpenAgent.Compaction\OpenAgent.Compaction.csproj" />
+    <ProjectReference Include="..\OpenAgent.ContextPruning\OpenAgent.ContextPruning.csproj" />
     <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
     <ProjectReference Include="..\OpenAgent.Terminal\OpenAgent.Terminal.csproj" />
     <ProjectReference Include="..\OpenAgent.ScheduledTasks\OpenAgent.ScheduledTasks.csproj" />

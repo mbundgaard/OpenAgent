@@ -68,4 +68,33 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("embeddingModel")]
     public string EmbeddingModel { get; set; } = "multilingual-e5-base";
+
+    /// <summary>
+    /// Tool-round context pruning: minimum number of recent tool-bearing assistant rows per
+    /// conversation to always keep fully hydrated. Older rounds may be nulled out once they
+    /// exceed both this window and the age cutoff.
+    /// </summary>
+    [JsonPropertyName("purgeKeepLast")]
+    public int PurgeKeepLast { get; set; } = 10;
+
+    /// <summary>
+    /// Minimum age (in hours) before a tool round is eligible for pruning. Paired with
+    /// <see cref="PurgeKeepLast"/>: both must hold for a round to be nulled.
+    /// </summary>
+    [JsonPropertyName("purgeAgeCutoffHours")]
+    public int PurgeAgeCutoffHours { get; set; } = 24;
+
+    /// <summary>
+    /// Cadence of the scheduled purge-job catch-up sweep.
+    /// </summary>
+    [JsonPropertyName("purgeScheduledIntervalHours")]
+    public int PurgeScheduledIntervalHours { get; set; } = 1;
+
+    /// <summary>
+    /// Reactive purge threshold as a percent of <c>CompactionConfig.MaxContextTokens</c>.
+    /// When a turn's <c>LastPromptTokens</c> crosses this threshold, the purge fires for
+    /// that conversation end-of-turn. Set below the compaction trigger so purge runs first.
+    /// </summary>
+    [JsonPropertyName("purgeReactiveThresholdPercent")]
+    public int PurgeReactiveThresholdPercent { get; set; } = 60;
 }

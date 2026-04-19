@@ -266,13 +266,14 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
 
                     yield return new ToolResultEvent(id, name, result);
 
-                    // Persist compact summary; keep full result in-memory for the LLM
+                    // Persist full tool result + ToolType for the purge job; see context-pruning design.
                     agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = ToolResultSummary.Create(name, result),
+                        Content = result,
+                        ToolType = name,
                         ToolCallId = id,
                         Modality = MessageModality.Text
                     });
@@ -431,6 +432,10 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
             if (msg.Role == "tool")
                 continue;
 
+            // Skip empty assistant rows (purged tool_calls with no text content)
+            if (msg.Role == "assistant" && msg.Content is null && msg.ToolCalls is null)
+                continue;
+
             // Assistant message with tool calls
             if (msg.ToolCalls is not null)
             {
@@ -439,14 +444,16 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                 {
                     var expectedIds = toolCalls.Select(tc => tc.Id).ToHashSet();
 
-                    // Look ahead for matching tool result messages
+                    // Look ahead for matching tool result messages — skipping purged ones
                     var foundIds = new HashSet<string>();
-                    for (var j = i + 1; j < storedMessages.Count && foundIds.Count < expectedIds.Count; j++)
+                    var j = i + 1;
+                    while (j < storedMessages.Count && foundIds.Count < expectedIds.Count)
                     {
-                        if (storedMessages[j].Role == "tool" && storedMessages[j].ToolCallId is not null)
-                            foundIds.Add(storedMessages[j].ToolCallId!);
-                        else
-                            break;
+                        var child = storedMessages[j];
+                        if (child.Role != "tool" || child.ToolCallId is null) break;
+                        if (child.ToolResultPurgedAt is null)
+                            foundIds.Add(child.ToolCallId);
+                        j++;
                     }
 
                     // Skip orphaned tool call round — avoids API errors
@@ -471,17 +478,22 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                     }).ToList<AnthropicContentBlock>();
                     result.Add(new AnthropicMessage { Role = "assistant", Content = toolUseBlocks });
 
-                    // Collect tool results in a single user message (Anthropic convention)
+                    // Collect tool results in a single user message (Anthropic convention); skip purged children
                     var toolResultBlocks = new List<AnthropicContentBlock>();
-                    foreach (var id in expectedIds)
+                    var added = 0;
+                    while (added < expectedIds.Count && i + 1 < storedMessages.Count)
                     {
                         i++;
+                        var child = storedMessages[i];
+                        if (child.Role != "tool" || child.ToolCallId is null) { i--; break; }
+                        if (child.ToolResultPurgedAt is not null) continue; // skip purged
                         toolResultBlocks.Add(new AnthropicContentBlock
                         {
                             Type = "tool_result",
-                            ToolUseId = storedMessages[i].ToolCallId,
-                            Content = storedMessages[i].Content
+                            ToolUseId = child.ToolCallId,
+                            Content = child.Content
                         });
+                        added++;
                     }
                     result.Add(new AnthropicMessage { Role = "user", Content = toolResultBlocks });
                     continue;

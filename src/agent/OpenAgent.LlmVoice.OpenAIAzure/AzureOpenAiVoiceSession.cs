@@ -266,13 +266,14 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                     _logger.LogDebug("Executing voice tool {ToolName} for conversation {ConversationId}", name, conversationId);
                     var result = await _agentLogic.ExecuteToolAsync(conversationId, name, arguments, ct);
 
-                    // Persist tool result summary
+                    // Persist full tool result + ToolType for the purge job.
                     _agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = ToolResultSummary.Create(name, result),
+                        Content = result,
+                        ToolType = name,
                         ToolCallId = callId,
                         Modality = MessageModality.Voice
                     });
@@ -284,13 +285,14 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                     _logger.LogError(ex, "Voice tool {ToolName} failed for conversation {ConversationId}", name, conversationId);
                     var errorResult = JsonSerializer.Serialize(new { error = ex.Message });
 
-                    // Persist error summary
+                    // Persist full error result + ToolType for the purge job.
                     _agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = ToolResultSummary.Create(name, errorResult),
+                        Content = errorResult,
+                        ToolType = name,
                         ToolCallId = callId,
                         Modality = MessageModality.Voice
                     });

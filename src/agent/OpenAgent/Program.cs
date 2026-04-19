@@ -3,6 +3,7 @@ using OpenAgent.Api.Endpoints;
 using OpenAgent.Channel.Telegram;
 using OpenAgent.Channel.WhatsApp;
 using OpenAgent.Compaction;
+using OpenAgent.ContextPruning;
 using OpenAgent.ConfigStore.File;
 using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.Sqlite;
@@ -104,6 +105,7 @@ builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxBgeEmbeddingProvider.
 builder.Services.AddSingleton<Func<string, IEmbeddingProvider>>(sp =>
     key => sp.GetRequiredKeyedService<IEmbeddingProvider>(key));
 builder.Services.AddMemoryIndex();
+builder.Services.AddContextPruning();
 
 builder.Services.AddSingleton(new CompactionConfig());
 

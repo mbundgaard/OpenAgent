@@ -129,10 +129,15 @@ internal sealed class DeactivateSkillTool(IConversationStore store) : ITool
 
         store.Update(conversation);
 
+        // Tombstone all unpurged activate_skill_resource results for this conversation —
+        // they're no longer relevant now that the skill is done. Cheap; at most a few KB.
+        var purged = store.PurgeSkillResourceResults(conversationId);
+
         return Task.FromResult(JsonSerializer.Serialize(new
         {
             status = "deactivated",
             skill = name,
+            resources_purged = purged,
             message = $"Skill '{name}' deactivated. Its instructions will be removed from the system prompt on the next turn."
         }));
     }

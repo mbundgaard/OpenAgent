@@ -272,7 +272,8 @@ internal sealed class GrokVoiceSession : IVoiceSession
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = ToolResultSummary.Create(name, result),
+                        Content = result,
+                        ToolType = name,
                         ToolCallId = callId,
                         Modality = MessageModality.Voice
                     });
@@ -289,7 +290,8 @@ internal sealed class GrokVoiceSession : IVoiceSession
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
-                        Content = ToolResultSummary.Create(name, errorResult),
+                        Content = errorResult,
+                        ToolType = name,
                         ToolCallId = callId,
                         Modality = MessageModality.Voice
                     });

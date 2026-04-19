@@ -116,7 +116,10 @@ public sealed class InMemoryConversationStore : IConversationStore
             ReplyToChannelMessageId = message.ReplyToChannelMessageId,
             PromptTokens = message.PromptTokens,
             CompletionTokens = message.CompletionTokens,
-            ElapsedMs = message.ElapsedMs
+            ElapsedMs = message.ElapsedMs,
+            ToolType = message.ToolType,
+            ToolResultPurgedAt = message.ToolResultPurgedAt,
+            ToolCallsPurgedAt = message.ToolCallsPurgedAt
         };
         _messages[conversationId].Add(withRowId);
     }
@@ -181,4 +184,100 @@ public sealed class InMemoryConversationStore : IConversationStore
             .Where(m => idSet.Contains(m.Id))
             .ToList();
     }
+
+    public (int RoundsPurged, int ResultRowsPurged) PurgeOldToolRounds(
+        string conversationId, int keepLast, DateTimeOffset cutoff)
+    {
+        if (!_messages.TryGetValue(conversationId, out var messages)) return (0, 0);
+
+        var assistantRounds = messages
+            .Select((m, idx) => (Message: m, Index: idx))
+            .Where(x => x.Message.ToolCalls is not null && x.Message.ToolCallsPurgedAt is null)
+            .OrderByDescending(x => x.Message.RowId)
+            .Skip(keepLast)
+            .Where(x => x.Message.CreatedAt < cutoff)
+            .ToList();
+
+        if (assistantRounds.Count == 0) return (0, 0);
+
+        var toolCallIds = new HashSet<string>();
+        foreach (var (msg, _) in assistantRounds)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(msg.ToolCalls!);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array) continue;
+                foreach (var call in doc.RootElement.EnumerateArray())
+                    if (call.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
+                        toolCallIds.Add(idProp.GetString()!);
+            }
+            catch (JsonException) { }
+        }
+
+        var purgedAt = DateTimeOffset.UtcNow;
+        var roundsPurged = 0;
+        var resultRowsPurged = 0;
+
+        foreach (var (msg, idx) in assistantRounds)
+        {
+            messages[idx] = CloneWithPurgedArgs(msg, purgedAt);
+            roundsPurged++;
+        }
+
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var m = messages[i];
+            if (m.ToolCallId is null || m.ToolResultPurgedAt is not null) continue;
+            if (!toolCallIds.Contains(m.ToolCallId)) continue;
+            messages[i] = CloneWithPurgedResult(m, purgedAt);
+            resultRowsPurged++;
+        }
+
+        return (roundsPurged, resultRowsPurged);
+    }
+
+    public int PurgeSkillResourceResults(string conversationId)
+    {
+        if (!_messages.TryGetValue(conversationId, out var messages)) return 0;
+
+        var purgedAt = DateTimeOffset.UtcNow;
+        var purged = 0;
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var m = messages[i];
+            if (m.ToolType != "activate_skill_resource" || m.ToolResultPurgedAt is not null) continue;
+            messages[i] = CloneWithPurgedResult(m, purgedAt);
+            purged++;
+        }
+        return purged;
+    }
+
+    private static Message CloneWithPurgedArgs(Message m, DateTimeOffset purgedAt) =>
+        new()
+        {
+            RowId = m.RowId, Id = m.Id, ConversationId = m.ConversationId, Role = m.Role,
+            Content = m.Content, CreatedAt = m.CreatedAt,
+            ToolCalls = null, // nulled
+            ToolCallId = m.ToolCallId, ChannelMessageId = m.ChannelMessageId,
+            ReplyToChannelMessageId = m.ReplyToChannelMessageId,
+            PromptTokens = m.PromptTokens, CompletionTokens = m.CompletionTokens, ElapsedMs = m.ElapsedMs,
+            Modality = m.Modality, ToolType = m.ToolType,
+            ToolResultPurgedAt = m.ToolResultPurgedAt,
+            ToolCallsPurgedAt = purgedAt // stamped
+        };
+
+    private static Message CloneWithPurgedResult(Message m, DateTimeOffset purgedAt) =>
+        new()
+        {
+            RowId = m.RowId, Id = m.Id, ConversationId = m.ConversationId, Role = m.Role,
+            Content = null, // nulled
+            CreatedAt = m.CreatedAt,
+            ToolCalls = m.ToolCalls,
+            ToolCallId = m.ToolCallId, ChannelMessageId = m.ChannelMessageId,
+            ReplyToChannelMessageId = m.ReplyToChannelMessageId,
+            PromptTokens = m.PromptTokens, CompletionTokens = m.CompletionTokens, ElapsedMs = m.ElapsedMs,
+            Modality = m.Modality, ToolType = m.ToolType,
+            ToolResultPurgedAt = purgedAt, // stamped
+            ToolCallsPurgedAt = m.ToolCallsPurgedAt
+        };
 }

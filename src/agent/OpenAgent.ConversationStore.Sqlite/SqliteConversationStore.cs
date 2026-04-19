@@ -16,16 +16,19 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     private readonly string _connectionString;
     private readonly CompactionConfig _compactionConfig;
     private readonly ICompactionSummarizer? _compactionSummarizer;
+    private readonly IContextPruneTrigger? _contextPruneTrigger;
 
     public SqliteConversationStore(
         AgentEnvironment environment,
         ILogger<SqliteConversationStore> logger,
         CompactionConfig compactionConfig,
-        ICompactionSummarizer? compactionSummarizer = null)
+        ICompactionSummarizer? compactionSummarizer = null,
+        IContextPruneTrigger? contextPruneTrigger = null)
     {
         _logger = logger;
         _compactionConfig = compactionConfig;
         _compactionSummarizer = compactionSummarizer;
+        _contextPruneTrigger = contextPruneTrigger;
         var dbPath = Path.Combine(environment.DataPath, "conversations.db");
         _connectionString = $"Data Source={dbPath}";
 
@@ -99,6 +102,11 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Messages", "Modality", "INTEGER NOT NULL DEFAULT 0");
         TryAddColumn(connection, "Conversations", "DisplayName", "TEXT");
         TryAddColumn(connection, "Conversations", "Intention", "TEXT");
+
+        // Context pruning — see docs/plans/2026-04-19-context-pruning-design.md
+        TryAddColumn(connection, "Messages", "ToolType", "TEXT");
+        TryAddColumn(connection, "Messages", "ToolResultPurgedAt", "TEXT");
+        TryAddColumn(connection, "Messages", "ToolCallsPurgedAt", "TEXT");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
@@ -285,6 +293,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.ExecuteNonQuery();
 
         TryStartCompaction(conversation);
+        _contextPruneTrigger?.OnTurnPersisted(conversation);
     }
 
     public void UpdateType(string conversationId, ConversationType type)
@@ -319,8 +328,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO Messages (Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality)
-            VALUES (@id, @conversationId, @role, @content, @createdAt, @toolCalls, @toolCallId, @channelMessageId, @replyToChannelMessageId, @promptTokens, @completionTokens, @elapsedMs, @modality)
+            INSERT INTO Messages (Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality, ToolType)
+            VALUES (@id, @conversationId, @role, @content, @createdAt, @toolCalls, @toolCallId, @channelMessageId, @replyToChannelMessageId, @promptTokens, @completionTokens, @elapsedMs, @modality, @toolType)
             """;
         cmd.Parameters.AddWithValue("@id", message.Id);
         cmd.Parameters.AddWithValue("@conversationId", message.ConversationId);
@@ -335,6 +344,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@completionTokens", (object?)message.CompletionTokens ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@elapsedMs", (object?)message.ElapsedMs ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@modality", (int)message.Modality);
+        cmd.Parameters.AddWithValue("@toolType", (object?)message.ToolType ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
@@ -377,7 +387,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var cmd = connection.CreateCommand();
 
         var paramNames = messageIds.Select((_, i) => $"@id{i}").ToList();
-        cmd.CommandText = $"SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality FROM Messages WHERE Id IN ({string.Join(", ", paramNames)}) ORDER BY rowid";
+        cmd.CommandText = $"SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality, ToolType, ToolResultPurgedAt, ToolCallsPurgedAt FROM Messages WHERE Id IN ({string.Join(", ", paramNames)}) ORDER BY rowid";
 
         for (var i = 0; i < messageIds.Count; i++)
             cmd.Parameters.AddWithValue(paramNames[i], messageIds[i]);
@@ -390,6 +400,120 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         }
 
         return list;
+    }
+
+    public (int RoundsPurged, int ResultRowsPurged) PurgeOldToolRounds(
+        string conversationId, int keepLast, DateTimeOffset cutoff)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction();
+
+        // Step 1 — select candidate assistant rows with ToolCalls, outside the last K, older than cutoff.
+        // ORDER BY rowid DESC lets us skip the first K (the live set); the remaining rows are ranked older.
+        var candidates = new List<(long RowId, string ToolCalls)>();
+        using (var selectCmd = connection.CreateCommand())
+        {
+            selectCmd.Transaction = tx;
+            selectCmd.CommandText = """
+                SELECT rowid, ToolCalls FROM (
+                    SELECT rowid, ToolCalls, CreatedAt
+                    FROM Messages
+                    WHERE ConversationId = @cid
+                      AND ToolCalls IS NOT NULL
+                      AND ToolCallsPurgedAt IS NULL
+                    ORDER BY rowid DESC
+                    LIMIT -1 OFFSET @keepLast
+                )
+                WHERE CreatedAt < @cutoff;
+                """;
+            selectCmd.Parameters.AddWithValue("@cid", conversationId);
+            selectCmd.Parameters.AddWithValue("@keepLast", keepLast);
+            selectCmd.Parameters.AddWithValue("@cutoff", cutoff.ToString("O"));
+            using var reader = selectCmd.ExecuteReader();
+            while (reader.Read())
+                candidates.Add((reader.GetInt64(0), reader.GetString(1)));
+        }
+
+        if (candidates.Count == 0)
+        {
+            tx.Commit();
+            return (0, 0);
+        }
+
+        // Step 2 — parse each candidate's ToolCalls JSON to extract the call ids.
+        var toolCallIds = new List<string>();
+        foreach (var (_, toolCallsJson) in candidates)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(toolCallsJson);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array) continue;
+                foreach (var call in doc.RootElement.EnumerateArray())
+                    if (call.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
+                        toolCallIds.Add(idProp.GetString()!);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse ToolCalls JSON for conversation {ConversationId}; skipping", conversationId);
+            }
+        }
+
+        var purgedAt = DateTimeOffset.UtcNow.ToString("O");
+
+        // Step 3 — null ToolCalls + stamp purged-at on the candidate assistant rows.
+        int roundsPurged;
+        using (var assistantCmd = connection.CreateCommand())
+        {
+            assistantCmd.Transaction = tx;
+            var rowIdParamNames = candidates.Select((_, i) => $"@rid{i}").ToList();
+            assistantCmd.CommandText = $@"
+                UPDATE Messages
+                SET ToolCalls = NULL, ToolCallsPurgedAt = @purgedAt
+                WHERE rowid IN ({string.Join(", ", rowIdParamNames)});";
+            assistantCmd.Parameters.AddWithValue("@purgedAt", purgedAt);
+            for (var i = 0; i < candidates.Count; i++)
+                assistantCmd.Parameters.AddWithValue(rowIdParamNames[i], candidates[i].RowId);
+            roundsPurged = assistantCmd.ExecuteNonQuery();
+        }
+
+        // Step 4 — null Content + stamp purged-at on the matching tool-result children.
+        int resultRowsPurged = 0;
+        if (toolCallIds.Count > 0)
+        {
+            using var resultCmd = connection.CreateCommand();
+            resultCmd.Transaction = tx;
+            var idParamNames = toolCallIds.Select((_, i) => $"@tid{i}").ToList();
+            resultCmd.CommandText = $@"
+                UPDATE Messages
+                SET Content = NULL, ToolResultPurgedAt = @purgedAt
+                WHERE ConversationId = @cid
+                  AND ToolCallId IN ({string.Join(", ", idParamNames)})
+                  AND ToolResultPurgedAt IS NULL;";
+            resultCmd.Parameters.AddWithValue("@purgedAt", purgedAt);
+            resultCmd.Parameters.AddWithValue("@cid", conversationId);
+            for (var i = 0; i < toolCallIds.Count; i++)
+                resultCmd.Parameters.AddWithValue(idParamNames[i], toolCallIds[i]);
+            resultRowsPurged = resultCmd.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+        return (roundsPurged, resultRowsPurged);
+    }
+
+    public int PurgeSkillResourceResults(string conversationId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE Messages
+            SET Content = NULL, ToolResultPurgedAt = @purgedAt
+            WHERE ConversationId = @cid
+              AND ToolType = 'activate_skill_resource'
+              AND ToolResultPurgedAt IS NULL;
+            """;
+        cmd.Parameters.AddWithValue("@purgedAt", DateTimeOffset.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("@cid", conversationId);
+        return cmd.ExecuteNonQuery();
     }
 
     public void Dispose()
@@ -488,12 +612,12 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
         if (afterRowId is not null)
         {
-            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality FROM Messages WHERE ConversationId = @id AND rowid > @cutoff ORDER BY rowid";
+            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality, ToolType, ToolResultPurgedAt, ToolCallsPurgedAt FROM Messages WHERE ConversationId = @id AND rowid > @cutoff ORDER BY rowid";
             cmd.Parameters.AddWithValue("@cutoff", afterRowId.Value);
         }
         else
         {
-            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality FROM Messages WHERE ConversationId = @id ORDER BY rowid";
+            cmd.CommandText = "SELECT rowid, Id, ConversationId, Role, Content, CreatedAt, ToolCalls, ToolCallId, ChannelMessageId, ReplyToChannelMessageId, PromptTokens, CompletionTokens, ElapsedMs, Modality, ToolType, ToolResultPurgedAt, ToolCallsPurgedAt FROM Messages WHERE ConversationId = @id ORDER BY rowid";
         }
         cmd.Parameters.AddWithValue("@id", conversationId);
 
@@ -592,7 +716,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             PromptTokens = reader.IsDBNull(10) ? null : reader.GetInt32(10),
             CompletionTokens = reader.IsDBNull(11) ? null : reader.GetInt32(11),
             ElapsedMs = reader.IsDBNull(12) ? null : reader.GetInt64(12),
-            Modality = (MessageModality)reader.GetInt32(13)
+            Modality = (MessageModality)reader.GetInt32(13),
+            ToolType = reader.IsDBNull(14) ? null : reader.GetString(14),
+            ToolResultPurgedAt = reader.IsDBNull(15) ? null : DateTimeOffset.Parse(reader.GetString(15)),
+            ToolCallsPurgedAt = reader.IsDBNull(16) ? null : DateTimeOffset.Parse(reader.GetString(16))
         };
     }
 }
