@@ -130,22 +130,43 @@ public class MemoryIndexServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_skips_files_shorter_than_50_chars()
+    public async Task RunAsync_deletes_file_when_llm_signals_discard()
     {
-        // Don't use WriteMemoryFile because it pads up to 60
-        File.WriteAllText(Path.Combine(_memoryDir, "2026-04-10.md"), "tiny");
-
+        WriteMemoryFile("2026-04-10", "some unimportant scratch content");
         WriteMemoryFile("2026-04-18", "today");
         WriteMemoryFile("2026-04-17", "yesterday");
         WriteMemoryFile("2026-04-16", "two days ago");
 
-        var service = BuildService("""{"chunks":[{"content":"x","summary":"x"}]}""", memoryDays: 3);
+        // LLM returns discard=true with no chunks — "not worth indexing, delete it"
+        var service = BuildService("""{"chunks":[],"discard":true}""", memoryDays: 3);
 
         var result = await service.RunAsync();
 
         Assert.Equal(1, result.FilesScanned);
         Assert.Equal(0, result.FilesProcessed);
-        Assert.True(File.Exists(Path.Combine(_memoryDir, "2026-04-10.md")));
+        Assert.Equal(0, result.ChunksCreated);
+        Assert.False(File.Exists(Path.Combine(_memoryDir, "2026-04-10.md")),
+            "discard=true must delete the file without indexing");
+        Assert.DoesNotContain("2026-04-10", _store.GetProcessedDates());
+    }
+
+    [Fact]
+    public async Task RunAsync_leaves_file_when_llm_returns_empty_chunks_without_discard()
+    {
+        WriteMemoryFile("2026-04-10", "real content that the chunker can't handle for some reason");
+        WriteMemoryFile("2026-04-18", "today");
+        WriteMemoryFile("2026-04-17", "yesterday");
+        WriteMemoryFile("2026-04-16", "two days ago");
+
+        // Empty chunks with no explicit discard signal — treat as transient failure
+        var service = BuildService("""{"chunks":[]}""", memoryDays: 3);
+
+        var result = await service.RunAsync();
+
+        Assert.Equal(1, result.FilesScanned);
+        Assert.Equal(0, result.FilesProcessed);
+        Assert.True(File.Exists(Path.Combine(_memoryDir, "2026-04-10.md")),
+            "no chunks + no discard means retry next run; file must stay on disk");
     }
 
     [Fact]

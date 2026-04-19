@@ -32,7 +32,6 @@ public sealed record LoadResult(
 /// </summary>
 public sealed class MemoryIndexService
 {
-    private const int MinFileChars = 50;
     private const float VectorWeight = 0.7f;
     private const float KeywordWeight = 0.3f;
 
@@ -112,21 +111,26 @@ public sealed class MemoryIndexService
             try
             {
                 var content = await File.ReadAllTextAsync(filePath, ct);
-                if (content.Length < MinFileChars)
+                var outcome = await _chunker.ChunkFileAsync(content, ct);
+
+                if (outcome.Discard)
                 {
-                    _logger.LogDebug("Skipping {File} — shorter than {MinChars} chars", fileName, MinFileChars);
+                    // The LLM judged this file not worth preserving. Delete without indexing.
+                    File.Delete(filePath);
+                    _logger.LogInformation("Discarded {File} — LLM flagged as not worth indexing", fileName);
                     continue;
                 }
 
-                var chunks = await _chunker.ChunkFileAsync(content, ct);
-                if (chunks.Count == 0)
+                if (outcome.Chunks.Count == 0)
                 {
-                    _logger.LogWarning("Chunker returned zero chunks for {File}; leaving file on disk", fileName);
+                    // LLM didn't return chunks and didn't explicitly discard — treat as a
+                    // transient failure and leave the file for the next run.
+                    _logger.LogWarning("Chunker returned zero chunks for {File}; leaving file on disk for retry", fileName);
                     continue;
                 }
 
-                var entries = new List<ChunkEntry>(chunks.Count);
-                foreach (var c in chunks)
+                var entries = new List<ChunkEntry>(outcome.Chunks.Count);
+                foreach (var c in outcome.Chunks)
                 {
                     var embedding = await provider.GenerateEmbeddingAsync(c.Content, EmbeddingPurpose.Indexing, ct);
                     entries.Add(new ChunkEntry(c.Content, c.Summary, embedding));

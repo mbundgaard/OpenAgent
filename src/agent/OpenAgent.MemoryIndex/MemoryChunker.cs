@@ -13,6 +13,14 @@ namespace OpenAgent.MemoryIndex;
 public sealed record ChunkResult(string Content, string Summary);
 
 /// <summary>
+/// Outcome of chunking one file. Either the LLM split it into chunks to index,
+/// or it flagged the file as unimportant and requested deletion without indexing.
+/// An empty chunks list with Discard=false means "can't chunk right now" and the
+/// service will leave the file on disk for the next run.
+/// </summary>
+public sealed record ChunkFileOutcome(IReadOnlyList<ChunkResult> Chunks, bool Discard);
+
+/// <summary>
 /// Uses the compaction LLM to split a raw daily memory file into self-contained topic
 /// chunks, each with a one-line summary. Shape is fixed by the JSON response format.
 /// </summary>
@@ -29,13 +37,15 @@ public sealed class MemoryChunker
         - Don't add information that wasn't in the original
         - Don't merge unrelated topics into one chunk
         - If the entire file is one topic, return a single chunk
+        - If the file contains nothing worth preserving — empty, trivial scratch, corrupted data, duplicate of obvious facts — set "discard" to true and return an empty chunks array. The file will be deleted without indexing. Use only when there is genuinely nothing of lasting value; prefer to chunk even short or fragmentary notes when they contain any real information.
 
         Output JSON:
         {
           "chunks": [
             { "content": "full chunk text", "summary": "one-line summary" },
             ...
-          ]
+          ],
+          "discard": false
         }
         """;
 
@@ -50,9 +60,10 @@ public sealed class MemoryChunker
 
     /// <summary>
     /// One LLM call per file. Uses the compaction provider + model configured on <see cref="AgentConfig"/>.
-    /// Returns an empty list if the model produces no chunks.
+    /// Returns the parsed outcome — either chunks to index, or a discard flag when the model
+    /// decides the file isn't worth preserving.
     /// </summary>
-    public async Task<IReadOnlyList<ChunkResult>> ChunkFileAsync(string fileContent, CancellationToken ct = default)
+    public async Task<ChunkFileOutcome> ChunkFileAsync(string fileContent, CancellationToken ct = default)
     {
         var messages = new List<Message>
         {
@@ -74,18 +85,32 @@ public sealed class MemoryChunker
     }
 
     /// <summary>
-    /// Pull the chunks array out of the model's JSON response. Tolerates missing keys —
-    /// a response without the "chunks" field or with the field set to a non-array yields
-    /// an empty list, matching the "no topics to index" contract.
+    /// Pull the chunks array and discard flag out of the model's JSON response. Tolerates
+    /// missing keys — a response without "chunks" or with a non-array value yields an empty
+    /// list; a missing "discard" defaults to false. Also tolerates a leading markdown code
+    /// fence that some providers emit even when asked for structured output — Anthropic in
+    /// particular doesn't enforce strict JSON mode.
     /// </summary>
-    internal static IReadOnlyList<ChunkResult> ParseChunksResponse(string json)
+    internal static ChunkFileOutcome ParseChunksResponse(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
-            return [];
+            return new ChunkFileOutcome([], Discard: false);
 
-        using var doc = JsonDocument.Parse(json);
+        // Carve the JSON object out of any surrounding fence/prose. Prefer the span from the
+        // first `{` to the last `}` — simple, resilient to language tags and trailing commentary.
+        var start = json.IndexOf('{');
+        var end = json.LastIndexOf('}');
+        if (start < 0 || end <= start)
+            return new ChunkFileOutcome([], Discard: false);
+        var payload = json[start..(end + 1)];
+
+        using var doc = JsonDocument.Parse(payload);
+
+        var discard = doc.RootElement.TryGetProperty("discard", out var dEl)
+            && dEl.ValueKind == JsonValueKind.True;
+
         if (!doc.RootElement.TryGetProperty("chunks", out var chunksEl) || chunksEl.ValueKind != JsonValueKind.Array)
-            return [];
+            return new ChunkFileOutcome([], discard);
 
         var results = new List<ChunkResult>(chunksEl.GetArrayLength());
         foreach (var el in chunksEl.EnumerateArray())
@@ -96,6 +121,6 @@ public sealed class MemoryChunker
                 continue;
             results.Add(new ChunkResult(content, summary));
         }
-        return results;
+        return new ChunkFileOutcome(results, discard);
     }
 }
