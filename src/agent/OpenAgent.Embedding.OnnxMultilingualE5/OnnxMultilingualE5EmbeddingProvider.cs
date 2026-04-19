@@ -14,6 +14,14 @@ namespace OpenAgent.Embedding.OnnxMultilingualE5;
 /// tokenizer and special-token layout — they only differ in hidden size. The specific model to
 /// load is chosen via <see cref="AgentConfig.EmbeddingModel"/>.
 ///
+/// <para>Model sizes (model.onnx on disk ≈ resident RAM when loaded; add ~150–250 MB for
+/// ONNX Runtime overhead and per-request tensors):</para>
+/// <list type="bullet">
+///   <item><description><b>multilingual-e5-small</b> — 384 dims, ~470 MB disk, ~600 MB RAM. Fastest, slightly lower retrieval quality.</description></item>
+///   <item><description><b>multilingual-e5-base</b> — 768 dims, ~1.1 GB disk, ~1.3 GB RAM. Default. Good quality/size tradeoff.</description></item>
+///   <item><description><b>multilingual-e5-large</b> — 1024 dims, ~2.5 GB disk, ~2.7 GB RAM. Best quality; needs a host with ≥4 GB RAM headroom.</description></item>
+/// </list>
+///
 /// Missing model files are downloaded from HuggingFace on first use
 /// (<c>https://huggingface.co/intfloat/{model}/</c>). Files land in
 /// <c>{dataPath}/models/{model}/</c> and are kept across restarts.

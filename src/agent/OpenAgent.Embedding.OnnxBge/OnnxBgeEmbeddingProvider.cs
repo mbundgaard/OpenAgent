@@ -14,6 +14,14 @@ namespace OpenAgent.Embedding.OnnxBge;
 /// special-token layout — they only differ in hidden size. The specific model to load is
 /// chosen via <see cref="AgentConfig.EmbeddingModel"/>.
 ///
+/// <para>Model sizes (model.onnx on disk ≈ resident RAM when loaded; add ~150–250 MB for
+/// ONNX Runtime overhead and per-request tensors):</para>
+/// <list type="bullet">
+///   <item><description><b>bge-small-en-v1.5</b> — 384 dims, ~130 MB disk, ~300 MB RAM. Very small; great for English-only low-footprint deployments.</description></item>
+///   <item><description><b>bge-base-en-v1.5</b> — 768 dims, ~440 MB disk, ~600 MB RAM. Strong English baseline, comparable to e5-base in quality for English text.</description></item>
+///   <item><description><b>bge-large-en-v1.5</b> — 1024 dims, ~1.3 GB disk, ~1.5 GB RAM. Top English retrieval quality on MTEB for its size class.</description></item>
+/// </list>
+///
 /// Missing model files are downloaded from HuggingFace on first use
 /// (<c>https://huggingface.co/BAAI/{model}/</c>). Files land in
 /// <c>{dataPath}/models/{model}/</c> and are kept across restarts.
