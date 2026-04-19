@@ -6,7 +6,15 @@
 
   <PropertyGroup>
     <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+    <ApplicationIcon>favicon.ico</ApplicationIcon>
+    <!-- Hosted via Kestrel (console / Windows service), never IIS - suppress web.config generation -->
+    <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Dev-only settings should not ship -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Remove="config\**" />
@@ -57,6 +65,10 @@
 
   <ItemGroup>
     <EmbeddedResource Include="defaults\*.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="favicon.ico" />
   </ItemGroup>
 
 </Project>
