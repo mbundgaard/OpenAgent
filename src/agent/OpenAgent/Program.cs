@@ -142,9 +142,8 @@ builder.Services.AddSingleton<IConfigurable>(sp =>
 builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(GeminiLiveVoiceProvider.ProviderKey));
 
-// Authentication — env var > agent.json > generated, persisted back to agent.json. Always logged.
+// Authentication — env var > agent.json > generated, persisted back to agent.json
 var apiKey = OpenAgent.Security.ApiKey.ApiKeyResolver.Resolve(environment.DataPath, builder.Configuration);
-Console.WriteLine($"OpenAgent API key: {apiKey}");
 builder.Services.AddApiKeyAuth(apiKey);
 
 // Connections — channel providers created per-connection at runtime
@@ -169,6 +168,18 @@ builder.Services.AddSingleton<IConnectionManager>(sp => sp.GetRequiredService<Co
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionManager>());
 
 var app = builder.Build();
+
+// Print bound URL(s) once Kestrel has started listening
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var addresses = app.Services
+        .GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
+        .Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()
+        ?.Addresses;
+    if (addresses is null) return;
+    foreach (var addr in addresses)
+        Console.WriteLine($"OpenAgent UI: {addr}");
+});
 
 // Load persisted provider configs (providers stay unconfigured if no config exists)
 var configStore = app.Services.GetRequiredService<IConfigStore>();
