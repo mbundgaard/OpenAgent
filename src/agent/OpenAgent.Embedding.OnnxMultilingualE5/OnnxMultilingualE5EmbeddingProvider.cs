@@ -4,7 +4,7 @@ using Microsoft.ML.Tokenizers;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
 
-namespace OpenAgent.Embedding.MultilingualE5;
+namespace OpenAgent.Embedding.OnnxMultilingualE5;
 
 /// <summary>
 /// Local embedding provider for the <c>intfloat/multilingual-e5-{small,base,large}</c> family
@@ -17,7 +17,7 @@ namespace OpenAgent.Embedding.MultilingualE5;
 /// wrap with &lt;s&gt;/&lt;/s&gt;, truncate/pad to 512, run ONNX inference, mean-pool
 /// over non-padding positions, L2 normalize.
 /// </summary>
-public sealed class MultilingualE5EmbeddingProvider : IEmbeddingProvider, IDisposable
+public sealed class OnnxMultilingualE5EmbeddingProvider : IEmbeddingProvider, IDisposable
 {
     public const string ProviderKey = "multilingual-e5";
     public const int MaxSequenceLength = 512;
@@ -59,7 +59,7 @@ public sealed class MultilingualE5EmbeddingProvider : IEmbeddingProvider, IDispo
     /// not-yet-downloaded model doesn't crash app startup — the error surfaces on the first
     /// embedding call, where it's caught by the indexing loop's per-file try/catch.
     /// </summary>
-    public MultilingualE5EmbeddingProvider(AgentEnvironment environment, AgentConfig agentConfig)
+    public OnnxMultilingualE5EmbeddingProvider(AgentEnvironment environment, AgentConfig agentConfig)
     {
         _model = agentConfig.EmbeddingModel;
         if (!KnownModels.TryGetValue(_model, out _dimensions))
