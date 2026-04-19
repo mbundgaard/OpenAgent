@@ -20,7 +20,6 @@ export function AgentConfigForm() {
     memoryDays: '3',
     mainConversationId: '',
     embeddingProvider: '',
-    indexRunAtHour: '2',
   });
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
@@ -46,7 +45,7 @@ export function AgentConfigForm() {
 
       // Load current values
       const vals: Record<string, string> = {};
-      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays', 'mainConversationId', 'embeddingProvider', 'indexRunAtHour']) {
+      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays', 'mainConversationId', 'embeddingProvider']) {
         const v = agentValues[key];
         vals[key] = typeof v === 'string' ? v : '';
       }
@@ -168,17 +167,6 @@ export function AgentConfigForm() {
             <option value="">(disabled — memory index job off, search tools hidden)</option>
             <option value="onnx">onnx (multilingual-e5-base, local)</option>
           </select>
-        </label>
-        <label className={styles.field}>
-          <span className={styles.label}>Index Run Hour (Europe/Copenhagen)</span>
-          <input
-            type="number"
-            className={styles.input}
-            min={0}
-            max={23}
-            value={values.indexRunAtHour}
-            onChange={e => setValues(v => ({ ...v, indexRunAtHour: e.target.value }))}
-          />
         </label>
       </div>
       <div className={styles.actions}>

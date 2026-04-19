@@ -53,10 +53,4 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("embeddingProvider")]
     public string EmbeddingProvider { get; set; } = "";
-
-    /// <summary>
-    /// Hour of the day (Europe/Copenhagen) at which the nightly memory index job runs.
-    /// </summary>
-    [JsonPropertyName("indexRunAtHour")]
-    public int IndexRunAtHour { get; set; } = 2;
 }

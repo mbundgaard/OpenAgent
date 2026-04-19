@@ -65,7 +65,7 @@ public sealed class MemoryChunkStore
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS memory_chunks (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                id          INTEGER PRIMARY KEY,
                 date        TEXT NOT NULL,
                 chunk_index INTEGER NOT NULL,
                 content     TEXT NOT NULL,
@@ -80,35 +80,11 @@ public sealed class MemoryChunkStore
                 summary, content, content=memory_chunks, content_rowid=id
             );
 
-            CREATE TABLE IF NOT EXISTS job_state (
-                key   TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
+            -- Clean up job_state from earlier "run once per day" guard. The hosted service
+            -- now just calls RunAsync every hour and relies on RunAsync's natural idempotency
+            -- (alreadyProcessed check) to avoid duplicate work.
+            DROP TABLE IF EXISTS job_state;
             """;
-        cmd.ExecuteNonQuery();
-    }
-
-    /// <summary>Returns the local date on which the hosted service last completed a run, or null if never.</summary>
-    public string? GetLastRunDate()
-    {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT value FROM job_state WHERE key = 'last_run_date';";
-        return cmd.ExecuteScalar() as string;
-    }
-
-    /// <summary>Records the local date on which the hosted service last completed a run.</summary>
-    public void SetLastRunDate(string date)
-    {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO job_state (key, value) VALUES ('last_run_date', @date)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value;
-            """;
-        cmd.Parameters.AddWithValue("@date", date);
         cmd.ExecuteNonQuery();
     }
 

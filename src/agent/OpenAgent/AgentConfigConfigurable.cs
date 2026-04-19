@@ -23,8 +23,7 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
         new() { Key = "compactionModel", Label = "Compaction Model", Type = "String", Required = true },
         new() { Key = "memoryDays", Label = "Memory Days", Type = "String", Required = false },
         new() { Key = "mainConversationId", Label = "Main Conversation", Type = "String", Required = false },
-        new() { Key = "embeddingProvider", Label = "Embedding Provider", Type = "String", Required = false },
-        new() { Key = "indexRunAtHour", Label = "Index Run Hour (Europe/Copenhagen)", Type = "String", Required = false }
+        new() { Key = "embeddingProvider", Label = "Embedding Provider", Type = "String", Required = false }
     ];
 
     public void Configure(JsonElement configuration)
@@ -56,13 +55,5 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
         }
         if (configuration.TryGetProperty("embeddingProvider", out var ep))
             agentConfig.EmbeddingProvider = ep.GetString() ?? "";
-        if (configuration.TryGetProperty("indexRunAtHour", out var irh))
-        {
-            // Accept string (from admin UI) or number (direct API)
-            if (irh.ValueKind == JsonValueKind.String && int.TryParse(irh.GetString(), out var irhInt))
-                agentConfig.IndexRunAtHour = irhInt;
-            else if (irh.ValueKind == JsonValueKind.Number)
-                agentConfig.IndexRunAtHour = irh.GetInt32();
-        }
     }
 }

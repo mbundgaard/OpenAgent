@@ -5,20 +5,15 @@ using OpenAgent.Models.Configs;
 namespace OpenAgent.MemoryIndex;
 
 /// <summary>
-/// Hourly hosted service that drives the nightly memory indexing job. Runs once per local
-/// day, at or after the configured hour. "Did it already run today?" is persisted in the
-/// job_state table so a container restart between 02:00 and 03:00 doesn't cause a second
-/// run the same day.
+/// Hourly hosted service that drives the memory indexing job. Calls <see cref="MemoryIndexService.RunAsync"/>
+/// on every tick — RunAsync is idempotent (skips dates already in the index), so letting it run freely
+/// has no cost when nothing new is past the memory window.
 /// </summary>
 public sealed class MemoryIndexHostedService : IHostedService, IDisposable
 {
-    private static readonly TimeZoneInfo CopenhagenTz = ResolveCopenhagen();
-
     private readonly MemoryIndexService _service;
-    private readonly MemoryChunkStore _store;
     private readonly AgentConfig _agentConfig;
     private readonly ILogger<MemoryIndexHostedService> _logger;
-    private readonly Func<DateTimeOffset> _clock;
 
     private PeriodicTimer? _timer;
     private Task? _loopTask;
@@ -27,16 +22,12 @@ public sealed class MemoryIndexHostedService : IHostedService, IDisposable
 
     public MemoryIndexHostedService(
         MemoryIndexService service,
-        MemoryChunkStore store,
         AgentConfig agentConfig,
-        ILogger<MemoryIndexHostedService> logger,
-        Func<DateTimeOffset>? clock = null)
+        ILogger<MemoryIndexHostedService> logger)
     {
         _service = service;
-        _store = store;
         _agentConfig = agentConfig;
         _logger = logger;
-        _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -63,7 +54,6 @@ public sealed class MemoryIndexHostedService : IHostedService, IDisposable
 
     private async Task LoopAsync(CancellationToken ct)
     {
-        // Fire an immediate check on startup; subsequent checks run hourly
         await CheckAndRunAsync(ct);
 
         var timer = _timer;
@@ -85,8 +75,8 @@ public sealed class MemoryIndexHostedService : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// Evaluates all guards and, if all pass, triggers an indexing run. Exposed as internal
-    /// so tests can exercise the decision logic without running the periodic loop.
+    /// Single guard: the embedding provider must be configured. Otherwise RunAsync would throw
+    /// trying to resolve an empty-keyed singleton. Exposed as internal for test access.
     /// </summary>
     internal async Task CheckAndRunAsync(CancellationToken ct)
     {
@@ -94,30 +84,15 @@ public sealed class MemoryIndexHostedService : IHostedService, IDisposable
         {
             if (!_warnedMissingProvider)
             {
-                _logger.LogWarning("Memory index: embeddingProvider is empty; daily job is disabled");
+                _logger.LogWarning("Memory index: embeddingProvider is empty; indexing disabled");
                 _warnedMissingProvider = true;
             }
-            return;
-        }
-
-        var localNow = TimeZoneInfo.ConvertTime(_clock(), CopenhagenTz);
-        if (localNow.Hour < _agentConfig.IndexRunAtHour)
-        {
-            _logger.LogDebug("Memory index: skip — local hour {Hour} < {Threshold}", localNow.Hour, _agentConfig.IndexRunAtHour);
-            return;
-        }
-
-        var today = localNow.ToString("yyyy-MM-dd");
-        if (_store.GetLastRunDate() == today)
-        {
-            _logger.LogDebug("Memory index: skip — already ran today ({Date})", today);
             return;
         }
 
         try
         {
             var result = await _service.RunAsync(ct);
-            _store.SetLastRunDate(today);
             _logger.LogInformation(
                 "Memory index: scanned={Scanned} processed={Processed} discarded={Discarded} chunks={Chunks} errors={Errors}",
                 result.FilesScanned, result.FilesProcessed, result.FilesDiscarded, result.ChunksCreated, result.Errors);
@@ -132,16 +107,5 @@ public sealed class MemoryIndexHostedService : IHostedService, IDisposable
     {
         _timer?.Dispose();
         _cts?.Dispose();
-    }
-
-    // Linux containers ship the IANA name, Windows ships the Windows name. Prefer IANA,
-    // fall back to the Windows zone so development on Windows works.
-    private static TimeZoneInfo ResolveCopenhagen()
-    {
-        try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Copenhagen"); }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Romance Standard Time");
-        }
     }
 }
