@@ -35,13 +35,13 @@ internal sealed class SearchMemoryTool(MemoryIndexService service, AgentConfig a
     public AgentToolDefinition Definition { get; } = new()
     {
         Name = "search_memory",
-        Description = "Search older daily memories by topic. Returns lightweight summaries with ids you can pass to load_memory_chunks to read full content.",
+        Description = "Search your older daily memories. Call this proactively — BEFORE saying you don't remember or don't know — whenever the user references prior conversations, past events, people or places mentioned earlier, or anything likely to live in notes that aren't in the current prompt. The recent daily logs in your system prompt cover only the last few days; older material is reachable only through this tool. Returns lightweight summaries and ids; follow up with load_memory_chunks on promising hits to read the full text.",
         Parameters = new
         {
             type = "object",
             properties = new
             {
-                query = new { type = "string", description = "Free-text query. Matched by hybrid semantic + keyword search." },
+                query = new { type = "string", description = "Free-text query. Matched by hybrid semantic + keyword search. Phrase it like you'd recall a memory — names, topics, or distinctive phrases from what the user just said work well." },
                 limit = new { type = "integer", description = $"Maximum number of results to return (default {DefaultLimit})." },
             },
             required = new[] { "query" },
@@ -73,7 +73,7 @@ internal sealed class LoadMemoryChunksTool(MemoryIndexService service, AgentConf
     public AgentToolDefinition Definition { get; } = new()
     {
         Name = "load_memory_chunks",
-        Description = "Load full content for specific memory chunks by id. Use the ids returned by search_memory.",
+        Description = "Load the full text of specific memory chunks by id. Use this when a search_memory summary looks relevant and you need the underlying detail to answer accurately, or when you want to quote the original wording.",
         Parameters = new
         {
             type = "object",
