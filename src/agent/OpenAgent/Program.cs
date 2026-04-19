@@ -169,7 +169,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionManager>
 
 var app = builder.Build();
 
-// Print bound URL(s) once Kestrel has started listening
+// Print bound URL(s) with the token-in-hash that the React app reads on load
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     var addresses = app.Services
@@ -178,7 +178,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
         ?.Addresses;
     if (addresses is null) return;
     foreach (var addr in addresses)
-        Console.WriteLine($"OpenAgent UI: {addr}");
+        Console.WriteLine($"OpenAgent UI: {addr.TrimEnd('/')}/#token={apiKey}");
 });
 
 // Load persisted provider configs (providers stay unconfigured if no config exists)
