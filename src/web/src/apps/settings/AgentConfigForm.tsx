@@ -19,6 +19,7 @@ export function AgentConfigForm() {
     compactionProvider: '', compactionModel: '',
     memoryDays: '3',
     mainConversationId: '',
+    embeddingProvider: '',
   });
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
@@ -44,7 +45,7 @@ export function AgentConfigForm() {
 
       // Load current values
       const vals: Record<string, string> = {};
-      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays', 'mainConversationId']) {
+      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays', 'mainConversationId', 'embeddingProvider']) {
         const v = agentValues[key];
         vals[key] = typeof v === 'string' ? v : '';
       }
@@ -152,6 +153,19 @@ export function AgentConfigForm() {
             {conversations.map(c => (
               <option key={c.id} value={c.id}>{formatConversationLabel(c)}</option>
             ))}
+          </select>
+        </label>
+      </div>
+      <div className={styles.form} style={{ marginBottom: 12 }}>
+        <label className={styles.field}>
+          <span className={styles.label}>Embedding Provider</span>
+          <select
+            className={styles.input}
+            value={values.embeddingProvider}
+            onChange={e => setValues(v => ({ ...v, embeddingProvider: e.target.value }))}
+          >
+            <option value="">(disabled — memory index job off, search tools hidden)</option>
+            <option value="onnx">onnx (multilingual-e5-base, local)</option>
           </select>
         </label>
       </div>

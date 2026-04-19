@@ -25,6 +25,8 @@
     <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
     <ProjectReference Include="..\OpenAgent.ScheduledTasks\OpenAgent.ScheduledTasks.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.Conversation\OpenAgent.Tools.Conversation.csproj" />
+    <ProjectReference Include="..\OpenAgent.MemoryIndex\OpenAgent.MemoryIndex.csproj" />
+    <ProjectReference Include="..\OpenAgent.Embedding.Onnx\OpenAgent.Embedding.Onnx.csproj" />
   </ItemGroup>
 
 </Project>

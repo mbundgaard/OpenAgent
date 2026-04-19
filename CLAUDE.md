@@ -44,6 +44,8 @@ src/agent/
   OpenAgent.Tools.Shell/                  Shell exec tool — timeout, process tree kill, merged stdout/stderr
   OpenAgent.Skills/                        Agent Skills (agentskills.io spec) — discovery, catalog, activation
   OpenAgent.ScheduledTasks/                Scheduled tasks — cron, interval, one-shot, webhook triggers (feature/scheduled-tasks branch)
+  OpenAgent.MemoryIndex/                    Memory index — LLM chunking, hybrid vector+FTS5 search, search_memory + load_memory_chunks tools, hourly hosted service
+  OpenAgent.Embedding.Onnx/                 Local embedding provider — multilingual-e5-base via ONNX Runtime
   OpenAgent.Tests/                        Integration tests
 src/chat-cli/
   OpenAgent.ChatCli/                      Spectre.Console interactive CLI — uses .env for API key, dev key for localhost
@@ -142,6 +144,12 @@ All endpoints require `X-Api-Key` header except `/health`.
 | `GET` | `/api/tools` | List all tools with definitions (name, description, parameters schema) |
 | `GET` | `/api/tools/{toolName}` | Get single tool definition |
 | `POST` | `/api/tools/{toolName}/execute` | Execute a tool directly, returns result + duration |
+
+#### Memory Index
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/memory-index/run` | Trigger an indexing run immediately, returns `IndexResult` |
+| `GET` | `/api/memory-index/stats` | Aggregate counts: totalChunks, totalDays, oldestDate, newestDate |
 
 #### Logs
 | Method | Route | Description |
@@ -269,6 +277,8 @@ Session-to-session notes. Save memories here in CLAUDE.md — do NOT create sepa
 ### Memory System Design
 - Three-job architecture: Index → Digest → Background. See [docs/memory/DESIGN.md](docs/memory/DESIGN.md)
 - Issues: #17 (Index), #19 (Digest), #51 (Background) — must be built in order
+- **Index (done):** `OpenAgent.MemoryIndex` + `OpenAgent.Embedding.Onnx`. Hourly hosted service scans past-window memory files, LLM-chunks them into topics (one call per file, `discard` outcome supported), embeds each chunk via pluggable `IEmbeddingProvider` (ONNX multilingual-e5-base by default), persists to `memory_chunks` + FTS5. Hybrid search (0.7 cosine + 0.3 BM25) exposed via `search_memory` / `load_memory_chunks` tools and `/api/memory-index/{run,stats}` endpoints.
+- Each system job today is its own `IHostedService`. Once #19 lands we should extract a small `ISystemJob` / `SystemJobRunner` abstraction so all three jobs share one tick loop and admin visibility — deferred until the second instance.
 
 ### User Preferences
 - Prefers design discussions before implementation — brainstorm first, then plan, then build

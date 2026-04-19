@@ -8,12 +8,12 @@
       "args": [
         "run"
       ],
-      "workingDirectory": "src/agent/OpenAgent",
+      "workingDirectory": "C:/Users/martin/source/repos/OpenAgent_Memory/src/agent/OpenAgent",
       "port": 5264,
       "url": "http://localhost:5264/health",
       "environment": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "DATA_DIR": "./data"
+        "DATA_DIR": "C:/Users/martin/source/repos/OpenAgent_Memory/src/agent/OpenAgent/data"
       },
       "shutdownTimeoutSeconds": 5
     },
@@ -26,7 +26,7 @@
         "run",
         "dev"
       ],
-      "workingDirectory": "src/web",
+      "workingDirectory": "C:/Users/martin/source/repos/OpenAgent_Memory/src/web",
       "port": 3000,
       "url": "http://localhost:3000",
       "environment": null,

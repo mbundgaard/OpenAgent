@@ -22,7 +22,8 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
         new() { Key = "compactionProvider", Label = "Compaction Provider", Type = "String", Required = true },
         new() { Key = "compactionModel", Label = "Compaction Model", Type = "String", Required = true },
         new() { Key = "memoryDays", Label = "Memory Days", Type = "String", Required = false },
-        new() { Key = "mainConversationId", Label = "Main Conversation", Type = "String", Required = false }
+        new() { Key = "mainConversationId", Label = "Main Conversation", Type = "String", Required = false },
+        new() { Key = "embeddingProvider", Label = "Embedding Provider", Type = "String", Required = false }
     ];
 
     public void Configure(JsonElement configuration)
@@ -52,5 +53,7 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
             var value = mc.GetString();
             agentConfig.MainConversationId = string.IsNullOrEmpty(value) ? null : value;
         }
+        if (configuration.TryGetProperty("embeddingProvider", out var ep))
+            agentConfig.EmbeddingProvider = ep.GetString() ?? "";
     }
 }

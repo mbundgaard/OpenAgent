@@ -14,6 +14,8 @@ using OpenAgent.LlmVoice.OpenAIAzure;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Security.ApiKey;
+using OpenAgent.Embedding.Onnx;
+using OpenAgent.MemoryIndex;
 using OpenAgent.Tools.Expand;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
@@ -82,6 +84,20 @@ builder.Services.AddSingleton<IToolHandler>(sp =>
         }));
 
 builder.Services.AddScheduledTasks(environment.DataPath);
+
+// Memory index — embedding providers, chunk store, hosted indexing loop, and tools.
+// OnnxEmbeddingProvider is lazy: its factory only runs when someone resolves it, so a
+// missing model.onnx / sentencepiece.bpe.model doesn't crash startup when the feature
+// is disabled (embeddingProvider = "" in AgentConfig).
+builder.Services.AddKeyedSingleton<IEmbeddingProvider>("onnx", (sp, _) =>
+{
+    var env = sp.GetRequiredService<AgentEnvironment>();
+    var modelDir = Path.Combine(env.DataPath, "models", "multilingual-e5-base");
+    return new OnnxEmbeddingProvider(modelDir);
+});
+builder.Services.AddSingleton<Func<string, IEmbeddingProvider>>(sp =>
+    key => sp.GetRequiredKeyedService<IEmbeddingProvider>(key));
+builder.Services.AddMemoryIndex();
 
 builder.Services.AddSingleton(new CompactionConfig());
 
@@ -188,6 +204,7 @@ app.MapTelegramWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
 app.MapToolEndpoints();
+app.MapMemoryIndexEndpoints();
 
 // SPA fallback — serve index.html for unmatched routes (client-side routing)
 app.MapFallbackToFile("index.html");
