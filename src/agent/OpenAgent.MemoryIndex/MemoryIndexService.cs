@@ -159,10 +159,10 @@ public sealed class MemoryIndexService
                 }
 
                 _store.InsertChunks(date, provider.Key, provider.Model, provider.Dimensions, entries);
-                File.Delete(filePath);
+                MoveToBackup(memoryDir, filePath, fileName);
                 filesProcessed++;
                 chunksCreated += entries.Count;
-                _logger.LogInformation("Indexed {File} into {Count} chunks", fileName, entries.Count);
+                _logger.LogInformation("Indexed {File} into {Count} chunks, moved to backup", fileName, entries.Count);
             }
             catch (Exception ex)
             {
@@ -174,6 +174,19 @@ public sealed class MemoryIndexService
         InvalidateCache();
 
         return new IndexResult(candidates.Count, filesProcessed, filesDiscarded, chunksCreated, errors);
+    }
+
+    /// <summary>
+    /// Move an indexed memory file to <c>{memoryDir}/backup/</c>. Chunks + embeddings are the
+    /// canonical representation after indexing, but keeping the original text as a plain-file
+    /// backup lets the user recover if the index is ever lost or rebuilt from scratch.
+    /// </summary>
+    private static void MoveToBackup(string memoryDir, string filePath, string fileName)
+    {
+        var backupDir = Path.Combine(memoryDir, "backup");
+        Directory.CreateDirectory(backupDir);
+        var destination = Path.Combine(backupDir, fileName);
+        File.Move(filePath, destination, overwrite: true);
     }
 
     /// <summary>

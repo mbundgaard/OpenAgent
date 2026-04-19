@@ -91,8 +91,9 @@ public class MemoryIndexHostedServiceTests : IDisposable
 
         await host.CheckAndRunAsync(CancellationToken.None);
 
-        // Past-window file got processed and deleted; index has the date
+        // Past-window file got processed; index has the date, file moved to backup
         Assert.False(File.Exists(Path.Combine(_memoryDir, "2026-04-10.md")));
+        Assert.True(File.Exists(Path.Combine(_memoryDir, "backup", "2026-04-10.md")));
         Assert.Contains("2026-04-10", _store.GetProcessedDates());
     }
 
@@ -121,5 +122,6 @@ public class MemoryIndexHostedServiceTests : IDisposable
         Assert.True(secondStats.TotalChunks > firstStats.TotalChunks,
             "second call should index the new file but not re-process the old one");
         Assert.False(File.Exists(Path.Combine(_memoryDir, "2026-04-09.md")));
+        Assert.True(File.Exists(Path.Combine(_memoryDir, "backup", "2026-04-09.md")));
     }
 }

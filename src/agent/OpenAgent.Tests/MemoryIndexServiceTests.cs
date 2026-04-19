@@ -81,7 +81,8 @@ public class MemoryIndexServiceTests : IDisposable
         Assert.Equal(1, result.ChunksCreated);
         Assert.Equal(0, result.Errors);
 
-        Assert.False(File.Exists(Path.Combine(_memoryDir, "2026-04-10.md")), "old file should be deleted");
+        Assert.False(File.Exists(Path.Combine(_memoryDir, "2026-04-10.md")), "indexed file should be out of the memory root");
+        Assert.True(File.Exists(Path.Combine(_memoryDir, "backup", "2026-04-10.md")), "indexed file should be in backup/");
         Assert.True(File.Exists(Path.Combine(_memoryDir, "2026-04-16.md")), "in-window file should stay");
         Assert.True(File.Exists(Path.Combine(_memoryDir, "2026-04-17.md")), "in-window file should stay");
         Assert.True(File.Exists(Path.Combine(_memoryDir, "2026-04-18.md")), "today's file should stay");
@@ -148,6 +149,8 @@ public class MemoryIndexServiceTests : IDisposable
         Assert.Equal(0, result.ChunksCreated);
         Assert.False(File.Exists(Path.Combine(_memoryDir, "2026-04-10.md")),
             "discard=true must delete the file without indexing");
+        Assert.False(File.Exists(Path.Combine(_memoryDir, "backup", "2026-04-10.md")),
+            "discard=true must NOT back up the file — LLM said it isn't worth keeping");
         Assert.DoesNotContain("2026-04-10", _store.GetProcessedDates());
     }
 
