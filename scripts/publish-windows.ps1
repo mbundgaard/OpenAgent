@@ -16,10 +16,10 @@ $repoRoot   = Split-Path -Parent $PSScriptRoot
 $projectDir = Join-Path $repoRoot 'src/agent/OpenAgent'
 $publishDir = Join-Path $repoRoot 'publish/win-x64'
 
-# Step 1: clean publish output
+# Step 1: clean publish output (keep the dir itself so an open shell cd'd into it doesn't block us)
 if (Test-Path $publishDir) {
-    Write-Host "Removing existing publish folder..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $publishDir
+    Write-Host "Cleaning publish folder contents..." -ForegroundColor Yellow
+    Get-ChildItem -Path $publishDir -Force | Remove-Item -Recurse -Force
 }
 
 # Step 2: publish self-contained single-file exe
