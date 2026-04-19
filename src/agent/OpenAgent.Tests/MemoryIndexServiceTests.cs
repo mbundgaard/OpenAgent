@@ -144,6 +144,7 @@ public class MemoryIndexServiceTests : IDisposable
 
         Assert.Equal(1, result.FilesScanned);
         Assert.Equal(0, result.FilesProcessed);
+        Assert.Equal(1, result.FilesDiscarded);
         Assert.Equal(0, result.ChunksCreated);
         Assert.False(File.Exists(Path.Combine(_memoryDir, "2026-04-10.md")),
             "discard=true must delete the file without indexing");

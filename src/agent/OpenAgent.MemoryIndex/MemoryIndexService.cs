@@ -9,6 +9,7 @@ namespace OpenAgent.MemoryIndex;
 public sealed record IndexResult(
     [property: JsonPropertyName("filesScanned")] int FilesScanned,
     [property: JsonPropertyName("filesProcessed")] int FilesProcessed,
+    [property: JsonPropertyName("filesDiscarded")] int FilesDiscarded,
     [property: JsonPropertyName("chunksCreated")] int ChunksCreated,
     [property: JsonPropertyName("errors")] int Errors);
 
@@ -76,7 +77,7 @@ public sealed class MemoryIndexService
         if (!Directory.Exists(memoryDir))
         {
             _logger.LogInformation("Memory directory does not exist, nothing to index: {Path}", memoryDir);
-            return new IndexResult(0, 0, 0, 0);
+            return new IndexResult(0, 0, 0, 0, 0);
         }
 
         // Same ordering as SystemPromptBuilder — newest first by filename (YYYY-MM-DD sorts lexicographically)
@@ -92,6 +93,7 @@ public sealed class MemoryIndexService
         var alreadyProcessed = _store.GetProcessedDates();
 
         var filesProcessed = 0;
+        var filesDiscarded = 0;
         var chunksCreated = 0;
         var errors = 0;
 
@@ -117,6 +119,7 @@ public sealed class MemoryIndexService
                 {
                     // The LLM judged this file not worth preserving. Delete without indexing.
                     File.Delete(filePath);
+                    filesDiscarded++;
                     _logger.LogInformation("Discarded {File} — LLM flagged as not worth indexing", fileName);
                     continue;
                 }
@@ -151,7 +154,7 @@ public sealed class MemoryIndexService
 
         InvalidateCache();
 
-        return new IndexResult(candidates.Count, filesProcessed, chunksCreated, errors);
+        return new IndexResult(candidates.Count, filesProcessed, filesDiscarded, chunksCreated, errors);
     }
 
     /// <summary>

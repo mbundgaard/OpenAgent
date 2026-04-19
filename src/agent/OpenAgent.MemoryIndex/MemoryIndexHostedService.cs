@@ -119,8 +119,8 @@ public sealed class MemoryIndexHostedService : IHostedService, IDisposable
             var result = await _service.RunAsync(ct);
             _store.SetLastRunDate(today);
             _logger.LogInformation(
-                "Memory index: scanned={Scanned} processed={Processed} chunks={Chunks} errors={Errors}",
-                result.FilesScanned, result.FilesProcessed, result.ChunksCreated, result.Errors);
+                "Memory index: scanned={Scanned} processed={Processed} discarded={Discarded} chunks={Chunks} errors={Errors}",
+                result.FilesScanned, result.FilesProcessed, result.FilesDiscarded, result.ChunksCreated, result.Errors);
         }
         catch (Exception ex)
         {
