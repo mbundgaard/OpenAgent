@@ -65,6 +65,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="defaults\*.md" />
+    <!-- Built React app (created by scripts/publish-windows.ps1). Extracted at startup. -->
+    <EmbeddedResource Include="wwwroot.zip" Condition="Exists('wwwroot.zip')" />
   </ItemGroup>
 
   <ItemGroup>

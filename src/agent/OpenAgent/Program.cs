@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using OpenAgent;
 using OpenAgent.Api.Endpoints;
 using OpenAgent.Channel.Telegram;
@@ -31,6 +32,9 @@ var installerExit = OpenAgent.Installer.InstallerCli.TryHandle(args);
 if (installerExit.HasValue)
     return installerExit.Value;
 
+// Extract the embedded React build into wwwroot/ next to the exe. Same code path on Windows + Linux.
+ExtractEmbeddedWwwroot();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Defaults (overridable via env vars / command-line / an appsettings.json next to the exe):
@@ -39,6 +43,27 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://localhost:8080");
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
+
+static void ExtractEmbeddedWwwroot()
+{
+    var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+    using var stream = assembly.GetManifestResourceStream("OpenAgent.wwwroot.zip");
+    if (stream is null) return; // Build didn't include the zip (dev tree without a publish run yet)
+
+    var wwwrootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+    try
+    {
+        if (Directory.Exists(wwwrootPath))
+            Directory.Delete(wwwrootPath, recursive: true);
+        Directory.CreateDirectory(wwwrootPath);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        archive.ExtractToDirectory(wwwrootPath, overwriteFiles: true);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"[startup] Failed to extract embedded wwwroot: {ex.Message}");
+    }
+}
 
 var runningAsService = args.Contains("--service");
 if (runningAsService)

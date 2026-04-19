@@ -1,10 +1,11 @@
 # --- Web frontend build ---
 FROM node:22-slim AS web-build
+RUN apt-get update && apt-get install -y --no-install-recommends zip && rm -rf /var/lib/apt/lists/*
 WORKDIR /web
 COPY src/web/package.json src/web/package-lock.json ./
 RUN npm ci
 COPY src/web/ .
-RUN npm run build
+RUN npm run build && cd dist && zip -r ../wwwroot.zip .
 
 # --- Baileys bridge dependencies ---
 FROM node:22-slim AS baileys-build
@@ -16,6 +17,8 @@ RUN npm ci --omit=dev
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY src/agent/ .
+# Stage the React zip into the OpenAgent project so it gets embedded as a resource
+COPY --from=web-build /web/wwwroot.zip OpenAgent/wwwroot.zip
 RUN dotnet restore
 RUN dotnet build -c Release --no-restore -p:SkipNpmInstall=true
 RUN dotnet test -c Release --no-build --no-restore
@@ -23,9 +26,6 @@ RUN dotnet test -c Release --no-build --no-restore
 # Publish
 FROM build AS publish
 RUN dotnet publish OpenAgent -c Release --no-build -o /app/publish
-
-# Copy web build output into wwwroot
-COPY --from=web-build /web/dist /app/publish/wwwroot
 
 # --- Runtime ---
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
