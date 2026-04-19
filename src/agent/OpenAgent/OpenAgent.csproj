@@ -9,6 +9,11 @@
     <ApplicationIcon>favicon.ico</ApplicationIcon>
     <!-- Hosted via Kestrel (console / Windows service), never IIS - suppress web.config generation -->
     <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
+    <!-- wwwroot/ is extracted from an embedded zip at runtime; disable the static-web-assets
+         manifest so ASP.NET doesn't try to load a manifest pointing at a physical path that
+         doesn't exist in source (or in publish output). Plain UseStaticFiles + ContentRoot/wwwroot
+         still works. -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
 
   <ItemGroup>
