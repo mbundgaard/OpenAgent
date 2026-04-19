@@ -13,6 +13,9 @@
 src/agent/OpenAgent/config/
 src/agent/OpenAgent/data/
 
+# React build output staged into the .NET project for single-file publish
+src/agent/OpenAgent/wwwroot/
+
 # Development settings (may contain secrets)
 # Note: appsettings.Development.json is tracked — it only contains test API keys
 

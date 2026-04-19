@@ -15,11 +15,11 @@
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot   = Split-Path -Parent $PSScriptRoot
-$projectDir = Join-Path $repoRoot 'src/agent/OpenAgent'
-$webDir     = Join-Path $repoRoot 'src/web'
-$publishDir = Join-Path $repoRoot 'publish/win-x64'
-$wwwrootDir = Join-Path $publishDir 'wwwroot'
+$repoRoot       = Split-Path -Parent $PSScriptRoot
+$projectDir     = Join-Path $repoRoot 'src/agent/OpenAgent'
+$webDir         = Join-Path $repoRoot 'src/web'
+$publishDir     = Join-Path $repoRoot 'publish/win-x64'
+$projectWwwroot = Join-Path $projectDir 'wwwroot'
 
 # Step 1: clean publish output (keep the dir itself so an open shell cd'd into it doesn't block us)
 if (Test-Path $publishDir) {
@@ -37,7 +37,20 @@ try {
     Pop-Location
 }
 
-# Step 3: publish self-contained single-file exe
+# Step 3: stage the React build into the .NET project's wwwroot/ so dotnet publish bundles it
+$webDist = Join-Path $webDir 'dist'
+if (-not (Test-Path $webDist)) {
+    throw "Expected $webDist after npm run build."
+}
+Write-Host "Staging React build into project wwwroot/..." -ForegroundColor Cyan
+if (Test-Path $projectWwwroot) {
+    Get-ChildItem -Path $projectWwwroot -Force | Remove-Item -Recurse -Force
+} else {
+    New-Item -ItemType Directory -Path $projectWwwroot | Out-Null
+}
+Copy-Item -Path "$webDist\*" -Destination $projectWwwroot -Recurse -Force
+
+# Step 4: publish self-contained single-file exe (wwwroot embedded via IncludeAllContentForSelfExtract)
 Write-Host "Publishing OpenAgent.exe (self-contained, single-file, win-x64)..." -ForegroundColor Cyan
 Push-Location $projectDir
 try {
@@ -50,21 +63,11 @@ try {
     Pop-Location
 }
 
-# Step 4: stage the React build into wwwroot/
-$webDist = Join-Path $webDir 'dist'
-if (-not (Test-Path $webDist)) {
-    throw "Expected $webDist after npm run build."
-}
-Write-Host "Staging React build into wwwroot/..." -ForegroundColor Cyan
-Copy-Item -Path "$webDist\*" -Destination $wwwrootDir -Recurse -Force -Container
-
 # Step 5: summary
-$exePath     = Join-Path $publishDir 'OpenAgent.exe'
-$exeSize     = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
-$wwwrootSize = [math]::Round(((Get-ChildItem -Recurse $wwwrootDir | Measure-Object Length -Sum).Sum) / 1MB, 1)
+$exePath = Join-Path $publishDir 'OpenAgent.exe'
+$exeSize = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
 
 Write-Host ""
 Write-Host "Build complete." -ForegroundColor Green
 Write-Host "  OpenAgent.exe : $exeSize MB"
-Write-Host "  wwwroot/      : $wwwrootSize MB"
 Write-Host "  Output        : $publishDir"
