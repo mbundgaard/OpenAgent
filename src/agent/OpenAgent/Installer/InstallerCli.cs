@@ -204,12 +204,16 @@ public static class InstallerCli
             File.Copy(file, Path.Combine(installPath, name), overwrite: true);
         }
 
-        // Copy the node/ directory recursively
-        var sourceNode = Path.Combine(sourceFolder, "node");
-        if (Directory.Exists(sourceNode))
+        // Copy bundled directories (node bridge, React UI). Replace contents fully on upgrade.
+        foreach (var dirName in new[] { "node", "wwwroot" })
         {
-            var destNode = Path.Combine(installPath, "node");
-            CopyDirectory(sourceNode, destNode);
+            var sourceDir = Path.Combine(sourceFolder, dirName);
+            if (!Directory.Exists(sourceDir)) continue;
+
+            var destDir = Path.Combine(installPath, dirName);
+            if (Directory.Exists(destDir))
+                Directory.Delete(destDir, recursive: true);
+            CopyDirectory(sourceDir, destDir);
         }
     }
 
