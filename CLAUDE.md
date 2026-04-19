@@ -22,7 +22,9 @@ Labels: `security`, `agent`, `tools`, `skills`, `channels`, `infrastructure`, `u
 
 ```
 src/agent/
-  OpenAgent/                              Host — Program.cs, DI wiring, AgentLogic, VoiceSessionManager
+  OpenAgent/                              Host — Program.cs, DI wiring, AgentLogic, VoiceSessionManager, embedded wwwroot extraction
+    Installer/                            Windows service install CLI — ServiceInstaller (sc.exe), FirewallRule (netsh), ElevationCheck, EventLogRegistrar, PreInstallChecks, InstallerCli dispatcher
+    RootResolver.cs                       Resolves data dir from DATA_DIR env var, falls back to AppContext.BaseDirectory for the Windows service case
   OpenAgent.Api/                          HTTP/WebSocket endpoints (no business logic)
     Endpoints/                            All endpoint files live here
       ConversationEndpoints.cs            List, get, delete conversations
@@ -184,7 +186,30 @@ All endpoints require `X-Api-Key` header except `/health`.
 | `POST` | `/api/connections/{connectionId}/stop` | Stop connection |
 
 ### Authentication
-Pluggable auth via extension methods on `IServiceCollection`. Currently `AddApiKeyAuth()` validates `X-Api-Key` header against a configured key. Swap for `AddEntraIdAuth()` when migrating to Entra ID — same shape, different implementation. `/health` is anonymous, all other endpoints require authorization. Dev key in `appsettings.Development.json`, production key via `Authentication__ApiKey` environment variable on Azure.
+Pluggable auth via extension methods on `IServiceCollection`. Currently `AddApiKeyAuth(string apiKey)` validates `X-Api-Key` header against the resolved key. Swap for `AddEntraIdAuth()` when migrating to Entra ID — same shape, different implementation. `/health` is anonymous, all other endpoints require authorization.
+
+`ApiKeyResolver.Resolve({dataPath}, IConfiguration)` decides the active key at startup, in this order:
+1. `Authentication:ApiKey` config value (env var `Authentication__ApiKey`, `appsettings.Development.json`, command-line). When set, it's also persisted back to `{dataPath}/config/agent.json`'s `apiKey` field so the file is the source of truth at rest.
+2. Existing `apiKey` string in `agent.json`.
+3. Generate a 24-byte hex key, persist it.
+
+Program.cs prints the bound URL(s) on startup with the key as a hash fragment — `http://localhost:8080/#token=<apiKey>` — which the React app reads via `window.location.hash` (see `src/web/src/auth/token.ts`). Ctrl-click the URL to open the UI pre-authenticated.
+
+### Windows service deployment
+Same codebase, Windows-specific deployment target. Run `OpenAgent.exe` with no args for console mode, or use the installer verbs:
+- `--install` registers a Windows service that runs the exe **in place** (no copy). From an elevated CMD, extract the published folder to e.g. `C:\OpenAgent\`, `cd` in, run `--install`. Service registered with `sc.exe`, account `LocalSystem`, start type auto, `sc failure` recovery (restart/5s/5s/60s, reset 24h). See `src/agent/OpenAgent/Installer/InstallerCli.cs`.
+- `--uninstall` stops + deletes the service, removes firewall rule. Data (`config/`, `logs/`, `conversations.db`, symlinks) preserved.
+- `--restart` stop + start.
+- `--status` print installed/running state.
+- `--service` is the SCM-invoked entry point. Binds `UseWindowsService()` and adds the `EventLog` logging provider (source `OpenAgent`, registered by `EventLogRegistrar`).
+
+Pre-install checks (`PreInstallChecks`): `node\baileys-bridge.js` next to the exe, `node --version` exits 0, install path has no null/newline chars. Admin gated via `ElevationCheck.IsAdministrator()` (`WindowsPrincipal.IsInRole(Administrator)`).
+
+Upgrade flow (self-hosted shape): stop service, replace files, start service. Because Windows locks the running exe, you can't overwrite it in place while the service is up.
+
+**Symlinks** for reaching paths outside the data dir (e.g. `D:\Media`, `E:\Downloads`) are declared in `config/agent.json` under `symlinks`: `{ "media": "D:\\Media", ... }`. `DataDirectoryBootstrap` creates directory junctions on Windows (`cmd /c mklink /J`) or symlinks on Linux via `IDirectoryLinkCreator`. Junctions need no admin/Developer Mode on Windows and remain transparent to the single-root file tool gate. Symlink changes require `--restart` to take effect.
+
+**Publish script:** `scripts/publish-windows.ps1` runs `npm run build` in `src/web`, zips `dist/` into `src/agent/OpenAgent/wwwroot.zip` (gitignored, embedded as assembly resource), then `dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true`. Output: `publish/win-x64/{OpenAgent.exe, node/, onnxruntime*.lib}`. The Baileys bridge node_modules is not shipped by publish — install with `npm ci --omit=dev` in the published `node/` folder after copying (or handle in your own install flow).
 
 ### Interface segregation for cross-project dependencies
 When `OpenAgent.Api` needs a type from the host project, extract an interface into `OpenAgent.Contracts`. Example: `IVoiceSessionManager` lives in Contracts, concrete `VoiceSessionManager` lives in the host, DI wires them.
@@ -223,7 +248,15 @@ cd src/agent && dotnet build
 cd src/agent && dotnet test
 ```
 
+Windows service distribution (runs the React build + self-contained publish):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/publish-windows.ps1
+# output: publish/win-x64/{OpenAgent.exe, node/, onnxruntime*.lib}
+```
+
 - Windows: use `python` not `python3` (python3 is not aliased on this machine)
+- Integration tests seed `{dataPath}/config/agent.json` via `TestSetup.EnsureConfigSeeded()` and export `DATA_DIR` so the test host and the seed agree on the path (RootResolver's fallback would otherwise diverge).
 
 ## CI/CD
 
@@ -258,6 +291,10 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 - IOutboundSender interface enables proactive messaging — channel providers that support outbound implement it. Used by scheduled tasks for delivery.
 - File explorer reads with `FileShare.ReadWrite` so Serilog-locked log files can be opened.
 - Log files (Serilog compact JSON) stored at `{dataPath}/logs/log-{date}.jsonl` with daily rolling. Queryable via `/api/logs` endpoints with level, time range, search, and tail filters.
+- Data directory resolution: `DATA_DIR` env var wins (Docker / Azure set it to `/home/data`); when unset, `AppContext.BaseDirectory` (the folder next to the running exe). The Linux Docker deployment sees no change; the Windows service falls through to exe-relative without needing env config.
+- React UI is embedded in the assembly as `OpenAgent.wwwroot.zip` and extracted to `{exe-dir}/wwwroot/` on every startup by a helper at the top of `Program.cs` (ran on Windows + Linux, same code path). Dockerfile zips the React build in its `web-build` stage, copies the zip into the .NET source tree, and `dotnet publish` embeds it.
+- `<StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>` on `OpenAgent.csproj` — the manifest-based system assumes a physical `wwwroot/` path at build time, which doesn't exist in source (we use zip-embedding). The plain `UseStaticFiles` + ContentRoot/wwwroot serves the extracted files fine.
+- Host defaults live in `Program.cs`, not `appsettings.json`: Kestrel binds to `http://localhost:8080` (overridable via `ASPNETCORE_URLS`), log filters quiet ASP.NET Core info chatter while keeping `Microsoft.Hosting.Lifetime` at Information so "Now listening on:" shows on startup. `appsettings.json` is gone from the published exe; an optional one next to the exe still wins if present.
 
 ## Memory
 
