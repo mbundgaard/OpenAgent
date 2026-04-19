@@ -67,17 +67,20 @@ internal sealed class SystemPromptBuilder
             if (_files.TryGetValue(filePath, out var content))
                 sections.Add(content);
 
-            // After MEMORY.md, append the most recent daily memory files
+            // After MEMORY.md, append every daily file still in memory/ root (newest first).
+            // The indexer moves indexed files to memory/backup/, which is not scanned here, so
+            // the prompt naturally contains exactly the "live" set that hasn't rolled past the
+            // memoryDays window and been absorbed into memory_chunks. MemoryDays is the
+            // indexer's threshold only — this loader just reflects whatever the indexer has
+            // left on disk.
             if (filePath == "MEMORY.md")
             {
                 var memoryDir = Path.Combine(_dataPath, "memory");
                 if (Directory.Exists(memoryDir))
                 {
-                    var days = Math.Max(1, _agentConfig.MemoryDays);
-                    var recentFiles = Directory.GetFiles(memoryDir, "????-??-??.md")
-                        .OrderByDescending(f => Path.GetFileName(f))
-                        .Take(days);
-                    foreach (var file in recentFiles)
+                    var liveFiles = Directory.GetFiles(memoryDir, "????-??-??.md")
+                        .OrderByDescending(f => Path.GetFileName(f));
+                    foreach (var file in liveFiles)
                         TryAppendFile(sections, Path.Combine("memory", Path.GetFileName(file)));
                 }
             }
