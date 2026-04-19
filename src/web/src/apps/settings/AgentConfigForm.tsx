@@ -20,6 +20,7 @@ export function AgentConfigForm() {
     memoryDays: '3',
     mainConversationId: '',
     embeddingProvider: '',
+    embeddingModel: 'multilingual-e5-base',
   });
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
@@ -45,7 +46,7 @@ export function AgentConfigForm() {
 
       // Load current values
       const vals: Record<string, string> = {};
-      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays', 'mainConversationId', 'embeddingProvider']) {
+      for (const key of ['textProvider', 'textModel', 'voiceProvider', 'voiceModel', 'compactionProvider', 'compactionModel', 'memoryDays', 'mainConversationId', 'embeddingProvider', 'embeddingModel']) {
         const v = agentValues[key];
         vals[key] = typeof v === 'string' ? v : '';
       }
@@ -164,8 +165,21 @@ export function AgentConfigForm() {
             value={values.embeddingProvider}
             onChange={e => setValues(v => ({ ...v, embeddingProvider: e.target.value }))}
           >
-            <option value="">(disabled — memory index job off, search tools hidden)</option>
-            <option value="onnx">onnx (multilingual-e5-base, local)</option>
+            <option value="">(disabled — memory index job off)</option>
+            <option value="multilingual-e5">multilingual-e5 (local, ONNX)</option>
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span className={styles.label}>Embedding Model</span>
+          <select
+            className={styles.input}
+            value={values.embeddingModel}
+            onChange={e => setValues(v => ({ ...v, embeddingModel: e.target.value }))}
+            disabled={values.embeddingProvider !== 'multilingual-e5'}
+          >
+            <option value="multilingual-e5-small">multilingual-e5-small (384-dim, ~470 MB)</option>
+            <option value="multilingual-e5-base">multilingual-e5-base (768-dim, ~1.1 GB)</option>
+            <option value="multilingual-e5-large">multilingual-e5-large (1024-dim, ~2.5 GB)</option>
           </select>
         </label>
       </div>

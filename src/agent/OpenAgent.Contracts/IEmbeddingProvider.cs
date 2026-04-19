@@ -21,8 +21,14 @@ public enum EmbeddingPurpose
 /// </summary>
 public interface IEmbeddingProvider
 {
-    /// <summary>Unique provider key (e.g. "onnx", "azureOpenAi").</summary>
+    /// <summary>Unique provider key (e.g. "onnx", "azureOpenAi"). Identifies the provider type.</summary>
     string Key { get; }
+
+    /// <summary>
+    /// Specific model this provider instance is loaded with (e.g. "multilingual-e5-base").
+    /// Stored per chunk so search can scope cosine comparisons to vectors from the same engine.
+    /// </summary>
+    string Model { get; }
 
     /// <summary>Embedding vector length. All vectors this provider returns have this dimensionality.</summary>
     int Dimensions { get; }

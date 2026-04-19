@@ -53,4 +53,12 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("embeddingProvider")]
     public string EmbeddingProvider { get; set; } = "";
+
+    /// <summary>
+    /// Embedding model within the chosen provider (e.g. "multilingual-e5-base" for the onnx
+    /// provider). Default assumes the middle-sized e5 variant. Changing this requires a
+    /// restart — the provider loads its model files on first use.
+    /// </summary>
+    [JsonPropertyName("embeddingModel")]
+    public string EmbeddingModel { get; set; } = "multilingual-e5-base";
 }

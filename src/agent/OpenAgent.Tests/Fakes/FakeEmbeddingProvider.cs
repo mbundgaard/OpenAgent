@@ -11,13 +11,15 @@ public sealed class FakeEmbeddingProvider : IEmbeddingProvider
 {
     private readonly Dictionary<string, float[]> _overrides = new();
 
-    public FakeEmbeddingProvider(string key = "fake", int dimensions = 4)
+    public FakeEmbeddingProvider(string key = "fake", string model = "fake-model", int dimensions = 4)
     {
         Key = key;
+        Model = model;
         Dimensions = dimensions;
     }
 
     public string Key { get; }
+    public string Model { get; }
     public int Dimensions { get; }
 
     public void Set(string text, EmbeddingPurpose purpose, float[] vector)

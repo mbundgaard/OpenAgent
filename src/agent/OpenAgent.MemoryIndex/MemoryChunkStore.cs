@@ -21,6 +21,7 @@ public sealed record StoredChunk(
     string Summary,
     float[] Embedding,
     string Provider,
+    string Model,
     int Dimensions);
 
 /// <summary>
@@ -72,6 +73,7 @@ public sealed class MemoryChunkStore
                 summary     TEXT NOT NULL,
                 embedding   BLOB NOT NULL,
                 provider    TEXT NOT NULL,
+                model       TEXT NOT NULL,
                 dimensions  INTEGER NOT NULL,
                 UNIQUE(date, chunk_index)
             );
@@ -89,10 +91,10 @@ public sealed class MemoryChunkStore
     }
 
     /// <summary>
-    /// Atomically insert all chunks for a given date and provider. Writes to both the
+    /// Atomically insert all chunks for a given date, provider, and model. Writes to both the
     /// main table and the FTS5 index inside one transaction so the two never drift.
     /// </summary>
-    public void InsertChunks(string date, string provider, int dimensions, IReadOnlyList<ChunkEntry> entries)
+    public void InsertChunks(string date, string provider, string model, int dimensions, IReadOnlyList<ChunkEntry> entries)
     {
         if (entries.Count == 0) return;
 
@@ -108,8 +110,8 @@ public sealed class MemoryChunkStore
             using var insert = connection.CreateCommand();
             insert.Transaction = tx;
             insert.CommandText = """
-                INSERT INTO memory_chunks (date, chunk_index, content, summary, embedding, provider, dimensions)
-                VALUES (@date, @chunk_index, @content, @summary, @embedding, @provider, @dimensions);
+                INSERT INTO memory_chunks (date, chunk_index, content, summary, embedding, provider, model, dimensions)
+                VALUES (@date, @chunk_index, @content, @summary, @embedding, @provider, @model, @dimensions);
                 SELECT last_insert_rowid();
                 """;
             insert.Parameters.AddWithValue("@date", date);
@@ -118,6 +120,7 @@ public sealed class MemoryChunkStore
             insert.Parameters.AddWithValue("@summary", entry.Summary);
             insert.Parameters.AddWithValue("@embedding", SerializeEmbedding(entry.Embedding));
             insert.Parameters.AddWithValue("@provider", provider);
+            insert.Parameters.AddWithValue("@model", model);
             insert.Parameters.AddWithValue("@dimensions", dimensions);
 
             var rowId = (long)insert.ExecuteScalar()!;
@@ -154,22 +157,23 @@ public sealed class MemoryChunkStore
     }
 
     /// <summary>
-    /// Load every chunk embedded by the given provider, ordered by date then chunk_index.
-    /// Intended for vector search — chunks from other providers have an incompatible
-    /// vector space and are silently skipped.
+    /// Load every chunk embedded by the given provider + model, ordered by date then chunk_index.
+    /// Intended for vector search — chunks from other providers/models have an incompatible
+    /// vector space and are filtered out here so cosine math never crosses spaces.
     /// </summary>
-    public List<StoredChunk> GetAllChunks(string provider)
+    public List<StoredChunk> GetAllChunks(string provider, string model)
     {
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT id, date, chunk_index, content, summary, embedding, provider, dimensions
+            SELECT id, date, chunk_index, content, summary, embedding, provider, model, dimensions
             FROM memory_chunks
-            WHERE provider = @provider
+            WHERE provider = @provider AND model = @model
             ORDER BY date, chunk_index;
             """;
         cmd.Parameters.AddWithValue("@provider", provider);
+        cmd.Parameters.AddWithValue("@model", model);
 
         var chunks = new List<StoredChunk>();
         using var reader = cmd.ExecuteReader();
@@ -200,7 +204,7 @@ public sealed class MemoryChunkStore
             cmd.Parameters.AddWithValue(paramNames[i], ids[i]);
         }
         cmd.CommandText = $"""
-            SELECT id, date, chunk_index, content, summary, provider, dimensions
+            SELECT id, date, chunk_index, content, summary, provider, model, dimensions
             FROM memory_chunks
             WHERE id IN ({string.Join(", ", paramNames)})
             ORDER BY date, chunk_index;
@@ -274,18 +278,20 @@ public sealed class MemoryChunkStore
 
         if (includeEmbedding)
         {
-            // column order: id, date, chunk_index, content, summary, embedding, provider, dimensions
+            // column order: id, date, chunk_index, content, summary, embedding, provider, model, dimensions
             var blob = (byte[])reader["embedding"];
             var provider = reader.GetString(6);
-            var dimensions = (int)reader.GetInt64(7);
-            return new StoredChunk(id, date, chunkIndex, content, summary, DeserializeEmbedding(blob), provider, dimensions);
+            var model = reader.GetString(7);
+            var dimensions = (int)reader.GetInt64(8);
+            return new StoredChunk(id, date, chunkIndex, content, summary, DeserializeEmbedding(blob), provider, model, dimensions);
         }
         else
         {
-            // column order: id, date, chunk_index, content, summary, provider, dimensions
+            // column order: id, date, chunk_index, content, summary, provider, model, dimensions
             var provider = reader.GetString(5);
-            var dimensions = (int)reader.GetInt64(6);
-            return new StoredChunk(id, date, chunkIndex, content, summary, [], provider, dimensions);
+            var model = reader.GetString(6);
+            var dimensions = (int)reader.GetInt64(7);
+            return new StoredChunk(id, date, chunkIndex, content, summary, [], provider, model, dimensions);
         }
     }
 

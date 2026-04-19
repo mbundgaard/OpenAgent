@@ -111,7 +111,7 @@ public class MemoryIndexServiceTests : IDisposable
     public async Task RunAsync_skips_dates_already_in_the_index()
     {
         WriteMemoryFile("2026-04-10", "Older content about indexed day.");
-        _store.InsertChunks("2026-04-10", "fake", 4,
+        _store.InsertChunks("2026-04-10", "fake", "fake-model", 4,
             [new ChunkEntry("existing", "existing summary", [0.1f, 0.2f, 0.3f, 0.4f])]);
 
         var service = BuildService("""{"chunks":[{"content":"new","summary":"new"}]}""", memoryDays: 3);
@@ -186,7 +186,7 @@ public class MemoryIndexServiceTests : IDisposable
     public async Task SearchAsync_ranks_by_cosine_similarity_against_stored_embeddings()
     {
         // Hand-inject two chunks with known embeddings so the ranking is deterministic
-        _store.InsertChunks("2026-04-10", "fake", 4, [
+        _store.InsertChunks("2026-04-10", "fake", "fake-model", 4,[
             new ChunkEntry("Content about cats.", "Cat summary", [1f, 0f, 0f, 0f]),
             new ChunkEntry("Content about dogs.", "Dog summary", [0f, 1f, 0f, 0f]),
         ]);
@@ -207,7 +207,7 @@ public class MemoryIndexServiceTests : IDisposable
     {
         // Both chunks have the same vector (cosine = 1 against the query), so ranking
         // hinges entirely on keyword overlap via the FTS5 leg.
-        _store.InsertChunks("2026-04-10", "fake", 4, [
+        _store.InsertChunks("2026-04-10", "fake", "fake-model", 4,[
             new ChunkEntry("Generic text with no distinctive keywords here.", "Generic topic one", [1f, 0f, 0f, 0f]),
             new ChunkEntry("Text mentioning platypus repeatedly: platypus platypus.", "Platypus topic two", [1f, 0f, 0f, 0f]),
         ]);
@@ -246,18 +246,18 @@ public class MemoryIndexServiceTests : IDisposable
         var totalProcessed = results.Sum(r => r.FilesProcessed);
         Assert.Equal(0, totalErrors);
         Assert.Equal(1, totalProcessed);
-        Assert.Single(_store.GetAllChunks("fake"));
+        Assert.Single(_store.GetAllChunks("fake", "fake-model"));
     }
 
     [Fact]
     public async Task LoadChunksAsync_returns_full_content_for_given_ids()
     {
-        _store.InsertChunks("2026-04-10", "fake", 4, [
+        _store.InsertChunks("2026-04-10", "fake", "fake-model", 4,[
             new ChunkEntry("First full body.", "first", [0.1f, 0.1f, 0.1f, 0.1f]),
             new ChunkEntry("Second full body.", "second", [0.2f, 0.2f, 0.2f, 0.2f]),
         ]);
 
-        var stored = _store.GetAllChunks("fake");
+        var stored = _store.GetAllChunks("fake", "fake-model");
         var service = BuildService("""{"chunks":[]}""");
 
         var results = await service.LoadChunksAsync([stored[1].Id]);

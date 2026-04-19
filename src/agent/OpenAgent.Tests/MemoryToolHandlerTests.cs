@@ -99,7 +99,7 @@ public class MemoryToolHandlerTests : IDisposable
     [Fact]
     public async Task search_memory_returns_summaries_with_id_date_summary_score_shape()
     {
-        _store.InsertChunks("2026-04-10", "fake", 4, [
+        _store.InsertChunks("2026-04-10", "fake", "fake-model", 4,[
             new ChunkEntry("Content about cats.", "Cat summary", [1f, 0f, 0f, 0f]),
         ]);
         _embedding.Set("cats", EmbeddingPurpose.Search, [1f, 0f, 0f, 0f]);
@@ -125,7 +125,7 @@ public class MemoryToolHandlerTests : IDisposable
     {
         for (var i = 0; i < 10; i++)
         {
-            _store.InsertChunks($"2026-04-{i + 1:D2}", "fake", 4,
+            _store.InsertChunks($"2026-04-{i + 1:D2}", "fake", "fake-model", 4,
                 [new ChunkEntry($"content {i}", $"summary {i}", [1f, 0f, 0f, 0f])]);
         }
         _embedding.Set("anything", EmbeddingPurpose.Search, [1f, 0f, 0f, 0f]);
@@ -143,11 +143,11 @@ public class MemoryToolHandlerTests : IDisposable
     [Fact]
     public async Task load_memory_chunks_returns_full_content_by_id()
     {
-        _store.InsertChunks("2026-04-10", "fake", 4, [
+        _store.InsertChunks("2026-04-10", "fake", "fake-model", 4,[
             new ChunkEntry("First body.", "first", [0.1f, 0.1f, 0.1f, 0.1f]),
             new ChunkEntry("Second body.", "second", [0.2f, 0.2f, 0.2f, 0.2f]),
         ]);
-        var stored = _store.GetAllChunks("fake");
+        var stored = _store.GetAllChunks("fake", "fake-model");
 
         var config = new AgentConfig { EmbeddingProvider = "fake" };
         var handler = new MemoryToolHandler(BuildService(config), config);

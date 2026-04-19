@@ -30,7 +30,7 @@ public class MemoryChunkStoreTests : IDisposable
     [Fact]
     public void InsertChunks_with_summaries_marks_date_as_processed()
     {
-        _store.InsertChunks("2026-04-17", "onnx", 3, [
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[
             Entry("Morning coffee notes.", "Morning coffee"),
             Entry("Afternoon meeting.", "Meeting summary"),
         ]);
@@ -44,10 +44,10 @@ public class MemoryChunkStoreTests : IDisposable
     [Fact]
     public void InsertChunks_duplicate_date_chunk_index_throws()
     {
-        _store.InsertChunks("2026-04-17", "onnx", 3, [Entry("one", "one")]);
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[Entry("one", "one")]);
 
         Assert.Throws<SqliteException>(() =>
-            _store.InsertChunks("2026-04-17", "onnx", 3, [Entry("two", "two")]));
+            _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[Entry("two", "two")]));
     }
 
     [Fact]
@@ -67,11 +67,11 @@ public class MemoryChunkStoreTests : IDisposable
     public void GetAllChunks_for_provider_returns_content_summary_and_embeddings()
     {
         var embedding = new float[] { 0.5f, -0.5f, 0.25f };
-        _store.InsertChunks("2026-04-17", "onnx", 3, [
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[
             new ChunkEntry("Chunk A.", "Summary A", embedding),
         ]);
 
-        var chunks = _store.GetAllChunks("onnx");
+        var chunks = _store.GetAllChunks("onnx", "test-model");
 
         Assert.Single(chunks);
         var c = chunks[0];
@@ -81,18 +81,19 @@ public class MemoryChunkStoreTests : IDisposable
         Assert.Equal("Summary A", c.Summary);
         Assert.Equal(embedding, c.Embedding);
         Assert.Equal("onnx", c.Provider);
+        Assert.Equal("test-model", c.Model);
         Assert.Equal(3, c.Dimensions);
     }
 
     [Fact]
     public void GetAllChunks_filters_by_provider()
     {
-        _store.InsertChunks("2026-04-17", "onnx", 3, [Entry("From onnx.", "onnx sum")]);
-        _store.InsertChunks("2026-04-18", "azure", 3, [Entry("From azure.", "azure sum")]);
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[Entry("From onnx.", "onnx sum")]);
+        _store.InsertChunks("2026-04-18", "azure", "test-model", 3,[Entry("From azure.", "azure sum")]);
 
-        var onnxChunks = _store.GetAllChunks("onnx");
-        var azureChunks = _store.GetAllChunks("azure");
-        var otherChunks = _store.GetAllChunks("other");
+        var onnxChunks = _store.GetAllChunks("onnx", "test-model");
+        var azureChunks = _store.GetAllChunks("azure", "test-model");
+        var otherChunks = _store.GetAllChunks("other", "test-model");
 
         Assert.Single(onnxChunks);
         Assert.Equal("From onnx.", onnxChunks[0].Content);
@@ -104,17 +105,17 @@ public class MemoryChunkStoreTests : IDisposable
     [Fact]
     public void GetChunksByIds_returns_specific_chunks_regardless_of_provider()
     {
-        _store.InsertChunks("2026-04-17", "onnx", 3, [
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[
             Entry("one", "sum1"),
             Entry("two", "sum2"),
             Entry("three", "sum3"),
         ]);
-        _store.InsertChunks("2026-04-18", "azure", 3, [Entry("four", "sum4")]);
+        _store.InsertChunks("2026-04-18", "azure", "test-model", 3,[Entry("four", "sum4")]);
 
-        var all = _store.GetAllChunks("onnx");
+        var all = _store.GetAllChunks("onnx", "test-model");
         var firstId = all[0].Id;
         var thirdId = all[2].Id;
-        var azureId = _store.GetAllChunks("azure")[0].Id;
+        var azureId = _store.GetAllChunks("azure", "test-model")[0].Id;
 
         var result = _store.GetChunksByIds([firstId, thirdId, azureId]);
 
@@ -128,14 +129,14 @@ public class MemoryChunkStoreTests : IDisposable
     [Fact]
     public void GetChunksByIds_empty_input_returns_empty()
     {
-        _store.InsertChunks("2026-04-17", "onnx", 3, [Entry("one", "sum1")]);
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[Entry("one", "sum1")]);
         Assert.Empty(_store.GetChunksByIds([]));
     }
 
     [Fact]
     public void SearchFts_matches_content_and_orders_by_score()
     {
-        _store.InsertChunks("2026-04-17", "onnx", 3, [
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[
             Entry("The quick brown fox jumps.", "Animal story"),
             Entry("A lazy dog sleeps by the fire.", "Pet nap"),
             Entry("Lunar eclipse tonight at nine.", "Astronomy note"),
@@ -153,7 +154,7 @@ public class MemoryChunkStoreTests : IDisposable
         // The BM25-backed rank gives more-negative values to richer matches. The normalization
         // maps them into [0, 1) so a document packed with the search term should rank above a
         // document that mentions it only once.
-        _store.InsertChunks("2026-04-17", "onnx", 3, [
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[
             Entry("fox fox fox fox fox chasing fox fox fox fox fox", "Many foxes"),
             Entry("A single fox at dusk.", "One fox"),
         ]);
@@ -162,14 +163,14 @@ public class MemoryChunkStoreTests : IDisposable
 
         Assert.Equal(2, scores.Count);
         var ordered = scores.OrderByDescending(kv => kv.Value).ToList();
-        Assert.Contains("Many", _store.GetAllChunks("onnx").First(c => c.Id == ordered[0].Key).Summary);
+        Assert.Contains("Many", _store.GetAllChunks("onnx", "test-model").First(c => c.Id == ordered[0].Key).Summary);
         Assert.True(ordered[0].Value > ordered[1].Value);
     }
 
     [Fact]
     public void SearchFts_no_match_returns_empty()
     {
-        _store.InsertChunks("2026-04-17", "onnx", 3, [Entry("Completely different text.", "some sum")]);
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[Entry("Completely different text.", "some sum")]);
 
         var scores = _store.SearchFts("quantum");
 
@@ -190,9 +191,9 @@ public class MemoryChunkStoreTests : IDisposable
     [Fact]
     public void GetStats_with_entries_reports_correct_counts_and_range()
     {
-        _store.InsertChunks("2026-04-10", "onnx", 3, [Entry("a", "a"), Entry("b", "b")]);
-        _store.InsertChunks("2026-04-17", "onnx", 3, [Entry("c", "c")]);
-        _store.InsertChunks("2026-04-12", "azure", 3, [Entry("d", "d")]);
+        _store.InsertChunks("2026-04-10", "onnx", "test-model", 3, [Entry("a", "a"), Entry("b", "b")]);
+        _store.InsertChunks("2026-04-17", "onnx", "test-model", 3,[Entry("c", "c")]);
+        _store.InsertChunks("2026-04-12", "azure", "test-model", 3, [Entry("d", "d")]);
 
         var stats = _store.GetStats();
 

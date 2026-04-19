@@ -43,10 +43,11 @@ public sealed class MemoryIndexService
     private readonly AgentEnvironment _environment;
     private readonly ILogger<MemoryIndexService> _logger;
 
-    // Lazy-loaded chunks for vector search. Keyed by provider so switching providers
-    // at runtime doesn't return stale or dimension-mismatched vectors.
+    // Lazy-loaded chunks for vector search. Keyed by (provider, model) so switching either
+    // at runtime doesn't return stale or vector-space-incompatible chunks.
     private readonly object _cacheLock = new();
     private string? _cachedProvider;
+    private string? _cachedModel;
     private List<StoredChunk>? _cachedChunks;
 
     // Serialize RunAsync — the hosted service's startup tick and the manual /run endpoint
@@ -157,7 +158,7 @@ public sealed class MemoryIndexService
                     entries.Add(new ChunkEntry(c.Content, c.Summary, embedding));
                 }
 
-                _store.InsertChunks(date, provider.Key, provider.Dimensions, entries);
+                _store.InsertChunks(date, provider.Key, provider.Model, provider.Dimensions, entries);
                 File.Delete(filePath);
                 filesProcessed++;
                 chunksCreated += entries.Count;
@@ -185,7 +186,7 @@ public sealed class MemoryIndexService
         if (string.IsNullOrWhiteSpace(query) || limit <= 0) return [];
 
         var provider = _embeddingProviderFactory(_agentConfig.EmbeddingProvider);
-        var chunks = GetOrLoadChunks(provider.Key);
+        var chunks = GetOrLoadChunks(provider.Key, provider.Model);
         if (chunks.Count == 0 && _store.SearchFts(query).Count == 0)
             return [];
 
@@ -245,15 +246,16 @@ public sealed class MemoryIndexService
     /// <summary>Aggregate statistics about the stored chunks.</summary>
     public ChunkStats GetStats() => _store.GetStats();
 
-    private List<StoredChunk> GetOrLoadChunks(string providerKey)
+    private List<StoredChunk> GetOrLoadChunks(string providerKey, string model)
     {
         lock (_cacheLock)
         {
-            if (_cachedChunks is not null && _cachedProvider == providerKey)
+            if (_cachedChunks is not null && _cachedProvider == providerKey && _cachedModel == model)
                 return _cachedChunks;
 
             _cachedProvider = providerKey;
-            _cachedChunks = _store.GetAllChunks(providerKey);
+            _cachedModel = model;
+            _cachedChunks = _store.GetAllChunks(providerKey, model);
             return _cachedChunks;
         }
     }
@@ -264,6 +266,7 @@ public sealed class MemoryIndexService
         {
             _cachedChunks = null;
             _cachedProvider = null;
+            _cachedModel = null;
         }
     }
 }
