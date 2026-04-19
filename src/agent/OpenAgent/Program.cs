@@ -14,6 +14,7 @@ using OpenAgent.LlmVoice.OpenAIAzure;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Security.ApiKey;
+using OpenAgent.Embedding.OnnxBge;
 using OpenAgent.Embedding.OnnxMultilingualE5;
 using OpenAgent.MemoryIndex;
 using OpenAgent.Tools.Expand;
@@ -92,6 +93,10 @@ builder.Services.AddScheduledTasks(environment.DataPath);
 // AgentConfig.EmbeddingModel and is loaded on first embedding call.
 builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxMultilingualE5EmbeddingProvider.ProviderKey, (sp, _) =>
     new OnnxMultilingualE5EmbeddingProvider(
+        sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<AgentConfig>()));
+builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxBgeEmbeddingProvider.ProviderKey, (sp, _) =>
+    new OnnxBgeEmbeddingProvider(
         sp.GetRequiredService<AgentEnvironment>(),
         sp.GetRequiredService<AgentConfig>()));
 builder.Services.AddSingleton<Func<string, IEmbeddingProvider>>(sp =>

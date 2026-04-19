@@ -3,6 +3,20 @@ import { getProviderValues, getProviderModels, saveProviderConfig, listProviders
 import { listConversations, type ConversationSummary } from '../conversations/api';
 import styles from './ProviderForm.module.css';
 
+/** Models offered per embedding provider. Keyed by AgentConfig.EmbeddingProvider value. */
+const EMBEDDING_MODELS: Record<string, { value: string; label: string }[]> = {
+  'multilingual-e5': [
+    { value: 'multilingual-e5-small', label: 'multilingual-e5-small (384-dim, ~470 MB)' },
+    { value: 'multilingual-e5-base', label: 'multilingual-e5-base (768-dim, ~1.1 GB)' },
+    { value: 'multilingual-e5-large', label: 'multilingual-e5-large (1024-dim, ~2.5 GB)' },
+  ],
+  'bge': [
+    { value: 'bge-small-en-v1.5', label: 'bge-small-en-v1.5 (384-dim, ~130 MB)' },
+    { value: 'bge-base-en-v1.5', label: 'bge-base-en-v1.5 (768-dim, ~440 MB)' },
+    { value: 'bge-large-en-v1.5', label: 'bge-large-en-v1.5 (1024-dim, ~1.3 GB)' },
+  ],
+};
+
 function formatConversationLabel(conv: ConversationSummary): string {
   if (conv.display_name) return conv.display_name;
   if (conv.channel_type && conv.channel_chat_id) {
@@ -163,10 +177,15 @@ export function AgentConfigForm() {
           <select
             className={styles.input}
             value={values.embeddingProvider}
-            onChange={e => setValues(v => ({ ...v, embeddingProvider: e.target.value }))}
+            onChange={e => {
+              const next = e.target.value;
+              const defaultModel = EMBEDDING_MODELS[next]?.[0]?.value ?? '';
+              setValues(v => ({ ...v, embeddingProvider: next, embeddingModel: defaultModel }));
+            }}
           >
             <option value="">(disabled — memory index job off)</option>
-            <option value="multilingual-e5">multilingual-e5 (local, ONNX)</option>
+            <option value="multilingual-e5">multilingual-e5 (local, ONNX, multilingual)</option>
+            <option value="bge">bge (local, ONNX, English-only)</option>
           </select>
         </label>
         <label className={styles.field}>
@@ -175,11 +194,11 @@ export function AgentConfigForm() {
             className={styles.input}
             value={values.embeddingModel}
             onChange={e => setValues(v => ({ ...v, embeddingModel: e.target.value }))}
-            disabled={values.embeddingProvider !== 'multilingual-e5'}
+            disabled={!EMBEDDING_MODELS[values.embeddingProvider]}
           >
-            <option value="multilingual-e5-small">multilingual-e5-small (384-dim, ~470 MB)</option>
-            <option value="multilingual-e5-base">multilingual-e5-base (768-dim, ~1.1 GB)</option>
-            <option value="multilingual-e5-large">multilingual-e5-large (1024-dim, ~2.5 GB)</option>
+            {(EMBEDDING_MODELS[values.embeddingProvider] ?? []).map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
           </select>
         </label>
       </div>
