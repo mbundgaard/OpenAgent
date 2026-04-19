@@ -12,7 +12,6 @@ public static class InstallerCli
     public const string ServiceName = "OpenAgent";
     public const string DisplayName = "OpenAgent";
     public const string Description = "Multi-channel AI agent platform";
-    public const string DefaultInstallPath = @"C:\OpenAgent";
     public const int DefaultHttpPort = 8080;
 
     /// <summary>
@@ -47,18 +46,23 @@ public static class InstallerCli
         if (adminCheck != 0)
             return adminCheck;
 
-        var installPath = ParseOptionalArg(args, "--path") ?? DefaultInstallPath;
         var openFirewall = args.Contains("--open-firewall-port");
-
         var runner = new SystemCommandRunner();
 
-        // Pre-install checks
-        var sourceFolder = AppContext.BaseDirectory;
+        // Service runs the exe in-place from wherever it was extracted.
+        var exePath = Path.Combine(AppContext.BaseDirectory, "OpenAgent.exe");
+        if (!File.Exists(exePath))
+        {
+            Console.Error.WriteLine($"Could not find OpenAgent.exe next to AppContext.BaseDirectory ({AppContext.BaseDirectory}).");
+            return 1;
+        }
+
+        // Pre-install checks against the current folder.
         foreach (var check in new[]
         {
-            PreInstallChecks.VerifyBridgeScriptPresent(sourceFolder),
+            PreInstallChecks.VerifyBridgeScriptPresent(AppContext.BaseDirectory),
             PreInstallChecks.VerifyNodeAvailable(runner),
-            PreInstallChecks.VerifyPathSafe(installPath)
+            PreInstallChecks.VerifyPathSafe(exePath)
         })
         {
             if (!check.Ok)
@@ -69,30 +73,13 @@ public static class InstallerCli
         }
 
         var installer = new ServiceInstaller(runner);
-        var reinstall = installer.IsInstalled(ServiceName);
-
-        if (reinstall)
+        if (installer.IsInstalled(ServiceName))
         {
-            Console.WriteLine($"Existing service found; stopping for upgrade.");
-            installer.Stop(ServiceName);
-            Thread.Sleep(TimeSpan.FromSeconds(2));
+            Console.Error.WriteLine($"Service {ServiceName} is already registered. Use --uninstall first to re-register, or stop the service and replace files in place to upgrade.");
+            return 1;
         }
 
-        // Copy source folder contents to install path (binary + node/, skip any data folders that might be present)
-        Directory.CreateDirectory(installPath);
-        CopyInstallArtifacts(sourceFolder, installPath);
-
-        var exePath = Path.Combine(installPath, "OpenAgent.exe");
-
-        if (reinstall)
-        {
-            installer.UpdateBinPath(ServiceName, exePath);
-        }
-        else
-        {
-            installer.Create(ServiceName, exePath, DisplayName, Description);
-        }
-
+        installer.Create(ServiceName, exePath, DisplayName, Description);
         EventLogRegistrar.Ensure();
 
         if (openFirewall)
@@ -100,7 +87,7 @@ public static class InstallerCli
 
         installer.Start(ServiceName);
 
-        Console.WriteLine($"OpenAgent {(reinstall ? "upgraded" : "installed")} at {installPath} and started.");
+        Console.WriteLine($"OpenAgent registered as Windows service '{ServiceName}', running from {AppContext.BaseDirectory}.");
         return 0;
     }
 
@@ -178,51 +165,4 @@ public static class InstallerCli
         return 0;
     }
 
-    private static string? ParseOptionalArg(string[] args, string name)
-    {
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (args[i] == name)
-                return args[i + 1];
-        }
-        return null;
-    }
-
-    private static void CopyInstallArtifacts(string sourceFolder, string installPath)
-    {
-        // Copy the exe itself
-        var sourceExe = Path.Combine(sourceFolder, "OpenAgent.exe");
-        if (File.Exists(sourceExe))
-            File.Copy(sourceExe, Path.Combine(installPath, "OpenAgent.exe"), overwrite: true);
-
-        // Copy any .dll / .pdb / .json adjacent to the exe (appsettings, etc.)
-        foreach (var file in Directory.EnumerateFiles(sourceFolder, "*", SearchOption.TopDirectoryOnly))
-        {
-            var name = Path.GetFileName(file);
-            if (name.Equals("OpenAgent.exe", StringComparison.OrdinalIgnoreCase))
-                continue;
-            File.Copy(file, Path.Combine(installPath, name), overwrite: true);
-        }
-
-        // Copy bundled directories (node bridge, React UI). Replace contents fully on upgrade.
-        foreach (var dirName in new[] { "node", "wwwroot" })
-        {
-            var sourceDir = Path.Combine(sourceFolder, dirName);
-            if (!Directory.Exists(sourceDir)) continue;
-
-            var destDir = Path.Combine(installPath, dirName);
-            if (Directory.Exists(destDir))
-                Directory.Delete(destDir, recursive: true);
-            CopyDirectory(sourceDir, destDir);
-        }
-    }
-
-    private static void CopyDirectory(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source))
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
-        foreach (var dir in Directory.EnumerateDirectories(source))
-            CopyDirectory(dir, Path.Combine(destination, Path.GetFileName(dir)));
-    }
 }
