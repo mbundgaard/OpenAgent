@@ -142,8 +142,10 @@ builder.Services.AddSingleton<IConfigurable>(sp =>
 builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(GeminiLiveVoiceProvider.ProviderKey));
 
-// Authentication — swap AddApiKeyAuth for AddEntraIdAuth when migrating to Entra ID
-builder.Services.AddApiKeyAuth(builder.Configuration);
+// Authentication — env var > agent.json > generated, persisted back to agent.json. Always logged.
+var apiKey = OpenAgent.Security.ApiKey.ApiKeyResolver.Resolve(environment.DataPath, builder.Configuration);
+Console.WriteLine($"OpenAgent API key: {apiKey}");
+builder.Services.AddApiKeyAuth(apiKey);
 
 // Connections — channel providers created per-connection at runtime
 builder.Services.AddSingleton<IConnectionStore, FileConnectionStore>();
