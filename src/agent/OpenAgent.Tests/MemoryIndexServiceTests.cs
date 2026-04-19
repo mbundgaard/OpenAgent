@@ -224,6 +224,32 @@ public class MemoryIndexServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_serializes_concurrent_calls_no_duplicate_work()
+    {
+        // Fill window + one past-window file. If RunAsync didn't serialize, two tasks
+        // racing would both see the file as unprocessed, both chunk+embed it, and the
+        // second would hit the UNIQUE(date, chunk_index) constraint — visible as errors
+        // in the second IndexResult.
+        File.WriteAllText(Path.Combine(_memoryDir, "2026-04-18.md"), new string('a', 80));
+        File.WriteAllText(Path.Combine(_memoryDir, "2026-04-17.md"), new string('b', 80));
+        File.WriteAllText(Path.Combine(_memoryDir, "2026-04-16.md"), new string('c', 80));
+        File.WriteAllText(Path.Combine(_memoryDir, "2026-04-10.md"), new string('z', 80));
+
+        var service = BuildService("""{"chunks":[{"content":"the topic","summary":"topic"}]}""", memoryDays: 3);
+
+        var t1 = service.RunAsync();
+        var t2 = service.RunAsync();
+        var results = await Task.WhenAll(t1, t2);
+
+        // Exactly one run did the work; the other saw alreadyProcessed and skipped.
+        var totalErrors = results.Sum(r => r.Errors);
+        var totalProcessed = results.Sum(r => r.FilesProcessed);
+        Assert.Equal(0, totalErrors);
+        Assert.Equal(1, totalProcessed);
+        Assert.Single(_store.GetAllChunks("fake"));
+    }
+
+    [Fact]
     public async Task LoadChunksAsync_returns_full_content_for_given_ids()
     {
         _store.InsertChunks("2026-04-10", "fake", 4, [

@@ -49,6 +49,11 @@ public sealed class MemoryIndexService
     private string? _cachedProvider;
     private List<StoredChunk>? _cachedChunks;
 
+    // Serialize RunAsync — the hosted service's startup tick and the manual /run endpoint
+    // can otherwise race, producing duplicate LLM + embedding work (UNIQUE constraint then
+    // catches the DB write, but the cost has already been paid).
+    private readonly SemaphoreSlim _runLock = new(1, 1);
+
     public MemoryIndexService(
         MemoryChunkStore store,
         MemoryChunker chunker,
@@ -71,6 +76,19 @@ public sealed class MemoryIndexService
     /// On per-file errors, logs and continues — the source file stays on disk for retry.
     /// </summary>
     public async Task<IndexResult> RunAsync(CancellationToken ct = default)
+    {
+        await _runLock.WaitAsync(ct);
+        try
+        {
+            return await RunInternalAsync(ct);
+        }
+        finally
+        {
+            _runLock.Release();
+        }
+    }
+
+    private async Task<IndexResult> RunInternalAsync(CancellationToken ct)
     {
         var provider = _embeddingProviderFactory(_agentConfig.EmbeddingProvider);
         var memoryDir = Path.Combine(_environment.DataPath, "memory");
