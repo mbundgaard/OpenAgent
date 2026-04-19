@@ -25,7 +25,14 @@ public sealed class AgentConfig
     [JsonPropertyName("voiceModel")]
     public string VoiceModel { get; set; } = "";
 
-    /// <summary>Number of recent daily memory files to include in the system prompt.</summary>
+    /// <summary>
+    /// Indexer threshold: the N most recent daily memory files stay on disk in memory/ root.
+    /// Everything older is a candidate for the nightly memory-index job, which chunks, embeds,
+    /// and moves each file to memory/backup/. The system prompt loads whatever files are still
+    /// in memory/ root at build time, so this setting implicitly controls prompt size too —
+    /// but the prompt loader itself doesn't read MemoryDays; it just reflects what the indexer
+    /// has left.
+    /// </summary>
     [JsonPropertyName("memoryDays")]
     public int MemoryDays { get; set; } = 3;
 
@@ -46,4 +53,19 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("mainConversationId")]
     public string? MainConversationId { get; set; }
+
+    /// <summary>
+    /// Embedding provider key used by the memory index (e.g. "onnx"). Empty disables the
+    /// index entirely: the hosted service skips, search/load tools are hidden.
+    /// </summary>
+    [JsonPropertyName("embeddingProvider")]
+    public string EmbeddingProvider { get; set; } = "";
+
+    /// <summary>
+    /// Embedding model within the chosen provider (e.g. "multilingual-e5-base" for the onnx
+    /// provider). Default assumes the middle-sized e5 variant. Changing this requires a
+    /// restart — the provider loads its model files on first use.
+    /// </summary>
+    [JsonPropertyName("embeddingModel")]
+    public string EmbeddingModel { get; set; } = "multilingual-e5-base";
 }

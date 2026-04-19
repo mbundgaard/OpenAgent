@@ -36,21 +36,31 @@ Follows the same pattern as `ILlmTextProvider` — pluggable providers, keyed si
 ### Interface (in `OpenAgent.Contracts`)
 
 ```csharp
+public enum EmbeddingPurpose
+{
+    Indexing,  // storing a chunk — e5 uses "passage: " prefix
+    Search,    // embedding a query — e5 uses "query: " prefix
+}
+
 public interface IEmbeddingProvider
 {
     string Key { get; }
     int Dimensions { get; }
-    Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default);
+    Task<float[]> GenerateEmbeddingAsync(string text, EmbeddingPurpose purpose, CancellationToken ct = default);
 }
 ```
 
+The `EmbeddingPurpose` parameter lets providers that distinguish query vs. document embeddings (e5's `query:`/`passage:` prefix, Azure's separate endpoints) do the right thing. Providers that don't distinguish can ignore it.
+
 ### First implementation: ONNX (`OpenAgent.Embedding.Onnx`)
 
-- **Model:** `multilingual-e5-base` — 768 dims, multilingual (Danish + English), WordPiece-compatible via HuggingFace `tokenizer.json`
-- **Runtime:** `Microsoft.ML.OnnxRuntime` for inference, `Microsoft.ML.Tokenizers` for tokenization
-- **Model files:** `{dataPath}/models/multilingual-e5-base/` — contains `model.onnx`, `tokenizer.json`, `tokenizer_config.json`
+- **Model:** `multilingual-e5-base` — 768 dims, 512 max sequence length, multilingual (Danish + English). Tokenizer is XLM-RoBERTa **Unigram SentencePiece** (confirmed via spike on the `tokenizer.json` metadata).
+- **Runtime:** `Microsoft.ML.OnnxRuntime` for inference, `Microsoft.ML.Tokenizers` **`3.0.0-preview.26160.2`** for tokenization. The stable 1.0 release does not expose a public Unigram loader; the preview's `SentencePieceTokenizer.Create(stream, ...)` does.
+- **Model files:** `{dataPath}/models/multilingual-e5-base/` — requires `model.onnx` and `sentencepiece.bpe.model` (the SentencePiece protobuf). `tokenizer.json` is not used — Microsoft.ML.Tokenizers has no HuggingFace tokenizer.json parser.
 - **e5 prefix convention:** `"query: {text}"` for search queries, `"passage: {text}"` for chunk content during indexing
-- **Pipeline:** Tokenize → ONNX inference → mean pooling → L2 normalize → `float[768]`
+- **ID-space offset:** Microsoft.ML.Tokenizers returns raw SentencePiece IDs. The trained ONNX model expects XLM-R's ID space: `xlmr_id = sp_id + 1` (XLM-R prepends `<s>` at 0, shifting all real tokens up by 1). Apply `+1` in the provider.
+- **Special tokens:** `<s>` = 0, `<pad>` = 1, `</s>` = 2, `<unk>` = 3, `<mask>` = 250001. Pipeline wraps tokens as `[<s>, ...shifted, </s>]`, right-pads with `<pad>` to 512, and builds a matching attention mask.
+- **Pipeline:** Prefix → tokenize → `+1` offset → wrap with `<s>`/`</s>` → truncate/pad to 512 → ONNX inference → mean pooling over non-padding positions → L2 normalize → `float[768]`
 - **RAM:** ~1-1.5 GB for the model
 
 ### Resolution
@@ -82,6 +92,8 @@ CREATE TABLE IF NOT EXISTS memory_chunks (
     content     TEXT NOT NULL,
     summary     TEXT NOT NULL,
     embedding   BLOB NOT NULL,
+    provider    TEXT NOT NULL,
+    dimensions  INTEGER NOT NULL,
     UNIQUE(date, chunk_index)
 );
 
@@ -97,6 +109,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_chunks_fts USING fts5(
 | `content` | TEXT | Full chunk text — self-contained topic |
 | `summary` | TEXT | One-line summary of the chunk |
 | `embedding` | BLOB | `float[]` as little-endian bytes (dimension depends on provider) |
+| `provider` | TEXT | Embedding provider key used to generate `embedding` (e.g. `"onnx"`) |
+| `dimensions` | INTEGER | Vector length — used to validate on load and filter by current provider |
+
+Vector search filters by `provider = currentProvider` — rows from other providers are ignored (FTS5 keyword search still matches them, but they receive zero vector score). Switching providers therefore doesn't poison the DB; it just hides those chunks from semantic search until they're re-indexed. Re-indexing requires restoring the source files or writing a migration; out of scope here.
 
 FTS5 table kept in sync by inserting into both tables in the same transaction.
 
@@ -159,7 +175,13 @@ FTS5 MATCH on summary + content. Captures exact terms — names, IDs, URLs.
 final_score = (0.7 * cosine_score) + (0.3 * normalized_fts_score)
 ```
 
-FTS5 rank normalized: `1 / (1 + abs(rank))`. Chunks not in FTS results get 0.
+FTS5 rank is non-positive (0 = no match, more negative = better match). Normalize so larger = better, bounded to `[0, 1)`:
+
+```
+normalized_fts_score = abs(rank) / (1 + abs(rank))
+```
+
+That maps `rank = 0` → 0, `rank = -1` → 0.5, `rank = -10` → ~0.91, monotonic. Chunks not returned by FTS get 0.
 
 ### Flow
 
@@ -223,7 +245,7 @@ OpenAgent.MemoryIndex/
 | Field | Description | Default |
 |-------|-------------|---------|
 | `embeddingProvider` | Embedding provider key (e.g. `"onnx"`) | `""` (disabled) |
-| `indexRunAtHour` | Hour (UTC) to run the nightly job | `2` |
+| `indexRunAtHour` | Hour in Europe/Copenhagen to run the nightly job (matches the timezone used elsewhere in the agent) | `2` |
 
 Chunking uses `compactionProvider` and `compactionModel`.
 
@@ -245,7 +267,8 @@ These are downloaded from HuggingFace and bundled in the Docker image. Not embed
 ## Hosted Service
 
 - Checks every hour via `PeriodicTimer`
-- Guards: already ran today, before configured hour, provider not configured
+- Guards (in order): provider not configured → warn once and skip; local hour < `indexRunAtHour` → skip; today already has chunks in `memory_chunks` → skip
+- "Already ran today" is DB-derived (`GetProcessedDates()` contains today's date in Europe/Copenhagen) so restarts don't cause re-runs
 - Delegates to `MemoryIndexService.RunAsync()`
 
 ---

@@ -15,6 +15,9 @@ using OpenAgent.LlmVoice.OpenAIAzure;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Security.ApiKey;
+using OpenAgent.Embedding.OnnxBge;
+using OpenAgent.Embedding.OnnxMultilingualE5;
+using OpenAgent.MemoryIndex;
 using OpenAgent.Tools.Expand;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
@@ -132,6 +135,25 @@ builder.Services.AddSingleton<IToolHandler>(sp =>
         }));
 
 builder.Services.AddScheduledTasks(environment.DataPath);
+
+// Memory index — embedding providers, chunk store, hosted indexing loop, and tools.
+// The provider is resolved lazily (first factory invocation is on first RunAsync), so a
+// missing model file doesn't crash startup when the feature is disabled via empty
+// AgentConfig.EmbeddingProvider. The specific model (small/base/large) comes from
+// AgentConfig.EmbeddingModel and is loaded on first embedding call.
+builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxMultilingualE5EmbeddingProvider.ProviderKey, (sp, _) =>
+    new OnnxMultilingualE5EmbeddingProvider(
+        sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<ILogger<OnnxMultilingualE5EmbeddingProvider>>()));
+builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxBgeEmbeddingProvider.ProviderKey, (sp, _) =>
+    new OnnxBgeEmbeddingProvider(
+        sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<ILogger<OnnxBgeEmbeddingProvider>>()));
+builder.Services.AddSingleton<Func<string, IEmbeddingProvider>>(sp =>
+    key => sp.GetRequiredKeyedService<IEmbeddingProvider>(key));
+builder.Services.AddMemoryIndex();
 
 builder.Services.AddSingleton(new CompactionConfig());
 
@@ -251,6 +273,7 @@ app.MapTelegramWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
 app.MapToolEndpoints();
+app.MapMemoryIndexEndpoints();
 
 // SPA fallback — serve index.html for unmatched routes (client-side routing)
 app.MapFallbackToFile("index.html");

@@ -44,6 +44,8 @@ src/agent/
   OpenAgent.Tools.Shell/                  Shell exec tool — timeout, process tree kill, merged stdout/stderr
   OpenAgent.Skills/                        Agent Skills (agentskills.io spec) — discovery, catalog, activation
   OpenAgent.ScheduledTasks/                Scheduled tasks — cron, interval, one-shot, webhook triggers (feature/scheduled-tasks branch)
+  OpenAgent.MemoryIndex/                    Memory index — LLM chunking, hybrid vector+FTS5 search, search_memory + load_memory_chunks tools, hourly hosted service
+  OpenAgent.Embedding.Onnx/                 Local embedding provider — multilingual-e5-base via ONNX Runtime
   OpenAgent.Tests/                        Integration tests
 src/chat-cli/
   OpenAgent.ChatCli/                      Spectre.Console interactive CLI — uses .env for API key, dev key for localhost
@@ -142,6 +144,12 @@ All endpoints require `X-Api-Key` header except `/health`.
 | `GET` | `/api/tools` | List all tools with definitions (name, description, parameters schema) |
 | `GET` | `/api/tools/{toolName}` | Get single tool definition |
 | `POST` | `/api/tools/{toolName}/execute` | Execute a tool directly, returns result + duration |
+
+#### Memory Index
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/memory-index/run` | Trigger an indexing run immediately, returns `IndexResult` |
+| `GET` | `/api/memory-index/stats` | Aggregate counts: totalChunks, totalDays, oldestDate, newestDate |
 
 #### Logs
 | Method | Route | Description |
@@ -269,6 +277,11 @@ Session-to-session notes. Save memories here in CLAUDE.md — do NOT create sepa
 ### Memory System Design
 - Three-job architecture: Index → Digest → Background. See [docs/memory/DESIGN.md](docs/memory/DESIGN.md)
 - Issues: #17 (Index), #19 (Digest), #51 (Background) — must be built in order
+- **Index (done):** `OpenAgent.MemoryIndex` + per-family embedding projects. Hourly hosted service scans past-window memory files, LLM-chunks them into topics (one call per file, `discard` outcome supported), embeds each chunk via the configured `IEmbeddingProvider`, persists to `memory_chunks` + FTS5. Hybrid search (0.7 cosine + 0.3 BM25) exposed via `search_memory` / `load_memory_chunks` tools and `/api/memory-index/{run,stats}` endpoints.
+- **Memory file lifecycle.** Agent writes daily notes to `{dataPath}/memory/{YYYY-MM-DD}.md`. `SystemPromptBuilder` loads every file currently in `memory/` root (newest first) into the prompt. The indexer picks up everything past the `AgentConfig.MemoryDays` window (top-N by filename), chunks + embeds + stores them, then MOVES the source file to `memory/backup/` (not delete). `backup/` is not scanned by the prompt loader, so indexed files leave the prompt automatically and become reachable only via `search_memory`. Discarded files (LLM `discard: true`) are deleted outright. `MemoryDays` is the indexer's threshold only — the prompt loader ignores it.
+- **Embedding providers: one project per model family.** Current: `OpenAgent.Embedding.OnnxMultilingualE5` (XLM-R Unigram SentencePiece, `ProviderKey = "multilingual-e5"`), `OpenAgent.Embedding.OnnxBge` (BERT WordPiece, `ProviderKey = "bge"`). Each provider exposes `Key`, `Model`, `Dimensions`, reads its model from `AgentConfig.EmbeddingModel`, and auto-downloads from HuggingFace into `{dataPath}/models/{model}/` on first use (in-memory `SemaphoreSlim` + atomic temp-file rename). No shared base class — copying the nearest sibling is the intended way to add a new family.
+- **Tool descriptions prescribe when to call, not just what the tool does.** Observed: LLMs ignore tools whose `Description` reads like reference docs. The description is the decision prompt. See `SearchMemoryTool` for a worked example (explicit "call this BEFORE saying you don't remember" + trigger conditions).
+- Each system job today is its own `IHostedService`. Once #19 lands we should extract a small `ISystemJob` / `SystemJobRunner` abstraction so all three jobs share one tick loop and admin visibility — deferred until the second instance.
 
 ### User Preferences
 - Prefers design discussions before implementation — brainstorm first, then plan, then build

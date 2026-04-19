@@ -67,7 +67,7 @@
 - [ ] Create `OpenAgent.MemoryIndex` project — references Contracts + Models, packages: Sqlite, Hosting.Abstractions, Logging.Abstractions. `FrameworkReference` AspNetCore. Add `InternalsVisibleTo`.
 - [ ] Add both projects to solution, add ProjectReferences from host + test projects
 - [ ] Add NuGet package versions to `Directory.Packages.props`
-- [ ] Add `AgentConfig` fields: `embeddingProvider` (string, default `""`), `indexRunAtHour` (int, default `2`)
+- [ ] Add `AgentConfig` fields: `embeddingProvider` (string, default `""`), `indexRunAtHour` (int, default `2`, interpreted as Europe/Copenhagen to match the rest of the agent)
 - [ ] Build to verify
 - [ ] Commit
 
@@ -75,17 +75,19 @@
 
 ## Task 2: MemoryChunkStore — SQLite + FTS5
 
+**Schema:** `memory_chunks` includes `provider TEXT NOT NULL` and `dimensions INTEGER NOT NULL` columns so chunks from different embedding providers can coexist. Vector search filters by the current provider; FTS5 is provider-agnostic.
+
 **Records:**
 - `ChunkEntry` — input: `Content`, `Summary`, `Embedding` (float[])
-- `StoredChunk` — output: `Id`, `Date`, `ChunkIndex`, `Content`, `Summary`, `Embedding`
+- `StoredChunk` — output: `Id`, `Date`, `ChunkIndex`, `Content`, `Summary`, `Embedding`, `Provider`, `Dimensions`
 - `ChunkStats` — `TotalChunks`, `TotalDays`, `OldestDate`, `NewestDate` (with `[JsonPropertyName]`)
 
 **Methods:**
-- `InsertChunks(string date, IReadOnlyList<ChunkEntry>)` — inserts into both `memory_chunks` AND `memory_chunks_fts` in one transaction. Use `last_insert_rowid()` to get the ID for the FTS insert.
+- `InsertChunks(string date, string provider, int dimensions, IReadOnlyList<ChunkEntry>)` — inserts into both `memory_chunks` AND `memory_chunks_fts` in one transaction. Use `last_insert_rowid()` to get the ID for the FTS insert.
 - `GetProcessedDates()` → `HashSet<string>` — `SELECT DISTINCT date`
-- `GetAllChunks()` → `List<StoredChunk>` — ordered by date, chunk_index
-- `GetChunksByIds(IReadOnlyList<int>)` → `List<StoredChunk>` — dynamic parameterized IN clause, no embedding loaded
-- `SearchFts(string query)` → `Dictionary<int, float>` — `SELECT rowid, rank FROM memory_chunks_fts WHERE ... MATCH @query`. Normalize rank: `1 / (1 + abs(rank))`
+- `GetAllChunks(string provider)` → `List<StoredChunk>` — filtered to the given provider, ordered by date, chunk_index. Vector search only ranks chunks embedded by the current provider.
+- `GetChunksByIds(IReadOnlyList<int>)` → `List<StoredChunk>` — dynamic parameterized IN clause, no embedding loaded. No provider filter — `load_memory_chunks` returns raw content regardless of embedding provenance.
+- `SearchFts(string query)` → `Dictionary<int, float>` — `SELECT rowid, rank FROM memory_chunks_fts WHERE ... MATCH @query`. Normalize rank: `abs(rank) / (1 + abs(rank))` — maps 0→0, -1→0.5, -10→~0.91. Larger = better. (FTS5 rank is non-positive; the naive `1/(1+abs(rank))` inverts the ordering.)
 - `GetStats()` → `ChunkStats`
 - Static: `CosineSimilarity`, `SerializeEmbedding`, `DeserializeEmbedding`
 
@@ -95,9 +97,10 @@
 - [ ] Insert chunks with summaries, verify `GetProcessedDates` returns the date
 - [ ] Duplicate date+chunk_index throws `SqliteException`
 - [ ] Embedding serialization roundtrip preserves exact values
-- [ ] `GetAllChunks` returns content, summary, and embeddings
-- [ ] `GetChunksByIds` returns specific chunks
-- [ ] `SearchFts` finds matching content, returns normalized scores > 0
+- [ ] `GetAllChunks(provider)` returns only rows for that provider with content, summary, embeddings, dimensions
+- [ ] `GetAllChunks("other")` returns empty when all rows belong to a different provider
+- [ ] `GetChunksByIds` returns specific chunks (all providers)
+- [ ] `SearchFts` finds matching content — higher-rank matches produce higher normalized scores
 - [ ] `SearchFts` with no matches returns empty dictionary
 - [ ] `GetStats` empty and with entries
 - [ ] `CosineSimilarity` — identical vectors = 1, orthogonal = 0, zero vector = 0
@@ -107,22 +110,38 @@
 
 ## Task 3: OnnxEmbeddingProvider
 
+**Tokenizer findings (from pre-Task 3 spike):**
+- multilingual-e5-base is XLM-RoBERTa based; its tokenizer is **Unigram SentencePiece**, not BPE or WordPiece.
+- `Microsoft.ML.Tokenizers` **1.0 stable does not expose a Unigram loader**. The **3.0.0-preview.26160.2** release does — it exposes `SentencePieceTokenizer.Create(Stream modelStream, bool addBeginningOfSentence, bool addEndOfSentence, IReadOnlyDictionary<string,int>? specialTokens)` which loads the model's `sentencepiece.bpe.model` file (the `.model` file is a SentencePiece protobuf despite the `.bpe` name).
+- **Use the `.model` file, not `tokenizer.json`.** Microsoft.ML.Tokenizers has no HuggingFace `tokenizer.json` parser.
+- **ID-space offset:** Microsoft returns raw SentencePiece IDs. HuggingFace / the trained ONNX model expects **SP id + 1** (XLM-R prepends `<s>` at position 0, shifting every real token up by one). Apply `+1` in the provider before feeding IDs to ONNX.
+- **Special tokens:** prepend `<s>` = 0 and append `</s>` = 2 manually; call `Create` with `addBeginningOfSentence: false, addEndOfSentence: false`. Pad missing positions with `<pad>` = 1. Attention mask: 1 for real tokens + specials, 0 for padding.
+- Verified tokenization matches HF (e.g., `"query"` splits to `▁que` + `ry` in both — `▁query` is not in the 250 000-piece vocab).
+
 **Implementation** (`OnnxEmbeddingProvider.cs`):
 - Implements `IEmbeddingProvider`, `IDisposable`
 - Key: `"onnx"`, Dimensions: `768`
-- Constructor loads ONNX model from `{dataPath}/models/multilingual-e5-base/model.onnx` and tokenizer from `tokenizer.json` in same directory
-- `GenerateEmbeddingAsync`: prepends `"query: "` (Search) or `"passage: "` (Indexing), tokenizes, runs ONNX inference, mean pools over sequence length, L2 normalizes
-- Internal static methods `MeanPool` and `L2Normalize` for testability
+- Constructor loads ONNX model from `{dataPath}/models/multilingual-e5-base/model.onnx` and the SentencePiece model from `sentencepiece.bpe.model` in the same directory
+- `GenerateEmbeddingAsync(text, purpose, ct)`:
+  1. Prepend `"query: "` (Search) or `"passage: "` (Indexing)
+  2. Tokenize via `SentencePieceTokenizer`, add `+1` to every ID
+  3. Wrap: `[<s>, ...shifted_ids, </s>]`, truncate the middle to keep within 512 total tokens, right-pad with `<pad>` to 512
+  4. Build attention mask (1 for real, 0 for pad)
+  5. Run ONNX inference (inputs: `input_ids`, `attention_mask`)
+  6. Mean-pool over non-padding positions, L2 normalize → `float[768]`
+- Internal static helpers `MeanPool(embeddings, attentionMask)` and `L2Normalize(vector)` for testability
 
-**Note:** The `Microsoft.ML.Tokenizers` API for loading `tokenizer.json` may vary by version. Check NuGet docs at implementation time. The model files must be downloaded from HuggingFace and placed in the model directory before running.
+**Model files:** Downloaded from HuggingFace and placed at `{dataPath}/models/multilingual-e5-base/` before running (or bundled into the Docker image). Required files: `model.onnx`, `sentencepiece.bpe.model`. `tokenizer.json` is not used. The provider must throw a clear error on construction if files are missing rather than at first-use.
+
+**Package note:** `Microsoft.ML.Tokenizers` is referenced as the `3.0.0-preview.26160.2` prerelease. Pin the exact version in `Directory.Packages.props`.
 
 **Tests** (`OnnxEmbeddingProviderTests`):
-- [ ] `MeanPool` with known input produces expected output
+- [ ] `MeanPool` with known input + attention mask produces expected output (ignores padding positions)
 - [ ] `L2Normalize` produces unit-length vector
 - [ ] `L2Normalize` handles zero vector without NaN
+- [ ] Truncation: input longer than 512 tokens is truncated, not rejected
+- [ ] Integration test guarded by model-file presence — skip when `model.onnx` not on disk; when present, verify `float[768]` output and that `query:`/`passage:` prefixes produce different embeddings for the same text
 - [ ] Commit
-
-(Full ONNX inference tests require model files — add integration test that skips when model not present.)
 
 ---
 
@@ -156,11 +175,11 @@ Records:
 Constructor takes: `MemoryChunkStore`, `MemoryChunker`, `Func<string, IEmbeddingProvider>`, `AgentConfig`, `AgentEnvironment`, `ILogger`
 
 Methods:
-- `RunAsync(ct)` — scan `memory/*.md` files past `memoryDays` window, filter by processed dates, for each: read → chunk via LLM → embed each chunk (with `EmbeddingPurpose.Indexing`) → store → delete file. Invalidate cache. Return `IndexResult`.
-- `SearchAsync(query, limit, ct)` — embed query (with `EmbeddingPurpose.Search`) → cosine similarity against cached chunks → FTS5 keyword search → combine: `0.7 * cosine + 0.3 * ftsNormalized` → sort → top N. Return `List<SearchResult>`.
+- `RunAsync(ct)` — resolve current embedding provider from `AgentConfig.EmbeddingProvider`. Scan `memory/*.md` files past `memoryDays` window, filter by processed dates, for each: read → chunk via LLM → embed each chunk (with `EmbeddingPurpose.Indexing`) → store with `provider.Key` and `provider.Dimensions` → delete file. Invalidate cache. Return `IndexResult`.
+- `SearchAsync(query, limit, ct)` — resolve current provider. Embed query (with `EmbeddingPurpose.Search`) → cosine similarity against cached chunks (`store.GetAllChunks(provider.Key)`) → FTS5 keyword search (provider-agnostic, but rows from other providers score 0 on the vector side so they only win on strong keyword hits) → combine: `0.7 * cosine + 0.3 * ftsNormalized` → sort → top N. Return `List<SearchResult>`.
 - `LoadChunksAsync(ids)` → `List<LoadResult>` — delegates to `store.GetChunksByIds`
 - `GetStats()` → delegates to store
-- Private `_cachedChunks` field, invalidated on `RunAsync`
+- Private `_cachedChunks` keyed by provider, invalidated on `RunAsync` and when the configured provider changes
 
 **Tests** (`MemoryIndexServiceTests`) — use `FakeEmbeddingProvider` and `StreamingTextProvider`:
 - [ ] `RunAsync` processes files past the memory window, creates chunks, deletes source file
@@ -197,13 +216,15 @@ Methods:
 **Implementation** (`MemoryIndexHostedService.cs`):
 - `IHostedService, IDisposable`
 - Hourly `PeriodicTimer`
-- Guards: not configured → warn once + skip. Already ran today → skip. Before `indexRunAtHour` → skip.
+- Guards, in order: `embeddingProvider` empty → warn once + skip. Current Europe/Copenhagen hour < `indexRunAtHour` → skip. Today's date already present in `store.GetProcessedDates()` → skip (so restarts don't cause re-runs).
+- Uses Europe/Copenhagen for "today" to match the rest of the agent.
 - Delegates to `MemoryIndexService.RunAsync`
-- `CheckAndRunAsync` is `internal` for testing
+- `CheckAndRunAsync` is `internal` for testing, takes an injectable clock/time source
 
 **Tests** (`MemoryIndexHostedServiceTests`):
 - [ ] Skips when `embeddingProvider` is empty (no exception)
-- [ ] Runs once per day (second call is no-op)
+- [ ] Skips when local hour < `indexRunAtHour`
+- [ ] Skips when today is already in `GetProcessedDates()` — proves the "already ran" check is DB-derived, not in-memory
 - [ ] Commit
 
 ---
