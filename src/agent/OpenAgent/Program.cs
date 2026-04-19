@@ -33,6 +33,13 @@ if (installerExit.HasValue)
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Defaults (overridable via env vars / command-line / an appsettings.json next to the exe):
+//   - Bind Kestrel to http://localhost:8080
+//   - Quiet ASP.NET Core's info-level chatter, but keep "Now listening on" visible
+builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://localhost:8080");
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
+
 var runningAsService = args.Contains("--service");
 if (runningAsService)
 {

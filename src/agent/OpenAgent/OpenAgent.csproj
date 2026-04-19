@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Dev-only settings should not ship -->
+    <!-- Dev-only settings should not ship; defaults live in Program.cs for the published exe -->
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
