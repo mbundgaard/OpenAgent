@@ -493,3 +493,9 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 /ServiceHost.exe
+
+# Claude Code scheduled tasks runtime lock
+.claude/scheduled_tasks.lock
+
+# Local memory conversations database
+docs/memory/conversations.db
