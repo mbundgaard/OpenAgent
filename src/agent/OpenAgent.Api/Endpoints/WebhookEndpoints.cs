@@ -36,6 +36,10 @@ public static class WebhookEndpoints
             if (string.IsNullOrWhiteSpace(body))
                 return Results.BadRequest(new { error = "body is empty" });
 
+            var conversation = store.Get(conversationId);
+            if (conversation is null)
+                return Results.NotFound();
+
             return Results.Accepted();
         }).AllowAnonymous();
     }

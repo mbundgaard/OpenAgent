@@ -49,6 +49,24 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task PostWebhook_UnknownConversationId_Returns404AndDoesNotCreate()
+    {
+        var client = _factory.CreateClient();
+        var unknownId = Guid.NewGuid().ToString();
+
+        var response = await client.PostAsync(
+            $"/api/webhook/conversation/{unknownId}",
+            new StringContent("some event", Encoding.UTF8, "text/plain"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        // Verify auto-create did NOT happen
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conv = store.Get(unknownId);
+        Assert.Null(conv);
+    }
+
     private sealed class CapturingTextProvider : ILlmTextProvider
     {
         public Conversation? LastConversation { get; private set; }
