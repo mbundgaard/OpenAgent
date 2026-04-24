@@ -472,6 +472,9 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         };
     }
 
+    public Task<bool> CompactNowAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default)
+        => PerformCompactionAsync(conversationId, reason, customInstructions, ct);
+
     public void Dispose()
     {
         // No persistent connection to dispose — each operation opens/closes its own

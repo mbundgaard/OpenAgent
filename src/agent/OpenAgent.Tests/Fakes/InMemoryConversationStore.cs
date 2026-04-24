@@ -201,6 +201,12 @@ public sealed class InMemoryConversationStore : IConversationStore
         return results;
     }
 
+    public Task<bool> CompactNowAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default)
+    {
+        // In-memory store has no real summarizer — manual/overflow triggers are a no-op in tests.
+        return Task.FromResult(false);
+    }
+
     /// <summary>
     /// Replaces tool messages in-place with copies that include FullToolResult, mirroring
     /// SqliteConversationStore's blob-loading behavior for tests.

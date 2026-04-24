@@ -72,4 +72,12 @@ public interface IConversationStore : IConfigurable
     /// their full on-disk content via <see cref="Message.FullToolResult"/>.
     /// </summary>
     IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds, bool includeToolResultBlobs = false);
+
+    /// <summary>
+    /// Triggers compaction on-demand. Returns true if a cut was made, false if there was
+    /// nothing to compact or the summarizer is not configured. Used by the manual endpoint
+    /// and by provider overflow recovery. Threshold compaction still fires automatically
+    /// from <see cref="Update"/> — this is the synchronous manual/overflow path.
+    /// </summary>
+    Task<bool> CompactNowAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default);
 }
