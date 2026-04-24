@@ -32,6 +32,13 @@ public interface IAgentLogic
 
     /// <summary>Persists changes to the conversation (e.g. token counts).</summary>
     void UpdateConversation(Conversation conversation);
+
+    /// <summary>
+    /// Triggers compaction on-demand. Thin pass-through to
+    /// <see cref="IConversationStore.CompactNowAsync"/>. Providers use this during overflow
+    /// recovery to avoid reaching into the store directly.
+    /// </summary>
+    Task<bool> CompactAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default);
 }
 
 /// <summary>

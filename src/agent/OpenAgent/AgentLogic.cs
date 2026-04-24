@@ -49,4 +49,7 @@ internal sealed class AgentLogic(
 
     public void UpdateConversation(Conversation conversation)
         => store.Update(conversation);
+
+    public Task<bool> CompactAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default)
+        => store.CompactNowAsync(conversationId, reason, customInstructions, ct);
 }
