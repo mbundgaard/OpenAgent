@@ -127,6 +127,7 @@ All endpoints require `X-Api-Key` header except `/health`.
 | `GET` | `/api/conversations` | List all conversations |
 | `GET` | `/api/conversations/{conversationId}` | Get conversation with messages |
 | `DELETE` | `/api/conversations/{conversationId}` | Delete conversation (cascades to `tool-results/` blobs) |
+| `PATCH` | `/api/conversations/{conversationId}` | Update writable fields (`source`, `provider`, `model`, `channel_chat_id`, `intention`, `mention_filter`). Field omitted → unchanged. Empty string / empty array → clear. |
 | `POST` | `/api/conversations/{conversationId}/compact` | Manual compaction trigger, optional body `{"instructions": "..."}` — returns `{ compacted: bool }` |
 
 #### Chat (text completion)
