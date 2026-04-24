@@ -283,4 +283,47 @@ public class TelegramMessageHandlerTests
         Assert.Single(sender.HtmlCalls);
         Assert.Contains("went wrong", sender.HtmlCalls[0].Html);
     }
+
+    [Fact]
+    public async Task HandleUpdateAsync_MentionFilterSet_NoMatch_DropsSilently()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new FakeTelegramTextProvider("should not reach");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+
+        // Pre-create conversation with MentionFilter=[Dex]
+        var conv = store.FindOrCreateChannelConversation("telegram", ConnectionId, ChatId.ToString(),
+            "telegram", Models.Conversations.ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+        conv.MentionFilter = ["Dex"];
+        store.Update(conv);
+
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "hello world");
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Dropped before side effects: no typing, no send of any kind.
+        Assert.Empty(sender.TypingCalls);
+        Assert.Empty(sender.HtmlCalls);
+        Assert.Empty(sender.TextCalls);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_MentionFilterSet_Match_Replies()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new FakeTelegramTextProvider("Hi back");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+
+        var conv = store.FindOrCreateChannelConversation("telegram", ConnectionId, ChatId.ToString(),
+            "telegram", Models.Conversations.ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+        conv.MentionFilter = ["Dex"];
+        store.Update(conv);
+
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "hey Dex");
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        Assert.Single(sender.HtmlCalls);
+        Assert.Contains("Hi back", sender.HtmlCalls[0].Html);
+    }
 }
