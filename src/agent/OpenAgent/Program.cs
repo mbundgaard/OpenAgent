@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using OpenAgent;
 using OpenAgent.Api.Endpoints;
 using OpenAgent.Channel.Telegram;
@@ -15,22 +16,74 @@ using OpenAgent.LlmVoice.OpenAIAzure;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Security.ApiKey;
+using OpenAgent.Embedding.OnnxBge;
+using OpenAgent.Embedding.OnnxMultilingualE5;
+using OpenAgent.MemoryIndex;
 using OpenAgent.Tools.Expand;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
 using OpenAgent.ScheduledTasks;
 using OpenAgent.Skills;
-using OpenAgent.Tools.ModelManagement;
+using OpenAgent.Tools.Conversation;
 using OpenAgent.Tools.Shell;
 using OpenAgent.Tools.WebFetch;
 using Serilog;
 using Serilog.Formatting.Compact;
 
+// Install-mode dispatch — runs before the web host is built.
+// Returns an exit code if args match --install / --uninstall / --restart / --status; otherwise proceeds.
+var installerExit = OpenAgent.Installer.InstallerCli.TryHandle(args);
+if (installerExit.HasValue)
+    return installerExit.Value;
+
+// Extract the embedded React build into wwwroot/ next to the exe. Same code path on Windows + Linux.
+ExtractEmbeddedWwwroot();
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Defaults (overridable via env vars / command-line / an appsettings.json next to the exe):
+//   - Bind Kestrel to http://localhost:8080
+//   - Quiet ASP.NET Core's info-level chatter, but keep "Now listening on" visible
+builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://localhost:8080");
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
+
+static void ExtractEmbeddedWwwroot()
+{
+    var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+    using var stream = assembly.GetManifestResourceStream("OpenAgent.wwwroot.zip");
+    if (stream is null) return; // Build didn't include the zip (dev tree without a publish run yet)
+
+    var wwwrootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+    try
+    {
+        if (Directory.Exists(wwwrootPath))
+            Directory.Delete(wwwrootPath, recursive: true);
+        Directory.CreateDirectory(wwwrootPath);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        archive.ExtractToDirectory(wwwrootPath, overwriteFiles: true);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"[startup] Failed to extract embedded wwwroot: {ex.Message}");
+    }
+}
+
+var runningAsService = args.Contains("--service");
+if (runningAsService)
+{
+    builder.Host.UseWindowsService(options => options.ServiceName = OpenAgent.Installer.InstallerCli.ServiceName);
+    if (OperatingSystem.IsWindows())
+    {
+#pragma warning disable CA1416 // OperatingSystem.IsWindows() guard above satisfies platform check
+        builder.Logging.AddEventLog(options => options.SourceName = OpenAgent.Installer.EventLogRegistrar.SourceName);
+#pragma warning restore CA1416
+    }
+}
 
 var environment = new AgentEnvironment
 {
-    DataPath = Environment.GetEnvironmentVariable("DATA_DIR") ?? "/home/data"
+    DataPath = RootResolver.Resolve()
 };
 Directory.CreateDirectory(environment.DataPath);
 
@@ -75,7 +128,7 @@ builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
 builder.Services.AddSingleton<IToolHandler>(sp =>
-    new ModelToolHandler(
+    new ConversationToolHandler(
         sp.GetRequiredService<IConversationStore>(),
         () => new ILlmTextProvider[]
         {
@@ -84,6 +137,25 @@ builder.Services.AddSingleton<IToolHandler>(sp =>
         }));
 
 builder.Services.AddScheduledTasks(environment.DataPath);
+
+// Memory index — embedding providers, chunk store, hosted indexing loop, and tools.
+// The provider is resolved lazily (first factory invocation is on first RunAsync), so a
+// missing model file doesn't crash startup when the feature is disabled via empty
+// AgentConfig.EmbeddingProvider. The specific model (small/base/large) comes from
+// AgentConfig.EmbeddingModel and is loaded on first embedding call.
+builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxMultilingualE5EmbeddingProvider.ProviderKey, (sp, _) =>
+    new OnnxMultilingualE5EmbeddingProvider(
+        sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<ILogger<OnnxMultilingualE5EmbeddingProvider>>()));
+builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxBgeEmbeddingProvider.ProviderKey, (sp, _) =>
+    new OnnxBgeEmbeddingProvider(
+        sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<ILogger<OnnxBgeEmbeddingProvider>>()));
+builder.Services.AddSingleton<Func<string, IEmbeddingProvider>>(sp =>
+    key => sp.GetRequiredKeyedService<IEmbeddingProvider>(key));
+builder.Services.AddMemoryIndex();
 
 builder.Services.AddSingleton(new CompactionConfig());
 
@@ -126,8 +198,9 @@ builder.Services.AddSingleton<IConfigurable>(sp =>
 builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(GeminiLiveVoiceProvider.ProviderKey));
 
-// Authentication — swap AddApiKeyAuth for AddEntraIdAuth when migrating to Entra ID
-builder.Services.AddApiKeyAuth(builder.Configuration);
+// Authentication — env var > agent.json > generated, persisted back to agent.json
+var apiKey = OpenAgent.Security.ApiKey.ApiKeyResolver.Resolve(environment.DataPath, builder.Configuration);
+builder.Services.AddApiKeyAuth(apiKey);
 
 // Connections — channel providers created per-connection at runtime
 builder.Services.AddSingleton<IConnectionStore, FileConnectionStore>();
@@ -158,6 +231,18 @@ builder.Services.AddSingleton<IConnectionManager>(sp => sp.GetRequiredService<Co
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionManager>());
 
 var app = builder.Build();
+
+// Print bound URL(s) with the token-in-hash that the React app reads on load
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var addresses = app.Services
+        .GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
+        .Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()
+        ?.Addresses;
+    if (addresses is null) return;
+    foreach (var addr in addresses)
+        Console.WriteLine($"OpenAgent UI: {addr.TrimEnd('/')}/#token={apiKey}");
+});
 
 // Load persisted provider configs (providers stay unconfigured if no config exists)
 var configStore = app.Services.GetRequiredService<IConfigStore>();
@@ -195,14 +280,18 @@ app.MapFileExplorerEndpoints();
 app.MapLogEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapTelnyxWebhookEndpoints();
+app.MapWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
 app.MapToolEndpoints();
+app.MapMemoryIndexEndpoints();
 
 // SPA fallback — serve index.html for unmatched routes (client-side routing)
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+return 0;
 
 // Make Program accessible to integration tests
 namespace OpenAgent

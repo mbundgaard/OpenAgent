@@ -84,4 +84,22 @@ public sealed class Message
     [JsonPropertyName("elapsed_ms")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? ElapsedMs { get; init; }
+
+    /// <summary>
+    /// Relative path to the full tool result on disk, scoped under
+    /// {dataPath}/conversations/{conversationId}/. Null for non-tool messages and for rows
+    /// written before this migration. When null, the summary in Content is the only record.
+    /// </summary>
+    [JsonPropertyName("tool_result_ref")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolResultRef { get; init; }
+
+    /// <summary>
+    /// Full tool result content. Not persisted directly — when set on a new message, the store
+    /// saves it to disk and populates ToolResultRef. When loaded via
+    /// IConversationStore.GetMessages(..., includeToolResultBlobs: true), the store reads the
+    /// blob and populates this field. Null otherwise.
+    /// </summary>
+    [JsonIgnore]
+    public string? FullToolResult { get; init; }
 }

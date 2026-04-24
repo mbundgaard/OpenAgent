@@ -6,20 +6,18 @@ All file and shell operations are scoped to the data directory. You cannot acces
 
 ```
 /
-├── projects/     One folder per project — docs, notes, data, exports, everything related
+├── skills/       One folder per skill — each contains SKILL.md and optionally scripts/ and data/
 ├── repos/        Git repositories — cloned repos for reference or contribution
 ├── memory/       Your persistent memory — notes you keep across conversations
-├── config/       Provider configurations (managed by the system, do not edit)
+├── config/       Provider and skill configurations (credentials, keys — managed by the system or per-skill setup)
 └── logs/         Application logs (managed by the system, do not edit)
 ```
 
-### projects/
-One folder per project. Each project folder contains everything related to that project: documents, notes, drafts, data files, exports, configs. When the user asks you to save or create something, put it in the relevant project folder. Create a new project folder if it doesn't fit an existing one.
-
-Skills that need to store working data (cached lookups, generated reports, temp files) should create a folder here: `projects/{skill-name}/`. Keep skill config and credentials in `config/` — only working data goes in projects.
+### Skill data
+Skills that need to store working data (cached lookups, generated reports, per-conversation mappings, temp files) put it in their own data folder: `skills/{skill-name}/data/`. Keep credentials and static config in `config/{skill-name}.json`; only dynamic working data goes in the skill's data folder.
 
 ### repos/
-Git clones. Use `shell_exec` to clone repositories here. Keep them separate from projects.
+Git clones. Use `shell_exec` to clone repositories here.
 
 ### memory/
 Your own persistent notes. Use this to remember things across conversations — preferences, decisions, context. Organize by topic.
@@ -35,4 +33,4 @@ headings. The content is spoken aloud and formatting artefacts sound odd.
 
 ## Paths
 
-All paths are relative to the data directory root. Use forward slashes: `projects/my-project/notes.md`, `repos/my-repo/README.md`.
+All paths are relative to the data directory root. Use forward slashes: `skills/my-skill/data/cache.json`, `repos/my-repo/README.md`.

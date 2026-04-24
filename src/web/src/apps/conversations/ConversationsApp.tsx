@@ -30,6 +30,7 @@ export function ConversationsApp() {
   const [editSource, setEditSource] = useState('');
   const [editProvider, setEditProvider] = useState('');
   const [editModel, setEditModel] = useState('');
+  const [editIntention, setEditIntention] = useState('');
   const [providers, setProviders] = useState<string[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
   const [saving, setSaving] = useState(false);
@@ -83,6 +84,7 @@ export function ConversationsApp() {
     setEditSource(detail.source);
     setEditProvider(detail.provider);
     setEditModel(detail.model);
+    setEditIntention(detail.intention ?? '');
     setEditing(true);
   };
 
@@ -91,10 +93,14 @@ export function ConversationsApp() {
   const saveEditing = async () => {
     if (!selected || !detail) return;
     setSaving(true);
+    const currentIntention = detail.intention ?? '';
+    const nextIntention = editIntention.trim();
     const updated = await updateConversation(selected, {
       source: editSource !== detail.source ? editSource : undefined,
       provider: editProvider !== detail.provider ? editProvider : undefined,
       model: editModel !== detail.model ? editModel : undefined,
+      // Empty string clears the intention; undefined leaves it unchanged.
+      intention: nextIntention !== currentIntention ? nextIntention : undefined,
     });
     setDetail(updated);
     setEditing(false);
@@ -186,6 +192,25 @@ export function ConversationsApp() {
                   </>
                 )}
               </div>
+
+              {/* Intention — topic/scope for this conversation */}
+              {editing ? (
+                <div className={styles.intentionRow}>
+                  <span className={styles.intentionLabel}>Intention</span>
+                  <textarea
+                    className={styles.intentionInput}
+                    value={editIntention}
+                    onChange={e => setEditIntention(e.target.value)}
+                    placeholder="What is this conversation about? (leave empty for none)"
+                    rows={2}
+                  />
+                </div>
+              ) : detail.intention ? (
+                <div className={styles.intentionRow}>
+                  <span className={styles.intentionLabel}>Intention</span>
+                  <span className={styles.intentionText}>{detail.intention}</span>
+                </div>
+              ) : null}
 
               {/* Stats */}
               <div className={styles.stats}>

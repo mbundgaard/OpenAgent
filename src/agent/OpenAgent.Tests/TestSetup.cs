@@ -14,7 +14,15 @@ public class TestSetup
         if (_initialized) return;
         _initialized = true;
 
-        var dataDir = Environment.GetEnvironmentVariable("DATA_DIR") ?? "/home/data";
+        var dataDir = Environment.GetEnvironmentVariable("DATA_DIR");
+        if (string.IsNullOrEmpty(dataDir))
+        {
+            dataDir = "/home/data";
+            // Make the host agree with the seed location — RootResolver now falls back to
+            // AppContext.BaseDirectory when DATA_DIR is unset, which would put the host
+            // on a different path than TestSetup.
+            Environment.SetEnvironmentVariable("DATA_DIR", dataDir);
+        }
         var configDir = Path.Combine(dataDir, "config");
         Directory.CreateDirectory(configDir);
 

@@ -60,6 +60,30 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
     public void Dispose() => _httpClient?.Dispose();
 
+    /// <inheritdoc />
+    public int? GetContextWindow(string model)
+    {
+        // Azure deployment names are user-chosen, so this is a best-effort table based on the
+        // underlying model family encoded in the deployment name. Unknown models return null
+        // and callers fall back to CompactionConfig.MaxContextTokens.
+        if (model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase)) return 400_000;
+        if (model.Contains("gpt-4o", StringComparison.OrdinalIgnoreCase)) return 128_000;
+        if (model.Contains("gpt-4", StringComparison.OrdinalIgnoreCase)) return 128_000;
+        return null;
+    }
+
+    /// <summary>
+    /// Detects Azure OpenAI's context-length error. Azure returns HTTP 400 with an error
+    /// object whose <c>code</c> is <c>context_length_exceeded</c>, or a message mentioning
+    /// "maximum context length". Heuristic — tune as new error shapes appear.
+    /// </summary>
+    private static bool IsContextOverflow(System.Net.HttpStatusCode status, string body)
+    {
+        if (status != System.Net.HttpStatusCode.BadRequest) return false;
+        return body.Contains("context_length_exceeded", StringComparison.Ordinal)
+            || body.Contains("maximum context length", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -69,6 +93,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         var conversationId = conversation.Id;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         logger.LogDebug("StreamAsync called for conversation {ConversationId}", conversationId);
+
+        // Populate the per-conversation context window cache on first turn or after a model
+        // switch. Used by the compaction threshold — lets it scale with the active model
+        // rather than relying on a global constant.
+        if (conversation.ContextWindowTokens is null)
+        {
+            var window = GetContextWindow(conversation.Model);
+            if (window is not null)
+                conversation.ContextWindowTokens = window;
+        }
 
         // Persist the caller-supplied user message
         agentLogic.AddMessage(conversationId, userMessage);
@@ -87,18 +121,47 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
         // Completion loop (handles tool calls across streaming rounds)
         const int maxToolRounds = 10;
+        var overflowRetried = false;
         for (var round = 0; round < maxToolRounds; round++)
         {
-
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+            // Inner loop lets us retry ONCE on a context-length error by running compaction
+            // and rebuilding the request. overflowRetried is scoped to this CompleteAsync
+            // call — at most one recovery attempt per turn.
+            HttpResponseMessage httpResponse;
+            while (true)
             {
-                Content = JsonContent.Create(request)
-            };
-            var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = JsonContent.Create(request)
+                };
+                httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
 
-            if (!httpResponse.IsSuccessStatusCode)
-            {
+                if (httpResponse.IsSuccessStatusCode) break;
+
                 var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                if (!overflowRetried && IsContextOverflow(httpResponse.StatusCode, errorBody))
+                {
+                    overflowRetried = true;
+                    logger.LogWarning(
+                        "Azure OpenAI context overflow for conversation {ConversationId} — compacting and retrying once",
+                        conversationId);
+
+                    httpResponse.Dispose();
+
+                    var compacted = await agentLogic.CompactAsync(conversationId, CompactionReason.Overflow, null, ct);
+                    if (!compacted)
+                    {
+                        throw new HttpRequestException(
+                            "Context overflow, and compaction could not reduce history (already minimal or disabled).");
+                    }
+
+                    // Rebuild from the compacted state — GetConversation re-reads with the new
+                    // Conversation.Context set by compaction.
+                    var compactedConv = agentLogic.GetConversation(conversationId) ?? conversation;
+                    request.Messages = BuildChatMessages(compactedConv);
+                    continue;
+                }
+
                 logger.LogError("Azure OpenAI returned {StatusCode} for conversation {ConversationId}: {ErrorBody}",
                     (int)httpResponse.StatusCode, conversationId, errorBody);
                 throw new HttpRequestException(
@@ -207,13 +270,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
                     yield return new ToolResultEvent(id, name, result);
 
-                    // Persist tool result summary (compact), keep full result in-memory for current turn
+                    // Persist tool result: Content keeps the compact summary (for UI and
+                    // backward compat), FullToolResult carries the raw output to disk via the
+                    // store's blob writer. Next turn's BuildChatMessages loads the blob back.
                     agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, result),
+                        FullToolResult = result,
                         ToolCallId = id,
                         Modality = MessageModality.Text
                     });
@@ -325,12 +391,26 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         var chatMessages = new List<ChatMessage>();
 
         // System prompt
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills);
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills, conversation.Intention);
         if (!string.IsNullOrEmpty(systemPrompt))
             chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
 
-        // Reconstruct full message history including tool calls
-        var storedMessages = agentLogic.GetMessages(conversation.Id);
+        // If the conversation has been compacted, inject the summary as a user message
+        // wrapped in <summary> tags. Keeps the real system prompt stable across turns
+        // (cache-friendly) while still giving the model visibility into pre-cut history.
+        if (!string.IsNullOrEmpty(conversation.Context))
+        {
+            chatMessages.Add(new ChatMessage
+            {
+                Role = "user",
+                Content = "The conversation history before this point was compacted into the following summary:\n\n"
+                          + "<summary>\n" + conversation.Context + "\n</summary>"
+            });
+        }
+
+        // Reconstruct full message history including tool calls. Opt into blob loading so
+        // persisted tool results are inlined as their original full content (not the summary).
+        var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
         for (var i = 0; i < storedMessages.Count; i++)
         {
             var msg = storedMessages[i];
@@ -368,25 +448,31 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     // Complete round — add assistant message with tool calls
                     chatMessages.Add(new ChatMessage { Role = "assistant", Content = msg.Content, Name = ChannelMessageName(msg), ToolCalls = toolCalls });
 
-                    // Add the matching tool result messages
+                    // Add the matching tool result messages. Prefer the full on-disk content
+                    // (loaded via includeToolResultBlobs above); fall back to the compact summary
+                    // in Content only for legacy rows or when the blob is missing.
                     foreach (var id in expectedIds)
                     {
                         i++;
+                        var toolMsg = storedMessages[i];
                         chatMessages.Add(new ChatMessage
                         {
                             Role = "tool",
-                            Content = storedMessages[i].Content,
-                            ToolCallId = storedMessages[i].ToolCallId
+                            Content = toolMsg.FullToolResult ?? toolMsg.Content,
+                            ToolCallId = toolMsg.ToolCallId
                         });
                     }
                     continue;
                 }
             }
 
-            // Regular message (user, assistant text, or tool with id)
-            var content = msg.ReplyToChannelMessageId is not null
-                ? $"[Reply to Msg: {msg.ReplyToChannelMessageId}] {msg.Content}"
-                : msg.Content;
+            // Regular message (user, assistant text, or tool with id). For tool messages,
+            // prefer the full on-disk result loaded via ToolResultRef.
+            var content = msg.Role == "tool" && msg.FullToolResult is not null
+                ? msg.FullToolResult
+                : msg.ReplyToChannelMessageId is not null
+                    ? $"[Reply to Msg: {msg.ReplyToChannelMessageId}] {msg.Content}"
+                    : msg.Content;
             var chatMsg = new ChatMessage { Role = msg.Role, Content = content, Name = ChannelMessageName(msg) };
             if (msg.ToolCallId is not null)
                 chatMsg.ToolCallId = msg.ToolCallId;

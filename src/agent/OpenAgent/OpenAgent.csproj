@@ -4,6 +4,23 @@
     <InternalsVisibleTo Include="OpenAgent.Tests" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+    <ApplicationIcon>favicon.ico</ApplicationIcon>
+    <!-- Hosted via Kestrel (console / Windows service), never IIS - suppress web.config generation -->
+    <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
+    <!-- wwwroot/ is extracted from an embedded zip at runtime; disable the static-web-assets
+         manifest so ASP.NET doesn't try to load a manifest pointing at a physical path that
+         doesn't exist in source (or in publish output). Plain UseStaticFiles + ContentRoot/wwwroot
+         still works. -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Dev-only settings should not ship; defaults live in Program.cs for the published exe -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
   <ItemGroup>
     <Compile Remove="config\**" />
     <Compile Remove="data\**" />
@@ -41,7 +58,10 @@
     <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
     <ProjectReference Include="..\OpenAgent.Terminal\OpenAgent.Terminal.csproj" />
     <ProjectReference Include="..\OpenAgent.ScheduledTasks\OpenAgent.ScheduledTasks.csproj" />
-    <ProjectReference Include="..\OpenAgent.Tools.ModelManagement\OpenAgent.Tools.ModelManagement.csproj" />
+    <ProjectReference Include="..\OpenAgent.Tools.Conversation\OpenAgent.Tools.Conversation.csproj" />
+    <ProjectReference Include="..\OpenAgent.MemoryIndex\OpenAgent.MemoryIndex.csproj" />
+    <ProjectReference Include="..\OpenAgent.Embedding.OnnxMultilingualE5\OpenAgent.Embedding.OnnxMultilingualE5.csproj" />
+    <ProjectReference Include="..\OpenAgent.Embedding.OnnxBge\OpenAgent.Embedding.OnnxBge.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -49,10 +69,18 @@
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="Serilog.Sinks.Debug" />
     <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="Microsoft.Extensions.Logging.EventLog" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="defaults\*.md" />
+    <!-- Built React app (created by scripts/publish-windows.ps1). Extracted at startup. -->
+    <EmbeddedResource Include="wwwroot.zip" Condition="Exists('wwwroot.zip')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="favicon.ico" />
   </ItemGroup>
 
 </Project>

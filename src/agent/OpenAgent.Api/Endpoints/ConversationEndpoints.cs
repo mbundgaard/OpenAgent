@@ -42,7 +42,8 @@ public static class ConversationEndpoints
                 TurnCount = c.TurnCount,
                 LastActivity = c.LastActivity,
                 ActiveSkills = c.ActiveSkills,
-                DisplayName = c.DisplayName
+                DisplayName = c.DisplayName,
+                Intention = c.Intention
             }));
         });
 
@@ -71,7 +72,8 @@ public static class ConversationEndpoints
                 ChannelType = conversation.ChannelType,
                 ConnectionId = conversation.ConnectionId,
                 ChannelChatId = conversation.ChannelChatId,
-                DisplayName = conversation.DisplayName
+                DisplayName = conversation.DisplayName,
+                Intention = conversation.Intention
             });
         });
 
@@ -102,6 +104,9 @@ public static class ConversationEndpoints
                 conversation.Model = request.Model;
             if (request.ChannelChatId is not null)
                 conversation.ChannelChatId = request.ChannelChatId;
+            // Empty string explicitly clears the intention; null leaves it unchanged.
+            if (request.Intention is not null)
+                conversation.Intention = request.Intention.Length == 0 ? null : request.Intention;
 
             store.Update(conversation);
 
@@ -124,7 +129,8 @@ public static class ConversationEndpoints
                 ChannelType = conversation.ChannelType,
                 ConnectionId = conversation.ConnectionId,
                 ChannelChatId = conversation.ChannelChatId,
-                DisplayName = conversation.DisplayName
+                DisplayName = conversation.DisplayName,
+                Intention = conversation.Intention
             });
         });
 
@@ -133,5 +139,27 @@ public static class ConversationEndpoints
             store.Delete(conversationId);
             return Results.NoContent();
         });
+
+        group.MapPost("/{conversationId}/compact", async (
+            string conversationId,
+            CompactRequest? body,
+            IConversationStore store,
+            CancellationToken ct) =>
+        {
+            if (store.Get(conversationId) is null)
+                return Results.NotFound();
+
+            var compacted = await store.CompactNowAsync(
+                conversationId,
+                CompactionReason.Manual,
+                body?.Instructions,
+                ct);
+
+            return Results.Ok(new { compacted });
+        });
     }
 }
+
+/// <summary>Optional body for POST /api/conversations/{id}/compact.</summary>
+public sealed record CompactRequest(
+    [property: System.Text.Json.Serialization.JsonPropertyName("instructions")] string? Instructions);

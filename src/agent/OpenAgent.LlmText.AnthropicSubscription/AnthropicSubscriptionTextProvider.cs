@@ -81,6 +81,29 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
     public void Dispose() => _httpClient?.Dispose();
 
     /// <inheritdoc />
+    public int? GetContextWindow(string model)
+    {
+        // Anthropic model IDs encode the family; all currently-supported Claude variants expose
+        // a 200k-token context window. Unknown models return null; callers fall back to
+        // CompactionConfig.MaxContextTokens.
+        if (model.Contains("claude", StringComparison.OrdinalIgnoreCase)) return 200_000;
+        return null;
+    }
+
+    /// <summary>
+    /// Detects Anthropic's context-length error. Anthropic returns HTTP 400 with a body
+    /// describing the issue — typically "prompt is too long" or a max_tokens reference.
+    /// Heuristic — tune as new error shapes appear.
+    /// </summary>
+    private static bool IsContextOverflow(System.Net.HttpStatusCode status, string body)
+    {
+        if (status != System.Net.HttpStatusCode.BadRequest) return false;
+        return body.Contains("prompt is too long", StringComparison.OrdinalIgnoreCase)
+            || (body.Contains("max_tokens", StringComparison.OrdinalIgnoreCase)
+                && body.Contains("context", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <inheritdoc />
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -91,11 +114,21 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         logger.LogDebug("CompleteAsync called for conversation {ConversationId}", conversationId);
 
+        // Populate the per-conversation context window cache on first turn or after a model
+        // switch. Used by the compaction threshold — lets it scale with the active model
+        // rather than relying on a global constant.
+        if (conversation.ContextWindowTokens is null)
+        {
+            var window = GetContextWindow(conversation.Model);
+            if (window is not null)
+                conversation.ContextWindowTokens = window;
+        }
+
         // Persist the caller-supplied user message
         agentLogic.AddMessage(conversationId, userMessage);
 
         // Build the system prompt blocks and initial message list
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills);
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills, conversation.Intention);
         var systemBlocks = BuildSystemBlocks(systemPrompt);
         var messages = BuildMessages(conversation);
         var tools = BuildTools();
@@ -103,31 +136,58 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
 
         // Completion loop (handles tool call rounds, up to 10)
         const int maxToolRounds = 10;
+        var overflowRetried = false;
         for (var round = 0; round < maxToolRounds; round++)
         {
-            var request = new AnthropicMessagesRequest
+            // Inner loop allows a single context-overflow retry: compact + rebuild messages.
+            HttpResponseMessage httpResponse;
+            while (true)
             {
-                Model = conversation.Model,
-                MaxTokens = _config.MaxTokens,
-                System = systemBlocks,
-                Messages = messages,
-                Tools = tools?.Count > 0 ? tools : null,
-                Stream = true,
-                Thinking = useThinking ? new AnthropicThinking() : null
-            };
+                var request = new AnthropicMessagesRequest
+                {
+                    Model = conversation.Model,
+                    MaxTokens = _config.MaxTokens,
+                    System = systemBlocks,
+                    Messages = messages,
+                    Tools = tools?.Count > 0 ? tools : null,
+                    Stream = true,
+                    Thinking = useThinking ? new AnthropicThinking() : null
+                };
 
-            // Authorization MUST be per-request — setting on DefaultRequestHeaders causes 429
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, "v1/messages")
-            {
-                Content = JsonContent.Create(request),
-            };
-            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.SetupToken);
+                // Authorization MUST be per-request — setting on DefaultRequestHeaders causes 429
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post, "v1/messages")
+                {
+                    Content = JsonContent.Create(request),
+                };
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.SetupToken);
 
-            var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
 
-            if (!httpResponse.IsSuccessStatusCode)
-            {
+                if (httpResponse.IsSuccessStatusCode) break;
+
                 var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                if (!overflowRetried && IsContextOverflow(httpResponse.StatusCode, errorBody))
+                {
+                    overflowRetried = true;
+                    logger.LogWarning(
+                        "Anthropic context overflow for conversation {ConversationId} — compacting and retrying once",
+                        conversationId);
+
+                    httpResponse.Dispose();
+
+                    var compacted = await agentLogic.CompactAsync(conversationId, CompactionReason.Overflow, null, ct);
+                    if (!compacted)
+                    {
+                        throw new HttpRequestException(
+                            "Context overflow, and compaction could not reduce history (already minimal or disabled).");
+                    }
+
+                    // Rebuild messages from the compacted state.
+                    var compactedConv = agentLogic.GetConversation(conversationId) ?? conversation;
+                    messages = BuildMessages(compactedConv);
+                    continue;
+                }
+
                 logger.LogError("Anthropic returned {StatusCode} for conversation {ConversationId}: {ErrorBody}",
                     (int)httpResponse.StatusCode, conversationId, errorBody);
                 throw new HttpRequestException($"Anthropic returned {(int)httpResponse.StatusCode}: {errorBody}");
@@ -266,13 +326,16 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
 
                     yield return new ToolResultEvent(id, name, result);
 
-                    // Persist compact summary; keep full result in-memory for the LLM
+                    // Persist tool result: Content keeps the compact summary (for UI and
+                    // backward compat), FullToolResult carries the raw output to disk via the
+                    // store's blob writer. Next turn's BuildMessages loads the blob back.
                     agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, result),
+                        FullToolResult = result,
                         ToolCallId = id,
                         Modality = MessageModality.Text
                     });
@@ -421,7 +484,23 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
     private List<AnthropicMessage> BuildMessages(Conversation conversation)
     {
         var result = new List<AnthropicMessage>();
-        var storedMessages = agentLogic.GetMessages(conversation.Id);
+
+        // If the conversation has been compacted, inject the summary as a user message
+        // wrapped in <summary> tags. Keeps the real system prompt (system blocks) stable
+        // across turns — Anthropic prompt caching is strict about system prefix changes.
+        if (!string.IsNullOrEmpty(conversation.Context))
+        {
+            result.Add(new AnthropicMessage
+            {
+                Role = "user",
+                Content = "The conversation history before this point was compacted into the following summary:\n\n"
+                          + "<summary>\n" + conversation.Context + "\n</summary>"
+            });
+        }
+
+        // Opt into blob loading so persisted tool results are inlined as their original full
+        // content (not the compact summary in Content).
+        var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
 
         for (var i = 0; i < storedMessages.Count; i++)
         {
@@ -471,16 +550,19 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                     }).ToList<AnthropicContentBlock>();
                     result.Add(new AnthropicMessage { Role = "assistant", Content = toolUseBlocks });
 
-                    // Collect tool results in a single user message (Anthropic convention)
+                    // Collect tool results in a single user message (Anthropic convention).
+                    // Prefer the full on-disk content; fall back to the compact summary in
+                    // Content only for legacy rows or when the blob is missing.
                     var toolResultBlocks = new List<AnthropicContentBlock>();
                     foreach (var id in expectedIds)
                     {
                         i++;
+                        var toolMsg = storedMessages[i];
                         toolResultBlocks.Add(new AnthropicContentBlock
                         {
                             Type = "tool_result",
-                            ToolUseId = storedMessages[i].ToolCallId,
-                            Content = storedMessages[i].Content
+                            ToolUseId = toolMsg.ToolCallId,
+                            Content = toolMsg.FullToolResult ?? toolMsg.Content
                         });
                     }
                     result.Add(new AnthropicMessage { Role = "user", Content = toolResultBlocks });

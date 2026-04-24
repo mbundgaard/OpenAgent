@@ -3,6 +3,7 @@ using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Skills;
+using System.Linq;
 
 namespace OpenAgent;
 
@@ -56,7 +57,7 @@ internal sealed class SystemPromptBuilder
     /// Builds the system prompt for the given conversation type by concatenating
     /// the relevant files in order, separated by blank lines.
     /// </summary>
-    public string Build(ConversationType type, IReadOnlyList<string>? activeSkills = null)
+    public string Build(ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null)
     {
         var sections = new List<string>();
 
@@ -68,17 +69,20 @@ internal sealed class SystemPromptBuilder
             if (_files.TryGetValue(filePath, out var content))
                 sections.Add(content);
 
-            // After MEMORY.md, append the most recent daily memory files
+            // After MEMORY.md, append every daily file still in memory/ root (newest first).
+            // The indexer moves indexed files to memory/backup/, which is not scanned here, so
+            // the prompt naturally contains exactly the "live" set that hasn't rolled past the
+            // memoryDays window and been absorbed into memory_chunks. MemoryDays is the
+            // indexer's threshold only — this loader just reflects whatever the indexer has
+            // left on disk.
             if (filePath == "MEMORY.md")
             {
                 var memoryDir = Path.Combine(_dataPath, "memory");
                 if (Directory.Exists(memoryDir))
                 {
-                    var days = Math.Max(1, _agentConfig.MemoryDays);
-                    var recentFiles = Directory.GetFiles(memoryDir, "????-??-??.md")
-                        .OrderByDescending(f => Path.GetFileName(f))
-                        .Take(days);
-                    foreach (var file in recentFiles)
+                    var liveFiles = Directory.GetFiles(memoryDir, "????-??-??.md")
+                        .OrderByDescending(f => Path.GetFileName(f));
+                    foreach (var file in liveFiles)
                         TryAppendFile(sections, Path.Combine("memory", Path.GetFileName(file)));
                 }
             }
@@ -132,6 +136,20 @@ internal sealed class SystemPromptBuilder
             }
         }
 
+        // Inject mount-point conventions when symlink roots are present — helps the agent
+        // translate real paths from shell output to the short form expected by file tools.
+        var symlinkRoots = EnumerateTopLevelReparsePoints(_dataPath);
+        if (symlinkRoots.Count > 0)
+        {
+            var lines = symlinkRoots.Select(name =>
+                $"  - {name}/... — reaches a mounted external path; shell output may show real paths under this mount, translate to the short form when passing to file tools.");
+            sections.Add(
+                "<path_conventions>\n" +
+                "When passing paths to file tools, use paths relative to the agent's root. Configured mount points:\n" +
+                string.Join("\n", lines) + "\n" +
+                "</path_conventions>");
+        }
+
         // Inject current datetime in the agent's configured timezone (Europe/Copenhagen)
         var tz = TimeZoneInfo.FindSystemTimeZoneById("Europe/Copenhagen");
         var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz);
@@ -139,6 +157,21 @@ internal sealed class SystemPromptBuilder
         var weekNumber = System.Globalization.ISOWeek.GetWeekOfYear(now.DateTime);
         var weekday = now.DateTime.ToString("dddd", System.Globalization.CultureInfo.InvariantCulture);
         sections.Add($"Current time: {weekday} {now:yyyy-MM-ddTHH:mm} Europe/Copenhagen ({utcLabel}), week {weekNumber}");
+
+        // Per-conversation intention — scopes the topic and anchors the agent across turns.
+        // Placed last so it's the most recent context the model sees before the user turns.
+        if (!string.IsNullOrWhiteSpace(intention))
+        {
+            sections.Add($"""
+                <conversation_intention>
+                This conversation is scoped to the following topic/purpose. Keep replies on-topic
+                and redirect off-topic turns back to it. If the user explicitly changes the topic,
+                acknowledge the shift but do not invent tangents on your own.
+
+                {intention.Trim()}
+                </conversation_intention>
+                """);
+        }
 
         return string.Join("\n\n", sections);
     }
@@ -166,5 +199,21 @@ internal sealed class SystemPromptBuilder
         if (!File.Exists(fullPath)) return;
         var content = File.ReadAllText(fullPath).Trim();
         if (content.Length > 0) sections.Add(content);
+    }
+
+    private static List<string> EnumerateTopLevelReparsePoints(string dataPath)
+    {
+        var names = new List<string>();
+        if (!Directory.Exists(dataPath))
+            return names;
+
+        foreach (var dir in Directory.EnumerateDirectories(dataPath, "*", SearchOption.TopDirectoryOnly))
+        {
+            var info = new DirectoryInfo(dir);
+            if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+                names.Add(info.Name);
+        }
+        names.Sort(StringComparer.Ordinal);
+        return names;
     }
 }

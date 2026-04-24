@@ -24,6 +24,7 @@ public sealed class FakeTelnyxTextProvider : ILlmTextProvider
     public string Key => "fake-telnyx-text";
     public IReadOnlyList<ProviderConfigField> ConfigFields => [];
     public void Configure(JsonElement configuration) { }
+    public int? GetContextWindow(string model) => null;
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,

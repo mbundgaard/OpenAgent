@@ -57,9 +57,27 @@ public interface IConversationStore : IConfigurable
     /// <summary>Updates the channel message ID on an existing message.</summary>
     void UpdateChannelMessageId(string messageId, string channelMessageId);
 
-    /// <summary>Returns all messages for the given conversation, in order.</summary>
-    IReadOnlyList<Message> GetMessages(string conversationId);
+    /// <summary>
+    /// Returns all messages for the given conversation, in order.
+    /// When <paramref name="includeToolResultBlobs"/> is true, tool result messages have their
+    /// <see cref="Message.FullToolResult"/> populated by reading the on-disk blob referenced by
+    /// <see cref="Message.ToolResultRef"/>. If the blob is missing, FullToolResult stays null and
+    /// the caller falls back to <see cref="Message.Content"/>.
+    /// </summary>
+    IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false);
 
-    /// <summary>Returns messages by their IDs, regardless of compaction state. Used by the expand tool.</summary>
-    IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds);
+    /// <summary>
+    /// Returns messages by their IDs, regardless of compaction state. Used by the expand tool.
+    /// When <paramref name="includeToolResultBlobs"/> is true, tool result messages include
+    /// their full on-disk content via <see cref="Message.FullToolResult"/>.
+    /// </summary>
+    IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds, bool includeToolResultBlobs = false);
+
+    /// <summary>
+    /// Triggers compaction on-demand. Returns true if a cut was made, false if there was
+    /// nothing to compact or the summarizer is not configured. Used by the manual endpoint
+    /// and by provider overflow recovery. Threshold compaction still fires automatically
+    /// from <see cref="Update"/> — this is the synchronous manual/overflow path.
+    /// </summary>
+    Task<bool> CompactNowAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default);
 }

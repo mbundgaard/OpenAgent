@@ -12,6 +12,7 @@ public sealed class InMemoryConversationStore : IConversationStore
 {
     private readonly Dictionary<string, Conversation> _conversations = new();
     private readonly Dictionary<string, List<Message>> _messages = new();
+    private readonly Dictionary<(string ConversationId, string MessageId), string> _toolResultBlobs = new();
     private long _nextRowId = 1;
 
     // IConfigurable — no-op for tests
@@ -94,13 +95,31 @@ public sealed class InMemoryConversationStore : IConversationStore
             conv.DisplayName = displayName;
     }
 
-    public bool Delete(string conversationId) =>
-        _conversations.Remove(conversationId) | _messages.Remove(conversationId);
+    public bool Delete(string conversationId)
+    {
+        // Mirror SqliteConversationStore: drop any blob entries for this conversation
+        var blobKeysToRemove = _toolResultBlobs.Keys
+            .Where(k => k.ConversationId == conversationId)
+            .ToList();
+        foreach (var key in blobKeysToRemove)
+            _toolResultBlobs.Remove(key);
+
+        return _conversations.Remove(conversationId) | _messages.Remove(conversationId);
+    }
 
     public void AddMessage(string conversationId, Message message)
     {
         if (!_messages.ContainsKey(conversationId))
             _messages[conversationId] = [];
+
+        // Mirror SqliteConversationStore: capture FullToolResult into the in-memory blob map
+        // and record a synthetic ToolResultRef matching the real store's layout.
+        string? toolResultRef = null;
+        if (!string.IsNullOrEmpty(message.FullToolResult))
+        {
+            _toolResultBlobs[(conversationId, message.Id)] = message.FullToolResult;
+            toolResultRef = $"tool-results/{message.Id}.txt";
+        }
 
         var withRowId = new Message
         {
@@ -116,7 +135,11 @@ public sealed class InMemoryConversationStore : IConversationStore
             ReplyToChannelMessageId = message.ReplyToChannelMessageId,
             PromptTokens = message.PromptTokens,
             CompletionTokens = message.CompletionTokens,
-            ElapsedMs = message.ElapsedMs
+            ElapsedMs = message.ElapsedMs,
+            Modality = message.Modality,
+            ToolResultRef = toolResultRef
+            // FullToolResult deliberately NOT copied onto the stored message —
+            // it's populated on demand when callers pass includeToolResultBlobs: true.
         };
         _messages[conversationId].Add(withRowId);
     }
@@ -147,38 +170,74 @@ public sealed class InMemoryConversationStore : IConversationStore
         }
     }
 
-    public IReadOnlyList<Message> GetMessages(string conversationId)
+    public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false)
     {
+        // Mirror SqliteConversationStore: only post-cut messages are returned. The summary
+        // lives on Conversation.Context and is injected by providers, not the store.
         var conversation = Get(conversationId);
-        var list = new List<Message>();
-
-        if (conversation?.Context is not null)
-        {
-            list.Add(new Message
-            {
-                Id = "context",
-                ConversationId = conversationId,
-                Role = "system",
-                Content = conversation.Context
-            });
-        }
-
         var allMessages = _messages.GetValueOrDefault(conversationId) ?? [];
 
         var messages = conversation?.CompactedUpToRowId is not null
             ? allMessages.Where(m => m.RowId > conversation.CompactedUpToRowId.Value).ToList()
-            : allMessages;
+            : allMessages.ToList();
 
-        list.AddRange(messages);
-        return list.AsReadOnly();
+        if (includeToolResultBlobs)
+            PopulateFullToolResults(messages);
+
+        return messages.AsReadOnly();
     }
 
-    public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds)
+    public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds, bool includeToolResultBlobs = false)
     {
         var idSet = messageIds.ToHashSet();
-        return _messages.Values
+        var results = _messages.Values
             .SelectMany(msgs => msgs)
             .Where(m => idSet.Contains(m.Id))
             .ToList();
+
+        if (includeToolResultBlobs)
+            PopulateFullToolResults(results);
+
+        return results;
+    }
+
+    public Task<bool> CompactNowAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default)
+    {
+        // In-memory store has no real summarizer — manual/overflow triggers are a no-op in tests.
+        return Task.FromResult(false);
+    }
+
+    /// <summary>
+    /// Replaces tool messages in-place with copies that include FullToolResult, mirroring
+    /// SqliteConversationStore's blob-loading behavior for tests.
+    /// </summary>
+    private void PopulateFullToolResults(List<Message> messages)
+    {
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var msg = messages[i];
+            if (msg.Role != "tool" || msg.ToolResultRef is null) continue;
+            if (!_toolResultBlobs.TryGetValue((msg.ConversationId, msg.Id), out var full)) continue;
+
+            messages[i] = new Message
+            {
+                RowId = msg.RowId,
+                Id = msg.Id,
+                ConversationId = msg.ConversationId,
+                Role = msg.Role,
+                Content = msg.Content,
+                CreatedAt = msg.CreatedAt,
+                ToolCalls = msg.ToolCalls,
+                ToolCallId = msg.ToolCallId,
+                ChannelMessageId = msg.ChannelMessageId,
+                ReplyToChannelMessageId = msg.ReplyToChannelMessageId,
+                PromptTokens = msg.PromptTokens,
+                CompletionTokens = msg.CompletionTokens,
+                ElapsedMs = msg.ElapsedMs,
+                Modality = msg.Modality,
+                ToolResultRef = msg.ToolResultRef,
+                FullToolResult = full
+            };
+        }
     }
 }

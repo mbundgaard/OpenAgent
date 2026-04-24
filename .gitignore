@@ -13,6 +13,9 @@
 src/agent/OpenAgent/config/
 src/agent/OpenAgent/data/
 
+# React build, zipped for embedding in OpenAgent.exe (extracted at startup)
+src/agent/OpenAgent/wwwroot.zip
+
 # Development settings (may contain secrets)
 # Note: appsettings.Development.json is tracked — it only contains test API keys
 

@@ -10,12 +10,21 @@ namespace OpenAgent.Compaction;
 
 /// <summary>
 /// Calls the LLM via an ILlmTextProvider to generate a structured compaction summary.
+/// Picks the Initial prompt for first compaction, Update prompt for subsequent iterations.
 /// </summary>
 public sealed class CompactionSummarizer : ICompactionSummarizer
 {
+    /// <summary>
+    /// Cap on serialized tool-result content fed into the summarizer. Full output is not
+    /// needed to extract "this tool ran and returned X"; clipping prevents a single huge
+    /// result from dominating the summarizer's own context window.
+    /// </summary>
+    private const int ToolResultMaxChars = 2000;
+
     private readonly Func<string, ILlmTextProvider> _providerFactory;
     private readonly AgentConfig _agentConfig;
     private readonly ILogger<CompactionSummarizer> _logger;
+    private bool _providerUnsetLogged;
 
     public CompactionSummarizer(
         Func<string, ILlmTextProvider> providerFactory,
@@ -27,14 +36,44 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
         _logger = logger;
     }
 
-    public async Task<CompactionResult> SummarizeAsync(string? existingContext, IReadOnlyList<Message> messages, CancellationToken ct = default)
+    public async Task<CompactionResult> SummarizeAsync(
+        string? existingContext,
+        IReadOnlyList<Message> messages,
+        string? customInstructions = null,
+        CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(_agentConfig.CompactionProvider)
+            || string.IsNullOrWhiteSpace(_agentConfig.CompactionModel))
+        {
+            if (!_providerUnsetLogged)
+            {
+                _providerUnsetLogged = true;
+                _logger.LogWarning(
+                    "Compaction skipped: AgentConfig.CompactionProvider or CompactionModel is unset. " +
+                    "Set both to enable automatic and manual compaction.");
+            }
+            throw new CompactionDisabledException();
+        }
+
+        var systemPrompt = existingContext is null
+            ? CompactionPrompt.Initial
+            : CompactionPrompt.Update;
+
         var userContent = new StringBuilder();
 
         if (existingContext is not null)
         {
-            userContent.AppendLine("## Existing Context (from previous compaction)");
+            userContent.AppendLine("<previous-summary>");
             userContent.AppendLine(existingContext);
+            userContent.AppendLine("</previous-summary>");
+            userContent.AppendLine();
+        }
+
+        if (!string.IsNullOrWhiteSpace(customInstructions))
+        {
+            userContent.AppendLine("<focus>");
+            userContent.AppendLine(customInstructions.Trim());
+            userContent.AppendLine("</focus>");
             userContent.AppendLine();
         }
 
@@ -46,11 +85,13 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
                 userContent.AppendLine($"  Tool calls: {msg.ToolCalls}");
             if (msg.ToolCallId is not null)
                 userContent.AppendLine($"  (tool result for call {msg.ToolCallId})");
+            if (!string.IsNullOrEmpty(msg.FullToolResult))
+                userContent.AppendLine($"  Full content: {TruncateForSummary(msg.FullToolResult, ToolResultMaxChars)}");
         }
 
         var llmMessages = new List<Message>
         {
-            new() { Id = "sys", ConversationId = "", Role = "system", Content = CompactionPrompt.System },
+            new() { Id = "sys", ConversationId = "", Role = "system", Content = systemPrompt },
             new() { Id = "usr", ConversationId = "", Role = "user", Content = userContent.ToString() }
         };
 
@@ -66,15 +107,30 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
         }
 
         // Parse the JSON response
-        var content = fullContent.ToString();
-        using var doc = JsonDocument.Parse(content);
+        using var doc = JsonDocument.Parse(fullContent.ToString());
         var context = doc.RootElement.GetProperty("context").GetString()!;
-        var memories = doc.RootElement.TryGetProperty("memories", out var mem)
-            ? mem.EnumerateArray().Select(m => m.GetString()!).ToList()
-            : new List<string>();
 
-        _logger.LogInformation("Compaction summary generated: {Length} chars, {MemoryCount} memories", context.Length, memories.Count);
+        _logger.LogInformation("Compaction summary generated: {Length} chars (mode: {Mode})",
+            context.Length, existingContext is null ? "initial" : "update");
 
-        return new CompactionResult { Context = context, Memories = memories };
+        return new CompactionResult { Context = context };
     }
+
+    private static string TruncateForSummary(string text, int maxChars)
+    {
+        if (text.Length <= maxChars) return text;
+        var truncated = text.Length - maxChars;
+        return $"{text[..maxChars]}\n\n[... {truncated} more characters truncated]";
+    }
+}
+
+/// <summary>
+/// Thrown by <see cref="CompactionSummarizer"/> when compaction cannot run because the
+/// compaction provider/model is unset in <c>AgentConfig</c>. Callers should treat this as
+/// "skip compaction", not an error.
+/// </summary>
+public sealed class CompactionDisabledException : Exception
+{
+    public CompactionDisabledException()
+        : base("Compaction is disabled because CompactionProvider or CompactionModel is unset.") { }
 }

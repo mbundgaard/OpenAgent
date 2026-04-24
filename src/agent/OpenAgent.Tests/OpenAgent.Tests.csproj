@@ -21,11 +21,15 @@
     <ProjectReference Include="..\OpenAgent.Channel.Telegram\OpenAgent.Channel.Telegram.csproj" />
     <ProjectReference Include="..\OpenAgent.Channel.Telnyx\OpenAgent.Channel.Telnyx.csproj" />
     <ProjectReference Include="..\OpenAgent.Channel.WhatsApp\OpenAgent.Channel.WhatsApp.csproj" />
+    <ProjectReference Include="..\OpenAgent.Compaction\OpenAgent.Compaction.csproj" />
     <ProjectReference Include="..\OpenAgent.ConversationStore.Sqlite\OpenAgent.ConversationStore.Sqlite.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.Expand\OpenAgent.Tools.Expand.csproj" />
     <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
     <ProjectReference Include="..\OpenAgent.ScheduledTasks\OpenAgent.ScheduledTasks.csproj" />
-    <ProjectReference Include="..\OpenAgent.Tools.ModelManagement\OpenAgent.Tools.ModelManagement.csproj" />
+    <ProjectReference Include="..\OpenAgent.Tools.Conversation\OpenAgent.Tools.Conversation.csproj" />
+    <ProjectReference Include="..\OpenAgent.MemoryIndex\OpenAgent.MemoryIndex.csproj" />
+    <ProjectReference Include="..\OpenAgent.Embedding.OnnxMultilingualE5\OpenAgent.Embedding.OnnxMultilingualE5.csproj" />
+    <ProjectReference Include="..\OpenAgent.Embedding.OnnxBge\OpenAgent.Embedding.OnnxBge.csproj" />
   </ItemGroup>
 
 </Project>
