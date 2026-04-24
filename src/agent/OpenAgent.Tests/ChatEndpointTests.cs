@@ -100,6 +100,50 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(ConversationType.Text, conv.Type);
     }
 
+    [Fact]
+    public async Task SendMessage_NoMentionMatch_DropsAndReturnsEmptyEvents()
+    {
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversationId = Guid.NewGuid().ToString();
+        var conv = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+        conv.MentionNames = ["Dex"];
+        store.Update(conv);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/messages",
+            new { Content = "hello there" });
+
+        response.EnsureSuccessStatusCode();
+        var events = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        Assert.NotNull(events);
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public async Task SendMessage_MentionMatch_Responds()
+    {
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversationId = Guid.NewGuid().ToString();
+        var conv = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+        conv.MentionNames = ["Dex"];
+        store.Update(conv);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/messages",
+            new { Content = "hey Dex what's up" });
+
+        response.EnsureSuccessStatusCode();
+        var events = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        Assert.NotNull(events);
+        Assert.NotEmpty(events);
+    }
+
     private sealed class FakeTextProvider : ILlmTextProvider
     {
         public string Key => "text-provider";
