@@ -34,7 +34,8 @@ src/agent/
   OpenAgent.Contracts/                    Interfaces — IAgentLogic, IConversationStore, ILlmTextProvider, ILlmVoiceProvider, IVoiceSessionManager, ITool, IToolHandler, IOutboundSender
   OpenAgent.Models/                       Shared models — Conversation, Message, ConversationType, voice events
     Common/                               CompletionEvent hierarchy (TextDelta, ToolCallEvent, ToolResultEvent)
-  OpenAgent.ConversationStore.Sqlite/     SQLite persistent store (conversations.db) with schema migration
+  OpenAgent.ConversationStore.Sqlite/     SQLite persistent store (conversations.db) + tool-result blobs, schema migration, compaction core
+  OpenAgent.Compaction/                   CompactionSummarizer, CompactionPrompt (Initial/Update), CompactionCutPoint (token-walk, boundary-safe), TokenEstimator
   OpenAgent.LlmText.OpenAIAzure/         Azure OpenAI Chat Completions provider
   OpenAgent.LlmText.AnthropicSubscription/ Anthropic Messages API via Claude subscription setup-token (OAuth)
   OpenAgent.LlmVoice.OpenAIAzure/        Azure OpenAI Realtime voice provider
@@ -82,6 +83,9 @@ All text provider consumers (WebSocket endpoints, channel message handlers) reso
 ### CompletionEvent is the universal output type
 `CompletionEvent` is an abstract record with three subtypes: `TextDelta`, `ToolCallEvent`, `ToolResultEvent`. Both REST and WebSocket use the same events — REST collects them into a JSON array, WebSocket streams them as individual messages.
 
+### Store everything, compute the LLM view
+Persistence and LLM context are separate concerns. `IConversationStore.GetMessages(id)` returns raw stored history; the LLM-facing view is built inside each provider's `BuildChatMessages`. Tool results persist full content to `{dataPath}/conversations/{conversationId}/tool-results/{messageId}.txt` (referenced by `Messages.ToolResultRef`) and are loaded on demand via `GetMessages(id, includeToolResultBlobs: true)`. The compaction summary lives on `Conversation.Context`; providers inject it as a `<summary>`-wrapped **user** message so the real system prompt stays stable and cache-friendly. The UI never sees the summary — only post-cut messages. `Messages.Content` always carries the compact tool-result stub as a fallback when the blob is missing.
+
 ### Tool infrastructure
 - **ITool** — self-contained tool with definition (JSON Schema) and execution
 - **IToolHandler** — groups related tools under a capability domain (e.g. FileSystem, Shell)
@@ -122,7 +126,8 @@ All endpoints require `X-Api-Key` header except `/health`.
 |--------|-------|-------------|
 | `GET` | `/api/conversations` | List all conversations |
 | `GET` | `/api/conversations/{conversationId}` | Get conversation with messages |
-| `DELETE` | `/api/conversations/{conversationId}` | Delete conversation |
+| `DELETE` | `/api/conversations/{conversationId}` | Delete conversation (cascades to `tool-results/` blobs) |
+| `POST` | `/api/conversations/{conversationId}/compact` | Manual compaction trigger, optional body `{"instructions": "..."}` — returns `{ compacted: bool }` |
 
 #### Chat (text completion)
 | Method | Route | Description |
@@ -319,6 +324,16 @@ Session-to-session notes. Save memories here in CLAUDE.md — do NOT create sepa
 - **Embedding providers: one project per model family.** Current: `OpenAgent.Embedding.OnnxMultilingualE5` (XLM-R Unigram SentencePiece, `ProviderKey = "multilingual-e5"`), `OpenAgent.Embedding.OnnxBge` (BERT WordPiece, `ProviderKey = "bge"`). Each provider exposes `Key`, `Model`, `Dimensions`, reads its model from `AgentConfig.EmbeddingModel`, and auto-downloads from HuggingFace into `{dataPath}/models/{model}/` on first use (in-memory `SemaphoreSlim` + atomic temp-file rename). No shared base class — copying the nearest sibling is the intended way to add a new family.
 - **Tool descriptions prescribe when to call, not just what the tool does.** Observed: LLMs ignore tools whose `Description` reads like reference docs. The description is the decision prompt. See `SearchMemoryTool` for a worked example (explicit "call this BEFORE saying you don't remember" + trigger conditions).
 - Each system job today is its own `IHostedService`. Once #19 lands we should extract a small `ISystemJob` / `SystemJobRunner` abstraction so all three jobs share one tick loop and admin visibility — deferred until the second instance.
+
+### Context Management Rewrite (shipped 2026-04-24)
+Three-PR rewrite landed on master: tool-result blob storage, token-aware boundary-safe cut points, per-model context window, iterative compaction prompts, three triggers (threshold/overflow/manual). Design doc: [docs/plans/2026-04-24-context-management-rewrite.md](docs/plans/2026-04-24-context-management-rewrite.md). Key behaviors:
+- **Three compaction triggers** all route through `SqliteConversationStore.PerformCompactionAsync(id, reason, customInstructions?, ct)`. Reasons: `Threshold` (post-turn background, fires when `LastPromptTokens >= ContextWindowTokens * CompactionTriggerPercent / 100`), `Overflow` (providers catch context-length errors, call `IAgentLogic.CompactAsync`, retry the turn **once**; second overflow surfaces as error), `Manual` (`POST /api/conversations/{id}/compact`).
+- **Cut point algorithm** (`CompactionCutPoint.Find`): walks messages newest → oldest accumulating estimated tokens until `KeepRecentTokens` budget is reached, then snaps to the nearest earlier `user` or `assistant`-without-tool-calls boundary. Never splits a tool-call/tool-result pair.
+- **Iterative summaries.** `CompactionPrompt.Initial` runs on the first compaction; `CompactionPrompt.Update` wraps the prior `Conversation.Context` in `<previous-summary>` tags and merges new messages into it. Both prompts require preserving the *content* of `search_memory` / `load_memory_chunks` results so the post-cut agent doesn't re-search.
+- **Per-conversation cancellation.** `ConcurrentDictionary<string, CancellationTokenSource>` in the store; `Delete(conversationId)` and store `Dispose()` both cancel in-flight compactions. Cutoff-swap guarded by a snapshot of `LastRowId` so concurrent writes during summarization aren't absorbed.
+- **Observability.** Structured Serilog events: `compaction.start` / `compaction.complete` (with `messagesCompacted`, `tokensBefore`, `durationMs`) / `compaction.error` / `compaction.cancelled`. Query via `/api/logs?search=compaction`.
+- **Disabled compaction is graceful.** When `AgentConfig.CompactionProvider` or `CompactionModel` is unset, `CompactionSummarizer` throws `CompactionDisabledException` once (warn-logged once per startup) and all callers fall through returning `false` — no error loops.
+- **CI flake note.** `VoiceWebSocketTests` class cleanup occasionally throws `ObjectDisposedException` on Linux/Docker CI (all 308 tests pass; only xUnit's IClassFixture teardown fails). Does not reproduce locally on Windows. First seen on the PR 1+2+3 merge; rerunning the failed job passed. Investigate if it recurs — likely a race between `WebApplicationFactory` teardown and a background hosted-service Stop.
 
 ### User Preferences
 - Prefers design discussions before implementation — brainstorm first, then plan, then build
