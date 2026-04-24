@@ -139,5 +139,27 @@ public static class ConversationEndpoints
             store.Delete(conversationId);
             return Results.NoContent();
         });
+
+        group.MapPost("/{conversationId}/compact", async (
+            string conversationId,
+            CompactRequest? body,
+            IConversationStore store,
+            CancellationToken ct) =>
+        {
+            if (store.Get(conversationId) is null)
+                return Results.NotFound();
+
+            var compacted = await store.CompactNowAsync(
+                conversationId,
+                CompactionReason.Manual,
+                body?.Instructions,
+                ct);
+
+            return Results.Ok(new { compacted });
+        });
     }
 }
+
+/// <summary>Optional body for POST /api/conversations/{id}/compact.</summary>
+public sealed record CompactRequest(
+    [property: System.Text.Json.Serialization.JsonPropertyName("instructions")] string? Instructions);
