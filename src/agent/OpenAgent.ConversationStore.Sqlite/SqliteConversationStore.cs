@@ -554,8 +554,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             _logger.LogInformation("Compacting {Count} messages for conversation {ConversationId} (reason: {Reason}), cutoff rowid {RowId}",
                 toCompact.Count, conversationId, reason, newCutoffRowId);
 
-            // Task 6 adds customInstructions + ct to this call.
-            var result = await _compactionSummarizer.SummarizeAsync(conversation.Context, toCompact);
+            var result = await _compactionSummarizer.SummarizeAsync(
+                conversation.Context, toCompact, customInstructions, ct);
 
             UpdateCompactionState(conversationId,
                 compactionRunning: false,

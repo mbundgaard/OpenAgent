@@ -360,11 +360,17 @@ public class SqliteConversationStoreTests : IDisposable
     {
         public IReadOnlyList<Message>? LastMessages { get; private set; }
         public string? LastExistingContext { get; private set; }
+        public string? LastCustomInstructions { get; private set; }
 
-        public Task<CompactionResult> SummarizeAsync(string? existingContext, IReadOnlyList<Message> messages, CancellationToken ct = default)
+        public Task<CompactionResult> SummarizeAsync(
+            string? existingContext,
+            IReadOnlyList<Message> messages,
+            string? customInstructions = null,
+            CancellationToken ct = default)
         {
             LastExistingContext = existingContext;
             LastMessages = messages;
+            LastCustomInstructions = customInstructions;
             return Task.FromResult(new CompactionResult { Context = context });
         }
     }
