@@ -95,9 +95,11 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
 
     private sealed class CapturingTextProvider : ILlmTextProvider
     {
+        private int _callCount;
+
         public Conversation? LastConversation { get; private set; }
         public Message? LastUserMessage { get; private set; }
-        public int CallCount { get; private set; }
+        public int CallCount => _callCount;
 
         public string Key => "text-provider";
         public IReadOnlyList<ProviderConfigField> ConfigFields => [];
@@ -109,7 +111,7 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
         {
             LastConversation = conversation;
             LastUserMessage = userMessage;
-            CallCount++;
+            Interlocked.Increment(ref _callCount);
             yield return new TextDelta("ok");
             await Task.CompletedTask;
         }
