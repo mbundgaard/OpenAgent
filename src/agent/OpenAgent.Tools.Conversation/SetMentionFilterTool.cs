@@ -4,21 +4,21 @@ using OpenAgent.Contracts;
 namespace OpenAgent.Tools.Conversation;
 
 /// <summary>
-/// Sets the mention-name filter on the conversation. When set, inbound user
+/// Sets the mention filter on the conversation. When set, inbound user
 /// messages that do not contain any of the listed names (case-insensitive
 /// substring match) are silently dropped before reaching the LLM. Useful
 /// when the conversation lives in a busy group chat and the agent should
 /// only respond when explicitly addressed.
 /// </summary>
-public sealed class SetMentionNamesTool(IConversationStore store) : ITool
+public sealed class SetMentionFilterTool(IConversationStore store) : ITool
 {
     private const int MaxNames = 20;
     private const int MaxNameLength = 50;
 
     public AgentToolDefinition Definition { get; } = new()
     {
-        Name = "set_mention_names",
-        Description = "Enable mention-filter mode on this conversation. Only incoming user messages that contain at least one of the listed names (case-insensitive substring) will be processed; all other messages are dropped silently. Use when the user asks you to 'only reply when mentioned', or when you've been added to a noisy group chat. Replaces any existing mention-name list. Call clear_mention_names to go back to replying to every message.",
+        Name = "set_mention_filter",
+        Description = "Enable mention-filter mode on this conversation. Only incoming user messages that contain at least one of the listed names (case-insensitive substring) will be processed; all other messages are dropped silently. Use when the user asks you to 'only reply when mentioned', or when you've been added to a noisy group chat. Replaces any existing mention filter. Call clear_mention_filter to go back to replying to every message.",
         Parameters = new
         {
             type = "object",
@@ -54,7 +54,7 @@ public sealed class SetMentionNamesTool(IConversationStore store) : ITool
         }
 
         if (cleaned.Count == 0)
-            return Task.FromResult(JsonSerializer.Serialize(new { error = "At least one non-empty name is required. Use clear_mention_names to disable the filter." }));
+            return Task.FromResult(JsonSerializer.Serialize(new { error = "At least one non-empty name is required. Use clear_mention_filter to disable the filter." }));
 
         if (cleaned.Count > MaxNames)
             return Task.FromResult(JsonSerializer.Serialize(new { error = $"Too many names ({cleaned.Count}, max {MaxNames})." }));
@@ -63,15 +63,15 @@ public sealed class SetMentionNamesTool(IConversationStore store) : ITool
         if (conversation is null)
             return Task.FromResult(JsonSerializer.Serialize(new { error = "Conversation not found" }));
 
-        var previous = conversation.MentionNames;
-        conversation.MentionNames = cleaned;
+        var previous = conversation.MentionFilter;
+        conversation.MentionFilter = cleaned;
         store.Update(conversation);
 
         return Task.FromResult(JsonSerializer.Serialize(new
         {
             status = "set",
-            mention_names = cleaned,
-            previous_mention_names = previous,
+            mention_filter = cleaned,
+            previous_mention_filter = previous,
             message = "Mention filter enabled. Only messages containing one of these names will be processed."
         }));
     }

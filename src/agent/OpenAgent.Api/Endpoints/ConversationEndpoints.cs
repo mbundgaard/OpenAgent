@@ -44,7 +44,7 @@ public static class ConversationEndpoints
                 ActiveSkills = c.ActiveSkills,
                 DisplayName = c.DisplayName,
                 Intention = c.Intention,
-                MentionNames = c.MentionNames
+                MentionFilter = c.MentionFilter
             }));
         });
 
@@ -75,7 +75,7 @@ public static class ConversationEndpoints
                 ChannelChatId = conversation.ChannelChatId,
                 DisplayName = conversation.DisplayName,
                 Intention = conversation.Intention,
-                MentionNames = conversation.MentionNames
+                MentionFilter = conversation.MentionFilter
             });
         });
 
@@ -109,9 +109,9 @@ public static class ConversationEndpoints
             // Empty string explicitly clears the intention; null leaves it unchanged.
             if (request.Intention is not null)
                 conversation.Intention = request.Intention.Length == 0 ? null : request.Intention;
-            // Empty list explicitly clears MentionNames; null leaves it unchanged.
-            if (request.MentionNames is not null)
-                conversation.MentionNames = request.MentionNames.Count == 0 ? null : request.MentionNames;
+            // Empty list explicitly clears the mention filter; null leaves it unchanged.
+            if (request.MentionFilter is not null)
+                conversation.MentionFilter = request.MentionFilter.Count == 0 ? null : request.MentionFilter;
 
             store.Update(conversation);
 
@@ -136,7 +136,7 @@ public static class ConversationEndpoints
                 ChannelChatId = conversation.ChannelChatId,
                 DisplayName = conversation.DisplayName,
                 Intention = conversation.Intention,
-                MentionNames = conversation.MentionNames
+                MentionFilter = conversation.MentionFilter
             });
         });
 

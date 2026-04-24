@@ -5,7 +5,7 @@ using OpenAgent.Tools.Conversation;
 
 namespace OpenAgent.Tests.ConversationTools;
 
-public class MentionNamesToolTests
+public class MentionFilterToolTests
 {
     private readonly InMemoryConversationStore _store = new();
 
@@ -16,38 +16,38 @@ public class MentionNamesToolTests
     public async Task Set_ReplacesListAndPersistsNormalization()
     {
         Seed("c1");
-        var tool = new SetMentionNamesTool(_store);
+        var tool = new SetMentionFilterTool(_store);
 
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { names = new[] { "  Dex ", "fox", "  " } }), "c1");
         var doc = JsonDocument.Parse(result);
 
         Assert.Equal("set", doc.RootElement.GetProperty("status").GetString());
-        var names = doc.RootElement.GetProperty("mention_names").EnumerateArray().Select(e => e.GetString()).ToArray();
+        var names = doc.RootElement.GetProperty("mention_filter").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Equal(new[] { "Dex", "fox" }, names);
 
-        Assert.Equal(new[] { "Dex", "fox" }, _store.Get("c1")!.MentionNames);
+        Assert.Equal(new[] { "Dex", "fox" }, _store.Get("c1")!.MentionFilter);
     }
 
     [Fact]
     public async Task Set_RejectsEmptyArray()
     {
         Seed("c1");
-        var tool = new SetMentionNamesTool(_store);
+        var tool = new SetMentionFilterTool(_store);
 
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { names = Array.Empty<string>() }), "c1");
         var doc = JsonDocument.Parse(result);
 
-        Assert.Contains("clear_mention_names", doc.RootElement.GetProperty("error").GetString());
-        Assert.Null(_store.Get("c1")!.MentionNames);
+        Assert.Contains("clear_mention_filter", doc.RootElement.GetProperty("error").GetString());
+        Assert.Null(_store.Get("c1")!.MentionFilter);
     }
 
     [Fact]
     public async Task Set_RejectsAllWhitespaceEntries()
     {
         Seed("c1");
-        var tool = new SetMentionNamesTool(_store);
+        var tool = new SetMentionFilterTool(_store);
 
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { names = new[] { "", "  ", "\t" } }), "c1");
@@ -60,7 +60,7 @@ public class MentionNamesToolTests
     public async Task Set_RejectsOversizeName()
     {
         Seed("c1");
-        var tool = new SetMentionNamesTool(_store);
+        var tool = new SetMentionFilterTool(_store);
 
         var longName = new string('x', 51);
         var result = await tool.ExecuteAsync(
@@ -73,7 +73,7 @@ public class MentionNamesToolTests
     [Fact]
     public async Task Set_MissingConversation_ReturnsError()
     {
-        var tool = new SetMentionNamesTool(_store);
+        var tool = new SetMentionFilterTool(_store);
 
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { names = new[] { "Dex" } }), "does-not-exist");
@@ -87,15 +87,15 @@ public class MentionNamesToolTests
     {
         Seed("c1");
         var conversation = _store.Get("c1")!;
-        conversation.MentionNames = ["Dex"];
+        conversation.MentionFilter = ["Dex"];
         _store.Update(conversation);
 
-        var tool = new ClearMentionNamesTool(_store);
+        var tool = new ClearMentionFilterTool(_store);
         var result = await tool.ExecuteAsync("{}", "c1");
         var doc = JsonDocument.Parse(result);
 
         Assert.Equal("cleared", doc.RootElement.GetProperty("status").GetString());
-        Assert.Null(_store.Get("c1")!.MentionNames);
+        Assert.Null(_store.Get("c1")!.MentionFilter);
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public class MentionNamesToolTests
     {
         Seed("c1");
 
-        var tool = new ClearMentionNamesTool(_store);
+        var tool = new ClearMentionFilterTool(_store);
         var result = await tool.ExecuteAsync("{}", "c1");
         var doc = JsonDocument.Parse(result);
 
@@ -113,7 +113,7 @@ public class MentionNamesToolTests
     [Fact]
     public async Task Clear_MissingConversation_ReturnsError()
     {
-        var tool = new ClearMentionNamesTool(_store);
+        var tool = new ClearMentionFilterTool(_store);
         var result = await tool.ExecuteAsync("{}", "does-not-exist");
         var doc = JsonDocument.Parse(result);
 

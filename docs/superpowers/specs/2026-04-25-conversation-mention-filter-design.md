@@ -23,9 +23,9 @@ We need a per-conversation control that filters inbound user messages so the age
 Add a nullable string list to `Conversation`:
 
 ```csharp
-[JsonPropertyName("mention_names")]
+[JsonPropertyName("mention_filter")]
 [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-public List<string>? MentionNames { get; set; }
+public List<string>? MentionFilter { get; set; }
 ```
 
 Semantics:
@@ -37,7 +37,7 @@ This mirrors the existing `ActiveSkills` shape — same nullability, same JSON t
 
 ### Storage
 
-New column `mention_names TEXT NULL` on the `conversations` table. Added via the existing `TryAddColumn` migration helper in `SqliteConversationStore`. Serialization/hydration exactly mirrors `ActiveSkills` (JSON array text).
+New column `mention_filter TEXT NULL` on the `conversations` table. Added via the existing `TryAddColumn` migration helper in `SqliteConversationStore`. Serialization/hydration exactly mirrors `ActiveSkills` (JSON array text).
 
 Load path: JSON-decode to `List<string>?`; treat empty/whitespace strings as absent so an accidental `[""]` doesn't match everything.
 
@@ -48,14 +48,14 @@ Save path: serialize via `Update(conversation)`. `null` and `[]` both persist as
 Single helper in `OpenAgent.Models.Conversations`:
 
 ```csharp
-public static class MentionFilter
+public static class MentionMatcher
 {
     public static bool ShouldAccept(Conversation conversation, string userText)
     {
-        if (conversation.MentionNames is null or { Count: 0 })
+        if (conversation.MentionFilter is null or { Count: 0 })
             return true;
 
-        return conversation.MentionNames.Any(name =>
+        return conversation.MentionFilter.Any(name =>
             !string.IsNullOrEmpty(name) &&
             userText.Contains(name, StringComparison.OrdinalIgnoreCase));
     }
@@ -73,7 +73,7 @@ Called at every inbound-user-text entry point, **before** any side effect (conve
 
 On drop: no database write, no assistant turn started, no typing/composing indicator. One `LogDebug` line per drop (`"Mention filter dropped message in conversation {ConversationId}"`) for traceability without log spam.
 
-The filter runs after conversation lookup — we need the `Conversation` row to read `MentionNames` — but before we mutate any state.
+The filter runs after conversation lookup — we need the `Conversation` row to read `MentionFilter` — but before we mutate any state.
 
 ### Channel-specific note: Telegram `NewChatMembers`
 
@@ -81,7 +81,7 @@ The bot-added-to-group code path (`HandleBotAddedToGroupAsync`) runs before the 
 
 ### API
 
-Extend `UpdateConversationRequest` with an optional `MentionNames : List<string>?`. In the existing `PATCH /api/conversations/{conversationId}` handler:
+Extend `UpdateConversationRequest` with an optional `MentionFilter : List<string>?`. In the existing `PATCH /api/conversations/{conversationId}` handler:
 
 - Field omitted or null in the request → leave unchanged (matches the pattern used by `Provider`, `Model`, `Source`, etc.).
 - Empty list `[]` → clear (back to reply-all).
@@ -95,16 +95,16 @@ Integration tests using `WebApplicationFactory`:
 
 1. **PATCH round-trip.** PATCH with `["Dex"]`, GET reflects the list. PATCH with `[]` clears it; a subsequent GET omits the field (null is not serialized, per `JsonIgnoreWhenWritingNull`).
 2. **Drop behavior via REST chat.**
-   - With `MentionNames = ["Dex"]`, `POST /api/conversations/{id}/messages` with body "hello" returns a response, but the message store for that conversation is unchanged and no assistant message is persisted.
+   - With `MentionFilter = ["Dex"]`, `POST /api/conversations/{id}/messages` with body "hello" returns a response, but the message store for that conversation is unchanged and no assistant message is persisted.
    - With the same config, POST "hey Dex what's up" produces a normal assistant turn.
 3. **Case-insensitive match.** With `["dex"]`, "DEX!" passes.
 4. **Substring behavior (documented).** With `["Dex"]`, "index" passes — this is the chosen v1 semantics and the test pins it so future word-boundary changes are deliberate.
-5. **Null mention list.** With `MentionNames = null` (default), any message passes.
+5. **Null mention list.** With `MentionFilter = null` (default), any message passes.
 
-Channel handlers already have integration coverage; a single unit test over `MentionFilter.ShouldAccept` covers their branch without spinning up platform mocks.
+Channel handlers already have integration coverage; a single unit test over `MentionMatcher.ShouldAccept` covers their branch without spinning up platform mocks.
 
 ## Rollout
 
-- Back-compat: existing conversations load with `MentionNames = null`. No behavior change unless explicitly configured.
+- Back-compat: existing conversations load with `MentionFilter = null`. No behavior change unless explicitly configured.
 - Migration: additive column via `TryAddColumn`. Existing DBs are upgraded in place on startup.
 - No config-file changes, no new environment variables.

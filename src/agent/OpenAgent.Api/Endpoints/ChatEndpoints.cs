@@ -41,7 +41,7 @@ public static class ChatEndpoints
             conversation.Type = ConversationType.Text;
 
             // Drop messages that don't mention any required name
-            if (!MentionFilter.ShouldAccept(conversation, request.Content ?? string.Empty))
+            if (!MentionMatcher.ShouldAccept(conversation, request.Content ?? string.Empty))
                 return Results.Json(Array.Empty<object>(), JsonOptions);
 
             var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);

@@ -96,7 +96,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
-    public async Task PatchConversation_MentionNames_RoundTrips()
+    public async Task PatchConversation_MentionFilter_RoundTrips()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", ConversationType.Text, "test-provider", "test-model");
@@ -107,22 +107,22 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
         // Set a list
         var setResponse = await client.PatchAsJsonAsync(
             $"/api/conversations/{conversation.Id}",
-            new { mention_names = new[] { "Dex", "fox" } });
+            new { mention_filter = new[] { "Dex", "fox" } });
         setResponse.EnsureSuccessStatusCode();
 
         var afterSet = await client.GetFromJsonAsync<JsonElement>($"/api/conversations/{conversation.Id}");
-        var names = afterSet.GetProperty("mention_names").EnumerateArray().Select(e => e.GetString()).ToArray();
+        var names = afterSet.GetProperty("mention_filter").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Equal(new[] { "Dex", "fox" }, names);
 
         // Clear with empty list -> absent in response
         var clearResponse = await client.PatchAsJsonAsync(
             $"/api/conversations/{conversation.Id}",
-            new { mention_names = Array.Empty<string>() });
+            new { mention_filter = Array.Empty<string>() });
         clearResponse.EnsureSuccessStatusCode();
 
         var afterClear = await client.GetFromJsonAsync<JsonElement>($"/api/conversations/{conversation.Id}");
-        Assert.False(afterClear.TryGetProperty("mention_names", out _),
-            "mention_names should be omitted when null (JsonIgnoreWhenWritingNull)");
+        Assert.False(afterClear.TryGetProperty("mention_filter", out _),
+            "mention_filter should be omitted when null (JsonIgnoreWhenWritingNull)");
     }
 
     private record ConversationResponse(string Id);

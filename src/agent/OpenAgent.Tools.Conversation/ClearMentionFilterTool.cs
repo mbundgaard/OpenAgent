@@ -4,13 +4,13 @@ using OpenAgent.Contracts;
 namespace OpenAgent.Tools.Conversation;
 
 /// <summary>
-/// Removes the mention-name filter, restoring the conversation to reply-to-all.
+/// Removes the mention filter, restoring the conversation to reply-to-all.
 /// </summary>
-public sealed class ClearMentionNamesTool(IConversationStore store) : ITool
+public sealed class ClearMentionFilterTool(IConversationStore store) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
-        Name = "clear_mention_names",
+        Name = "clear_mention_filter",
         Description = "Disable the mention filter, restoring the conversation to reply-to-all. Use when the user asks you to 'respond to everything again' or when you were previously limited to mentions and that restriction should be lifted.",
         Parameters = new
         {
@@ -26,17 +26,17 @@ public sealed class ClearMentionNamesTool(IConversationStore store) : ITool
         if (conversation is null)
             return Task.FromResult(JsonSerializer.Serialize(new { error = "Conversation not found" }));
 
-        if (conversation.MentionNames is null || conversation.MentionNames.Count == 0)
+        if (conversation.MentionFilter is null || conversation.MentionFilter.Count == 0)
             return Task.FromResult(JsonSerializer.Serialize(new { status = "not_set" }));
 
-        var previous = conversation.MentionNames;
-        conversation.MentionNames = null;
+        var previous = conversation.MentionFilter;
+        conversation.MentionFilter = null;
         store.Update(conversation);
 
         return Task.FromResult(JsonSerializer.Serialize(new
         {
             status = "cleared",
-            previous_mention_names = previous
+            previous_mention_filter = previous
         }));
     }
 }

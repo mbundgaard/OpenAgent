@@ -4,7 +4,7 @@ namespace OpenAgent.Tools.Conversation;
 
 /// <summary>
 /// Tools that read or mutate per-conversation state — the active model/provider,
-/// the conversation intention, and the mention-name filter. Includes
+/// the conversation intention, and the mention filter. Includes
 /// get_available_models for discovering what set_model accepts.
 /// </summary>
 public sealed class ConversationToolHandler : IToolHandler
@@ -20,8 +20,8 @@ public sealed class ConversationToolHandler : IToolHandler
             new SetModelTool(store, resolveProviders),
             new SetIntentionTool(store),
             new ClearIntentionTool(store),
-            new SetMentionNamesTool(store),
-            new ClearMentionNamesTool(store)
+            new SetMentionFilterTool(store),
+            new ClearMentionFilterTool(store)
         ];
     }
 }

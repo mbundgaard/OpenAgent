@@ -144,12 +144,12 @@ public sealed class Conversation
     public string? Intention { get; set; }
 
     /// <summary>
-    /// Case-insensitive trigger names for incoming user messages. When non-empty,
+    /// Case-insensitive trigger names for the mention filter. When non-empty,
     /// inbound user text that does not contain any of these names (substring match)
     /// is silently dropped before persistence or LLM invocation.
     /// Null or empty means "reply to all" — the default behavior.
     /// </summary>
-    [JsonPropertyName("mention_names")]
+    [JsonPropertyName("mention_filter")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<string>? MentionNames { get; set; }
+    public List<string>? MentionFilter { get; set; }
 }
