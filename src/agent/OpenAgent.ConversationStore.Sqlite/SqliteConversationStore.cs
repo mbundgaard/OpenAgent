@@ -320,6 +320,14 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
     public void AddMessage(string conversationId, Message message)
     {
+        // If the caller provided full tool result content, persist it to disk first and
+        // record the relative path in ToolResultRef. Content keeps the compact summary.
+        string? toolResultRef = null;
+        if (!string.IsNullOrEmpty(message.FullToolResult))
+        {
+            toolResultRef = SaveToolResultBlob(conversationId, message.Id, message.FullToolResult);
+        }
+
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -339,7 +347,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@completionTokens", (object?)message.CompletionTokens ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@elapsedMs", (object?)message.ElapsedMs ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@modality", (int)message.Modality);
-        cmd.Parameters.AddWithValue("@toolResultRef", DBNull.Value);
+        cmd.Parameters.AddWithValue("@toolResultRef", (object?)toolResultRef ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 

@@ -210,6 +210,34 @@ public class SqliteConversationStoreTests : IDisposable
         Assert.Null(_store.Get("does-not-exist"));
     }
 
+    [Fact]
+    public void AddMessage_persists_full_tool_result_to_disk_and_sets_ref()
+    {
+        _store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");
+
+        var toolMsg = new Message
+        {
+            Id = "tm1",
+            ConversationId = "conv1",
+            Role = "tool",
+            Content = """{"tool":"read","status":"ok","size":21}""",
+            FullToolResult = "Hello, world!\nLine 2\n",
+            ToolCallId = "call_abc"
+        };
+        _store.AddMessage("conv1", toolMsg);
+
+        // Verify disk file exists at the expected location
+        var expectedPath = Path.Combine(_dbDir, "conversations", "conv1", "tool-results", "tm1.txt");
+        Assert.True(File.Exists(expectedPath), $"Expected blob file at {expectedPath}");
+        Assert.Equal("Hello, world!\nLine 2\n", File.ReadAllText(expectedPath));
+
+        // Verify ToolResultRef round-trips via default GetMessages (no blob load)
+        var messages = _store.GetMessages("conv1");
+        var stored = messages.Single(m => m.Id == "tm1");
+        Assert.Equal("tool-results/tm1.txt", stored.ToolResultRef);
+        Assert.Null(stored.FullToolResult); // not loaded unless explicitly requested
+    }
+
     private sealed class FakeCompactionSummarizer(string context) : ICompactionSummarizer
     {
         public IReadOnlyList<Message>? LastMessages { get; private set; }
