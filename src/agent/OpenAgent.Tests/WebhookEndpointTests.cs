@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
-using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 
@@ -65,6 +64,33 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conv = store.Get(unknownId);
         Assert.Null(conv);
+    }
+
+    [Fact]
+    public async Task PostWebhook_ValidBody_Returns202AndTriggersCompletion()
+    {
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversationId = Guid.NewGuid().ToString();
+        store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+
+        var client = _factory.CreateClient();
+        var response = await client.PostAsync(
+            $"/api/webhook/conversation/{conversationId}",
+            new StringContent("new episode added: Foo S01E02", Encoding.UTF8, "text/plain"));
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // Fire-and-forget: poll briefly until the background task captures the call
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (_capturingProvider.CallCount == 0 && DateTime.UtcNow < deadline)
+            await Task.Delay(25);
+
+        Assert.Equal(1, _capturingProvider.CallCount);
+        Assert.NotNull(_capturingProvider.LastConversation);
+        Assert.Equal(conversationId, _capturingProvider.LastConversation!.Id);
+        Assert.NotNull(_capturingProvider.LastUserMessage);
+        Assert.Equal("user", _capturingProvider.LastUserMessage!.Role);
+        Assert.Equal("new episode added: Foo S01E02", _capturingProvider.LastUserMessage!.Content);
     }
 
     private sealed class CapturingTextProvider : ILlmTextProvider

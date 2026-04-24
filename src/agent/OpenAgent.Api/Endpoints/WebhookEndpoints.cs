@@ -40,6 +40,35 @@ public static class WebhookEndpoints
             if (conversation is null)
                 return Results.NotFound();
 
+            var userMessage = new Message
+            {
+                Id = Guid.NewGuid().ToString(),
+                ConversationId = conversationId,
+                Role = "user",
+                Content = body,
+                Modality = MessageModality.Text
+            };
+
+            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
+            var logger = loggerFactory.CreateLogger("WebhookEndpoints");
+
+            // Fire-and-forget — intentionally use CancellationToken.None so the completion
+            // survives the HTTP response being sent. Safe because IConversationStore and
+            // the provider are singletons, not request-scoped.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var _ in textProvider.CompleteAsync(conversation, userMessage, CancellationToken.None))
+                    {
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Webhook completion failed for conversation {ConversationId}", conversationId);
+                }
+            });
+
             return Results.Accepted();
         }).AllowAnonymous();
     }
