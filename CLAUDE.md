@@ -190,6 +190,11 @@ All endpoints require `X-Api-Key` header except `/health`.
 | `POST` | `/api/connections/{connectionId}/start` | Start connection |
 | `POST` | `/api/connections/{connectionId}/stop` | Stop connection |
 
+#### Webhooks
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/webhook/conversation/{conversationId}` | Anonymous. Push body (plain text, any `Content-Type`) as a user message into an existing conversation; agent processes asynchronously. Returns `202`. `404` if conversation does not exist, `400` if body empty. |
+
 ### Authentication
 Pluggable auth via extension methods on `IServiceCollection`. Currently `AddApiKeyAuth(string apiKey)` validates `X-Api-Key` header against the resolved key. Swap for `AddEntraIdAuth()` when migrating to Entra ID — same shape, different implementation. `/health` is anonymous, all other endpoints require authorization.
 
