@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
@@ -19,6 +20,12 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     private readonly string _dataPath;
     private readonly CompactionConfig _compactionConfig;
     private readonly ICompactionSummarizer? _compactionSummarizer;
+
+    /// <summary>
+    /// Per-conversation linked cancellation tokens for in-flight compactions. Used to
+    /// propagate cancellation when a conversation is deleted or the host shuts down.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _compactionCts = new();
 
     public SqliteConversationStore(
         AgentEnvironment environment,
@@ -306,6 +313,15 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
     public bool Delete(string conversationId)
     {
+        // Cancel any in-flight compaction before tearing down the conversation's data.
+        // The compaction task's finally block will handle the disposal and UpdateCompactionState,
+        // but since we're about to delete the conversation row those writes will be no-ops.
+        if (_compactionCts.TryRemove(conversationId, out var cts))
+        {
+            try { cts.Cancel(); } catch { /* ignore */ }
+            cts.Dispose();
+        }
+
         using var connection = Open();
 
         // Delete messages first (FK cascade may not be enforced without PRAGMA)
@@ -477,7 +493,15 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
     public void Dispose()
     {
-        // No persistent connection to dispose — each operation opens/closes its own
+        // Cancel and dispose any in-flight compaction CTS. Each compaction task's finally
+        // block may race with us here; the ConcurrentDictionary removal and null-safe
+        // Cancel/Dispose make the double-free benign.
+        foreach (var entry in _compactionCts)
+        {
+            try { entry.Value.Cancel(); entry.Value.Dispose(); } catch { /* ignore */ }
+        }
+        _compactionCts.Clear();
+        // No persistent connection to dispose — each operation opens/closes its own.
     }
 
     /// <summary>
@@ -531,11 +555,22 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         if (conversation is null) return false;
         if (conversation.CompactionRunning) return false;
 
+        // Register a linked cancellation token scoped to this conversation. Delete/Dispose
+        // trigger it; if another run is already in-flight, we bail rather than queue.
+        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (!_compactionCts.TryAdd(conversationId, linkedCts))
+        {
+            linkedCts.Dispose();
+            return false;
+        }
+
         // Acquire the running lock
         UpdateCompactionState(conversationId, compactionRunning: true, context: null, compactedUpToRowId: null);
 
         try
         {
+            // Rebind ct inside the try so callees use the linked token
+            ct = linkedCts.Token;
             // Load full tool result blobs so the summarizer sees real content, not stubs.
             var liveMessages = ReadMessagesFromDb(conversationId, conversation.CompactedUpToRowId);
             LoadToolResultBlobs(conversationId, liveMessages);
@@ -584,6 +619,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             var fresh = Get(conversationId);
             if (fresh?.CompactionRunning == true)
                 UpdateCompactionState(conversationId, compactionRunning: false, context: null, compactedUpToRowId: null);
+
+            // Always drop the CTS registration — whether we succeeded, cancelled, or threw.
+            if (_compactionCts.TryRemove(conversationId, out var removed))
+                removed.Dispose();
         }
     }
 

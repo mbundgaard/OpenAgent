@@ -356,6 +356,65 @@ public class SqliteConversationStoreTests : IDisposable
         Assert.Equal(200_000, refreshed.ContextWindowTokens);
     }
 
+    [Fact]
+    public async Task Delete_cancels_in_flight_compaction()
+    {
+        var gate = new TaskCompletionSource();
+        var summarizer = new GatedSummarizer(gate.Task);
+        var env = new AgentEnvironment { DataPath = _dbDir };
+        var config = new CompactionConfig { KeepRecentTokens = 1, MaxContextTokens = 100, CompactionTriggerPercent = 50 };
+        using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
+
+        store.GetOrCreate("conv-cancel", "test", ConversationType.Text, "p", "m");
+        for (var i = 0; i < 4; i++)
+        {
+            store.AddMessage("conv-cancel", new Message
+            {
+                Id = $"m{i}",
+                ConversationId = "conv-cancel",
+                Role = i % 2 == 0 ? "user" : "assistant",
+                Content = $"message {i}"
+            });
+        }
+
+        var compactTask = store.CompactNowAsync("conv-cancel", CompactionReason.Manual);
+
+        // Give the background task a moment to reach SummarizeAsync and register its CTS.
+        await Task.Delay(50);
+
+        // Delete should cancel the linked token while the summarizer is still blocked.
+        store.Delete("conv-cancel");
+
+        // Release the summarizer so it can observe the cancellation.
+        gate.SetResult();
+
+        // The compaction task resolves either false (cancelled cleanly) or throws
+        // OperationCanceledException — both satisfy the cancellation contract.
+        try
+        {
+            var compacted = await compactTask;
+            Assert.False(compacted, "Compaction should not have committed after Delete");
+        }
+        catch (OperationCanceledException)
+        {
+            // Also acceptable — the cancellation propagated as an exception.
+        }
+    }
+
+    private sealed class GatedSummarizer(Task gate) : ICompactionSummarizer
+    {
+        public async Task<CompactionResult> SummarizeAsync(
+            string? existingContext,
+            IReadOnlyList<Message> messages,
+            string? customInstructions = null,
+            CancellationToken ct = default)
+        {
+            // Wait for the test to release, or for cancellation to fire.
+            await gate.WaitAsync(ct);
+            return new CompactionResult { Context = "done" };
+        }
+    }
+
     private sealed class FakeCompactionSummarizer(string context) : ICompactionSummarizer
     {
         public IReadOnlyList<Message>? LastMessages { get; private set; }
