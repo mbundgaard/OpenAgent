@@ -305,6 +305,18 @@ public class SqliteConversationStoreTests : IDisposable
         Assert.Null(stored.FullToolResult); // not loaded unless explicitly requested
     }
 
+    [Fact]
+    public void ContextWindowTokens_persists_and_round_trips()
+    {
+        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");
+        conv.ContextWindowTokens = 200_000;
+        _store.Update(conv);
+
+        var refreshed = _store.Get("conv1");
+        Assert.NotNull(refreshed);
+        Assert.Equal(200_000, refreshed.ContextWindowTokens);
+    }
+
     private sealed class FakeCompactionSummarizer(string context) : ICompactionSummarizer
     {
         public IReadOnlyList<Message>? LastMessages { get; private set; }

@@ -44,6 +44,16 @@ public sealed class Conversation
     public int? LastPromptTokens { get; set; }
 
     /// <summary>
+    /// Cached context window size in tokens for the active model. Populated lazily by
+    /// providers on the first turn after a model switch (or on first use of a new
+    /// conversation). Used by the compaction threshold so it scales with the model
+    /// rather than a global constant. Null until first populated.
+    /// </summary>
+    [JsonPropertyName("context_window_tokens")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ContextWindowTokens { get; set; }
+
+    /// <summary>
     /// Structured summary of compacted messages — topic-grouped with timestamps and message references.
     /// Null until the first compaction runs.
     /// </summary>

@@ -6,6 +6,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\OpenAgent.Compaction\OpenAgent.Compaction.csproj" />
     <ProjectReference Include="..\OpenAgent.Contracts\OpenAgent.Contracts.csproj" />
   </ItemGroup>
 
