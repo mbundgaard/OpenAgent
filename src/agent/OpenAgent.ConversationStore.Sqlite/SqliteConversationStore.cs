@@ -486,7 +486,13 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         if (_compactionSummarizer is null) return;
         if (conversation.CompactionRunning) return;
         if (conversation.LastPromptTokens is null) return;
-        if (conversation.LastPromptTokens.Value < _compactionConfig.TriggerThreshold) return;
+
+        // Drive the threshold from the per-conversation context window (populated by the
+        // provider on first turn). Falls back to CompactionConfig.MaxContextTokens when the
+        // provider couldn't determine a window (unknown model, misconfiguration).
+        var window = conversation.ContextWindowTokens ?? _compactionConfig.MaxContextTokens;
+        var triggerThreshold = window * _compactionConfig.CompactionTriggerPercent / 100;
+        if (conversation.LastPromptTokens.Value < triggerThreshold) return;
 
         // Set lock
         conversation.CompactionRunning = true;

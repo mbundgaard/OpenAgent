@@ -60,6 +60,18 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
     public void Dispose() => _httpClient?.Dispose();
 
+    /// <inheritdoc />
+    public int? GetContextWindow(string model)
+    {
+        // Azure deployment names are user-chosen, so this is a best-effort table based on the
+        // underlying model family encoded in the deployment name. Unknown models return null
+        // and callers fall back to CompactionConfig.MaxContextTokens.
+        if (model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase)) return 400_000;
+        if (model.Contains("gpt-4o", StringComparison.OrdinalIgnoreCase)) return 128_000;
+        if (model.Contains("gpt-4", StringComparison.OrdinalIgnoreCase)) return 128_000;
+        return null;
+    }
+
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -69,6 +81,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         var conversationId = conversation.Id;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         logger.LogDebug("StreamAsync called for conversation {ConversationId}", conversationId);
+
+        // Populate the per-conversation context window cache on first turn or after a model
+        // switch. Used by the compaction threshold — lets it scale with the active model
+        // rather than relying on a global constant.
+        if (conversation.ContextWindowTokens is null)
+        {
+            var window = GetContextWindow(conversation.Model);
+            if (window is not null)
+                conversation.ContextWindowTokens = window;
+        }
 
         // Persist the caller-supplied user message
         agentLogic.AddMessage(conversationId, userMessage);

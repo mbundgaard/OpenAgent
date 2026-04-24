@@ -16,6 +16,7 @@ public sealed class ThrowingTextProvider : ILlmTextProvider
     public string Key => "throwing-text";
     public IReadOnlyList<ProviderConfigField> ConfigFields => [];
     public void Configure(JsonElement configuration) { }
+    public int? GetContextWindow(string model) => null;
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,

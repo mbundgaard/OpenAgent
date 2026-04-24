@@ -15,6 +15,7 @@ internal sealed class FakeModelProvider(string key, string[] models) : ILlmTextP
     public IReadOnlyList<ProviderConfigField> ConfigFields => [];
     public IReadOnlyList<string> Models => models;
     public void Configure(JsonElement configuration) { }
+    public int? GetContextWindow(string model) => null;
 
     public IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Models.Conversations.Conversation conversation, Message userMessage, CancellationToken ct = default)

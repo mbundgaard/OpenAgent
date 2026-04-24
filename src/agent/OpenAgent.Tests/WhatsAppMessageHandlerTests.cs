@@ -173,6 +173,7 @@ public class WhatsAppMessageHandlerTests
         public string Key => "capturing-text";
         public IReadOnlyList<ProviderConfigField> ConfigFields => [];
         public void Configure(JsonElement configuration) { }
+        public int? GetContextWindow(string model) => null;
 
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
             Conversation conversation,

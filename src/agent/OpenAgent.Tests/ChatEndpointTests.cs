@@ -105,6 +105,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         public string Key => "text-provider";
         public IReadOnlyList<ProviderConfigField> ConfigFields => [];
         public void Configure(JsonElement configuration) { }
+        public int? GetContextWindow(string model) => null;
 
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)

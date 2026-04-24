@@ -81,6 +81,16 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
     public void Dispose() => _httpClient?.Dispose();
 
     /// <inheritdoc />
+    public int? GetContextWindow(string model)
+    {
+        // Anthropic model IDs encode the family; all currently-supported Claude variants expose
+        // a 200k-token context window. Unknown models return null; callers fall back to
+        // CompactionConfig.MaxContextTokens.
+        if (model.Contains("claude", StringComparison.OrdinalIgnoreCase)) return 200_000;
+        return null;
+    }
+
+    /// <inheritdoc />
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -90,6 +100,16 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         var conversationId = conversation.Id;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         logger.LogDebug("CompleteAsync called for conversation {ConversationId}", conversationId);
+
+        // Populate the per-conversation context window cache on first turn or after a model
+        // switch. Used by the compaction threshold — lets it scale with the active model
+        // rather than relying on a global constant.
+        if (conversation.ContextWindowTokens is null)
+        {
+            var window = GetContextWindow(conversation.Model);
+            if (window is not null)
+                conversation.ContextWindowTokens = window;
+        }
 
         // Persist the caller-supplied user message
         agentLogic.AddMessage(conversationId, userMessage);

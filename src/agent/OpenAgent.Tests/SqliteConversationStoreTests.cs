@@ -306,6 +306,45 @@ public class SqliteConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Compaction_uses_per_conversation_ContextWindowTokens_for_threshold()
+    {
+        // Fallback is huge so the ONLY way this triggers is via per-conversation window.
+        var config = new CompactionConfig
+        {
+            MaxContextTokens = 1_000_000,
+            CompactionTriggerPercent = 50,
+            KeepRecentTokens = 5
+        };
+        var summarizer = new FakeCompactionSummarizer("summary");
+        var env = new AgentEnvironment { DataPath = _dbDir };
+        using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
+
+        var conv = store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");
+        conv.ContextWindowTokens = 100; // tiny per-conv window → trigger = 50
+        store.Update(conv);
+
+        for (var i = 1; i <= 6; i++)
+        {
+            store.AddMessage("conv1", new Message
+            {
+                Id = $"msg{i}", ConversationId = "conv1",
+                Role = i % 2 == 1 ? "user" : "assistant",
+                Content = $"message {i}"
+            });
+        }
+
+        // 60 > 50 (per-conv trigger) but < 500_000 (fallback trigger). If the store used the
+        // fallback, compaction would NOT fire.
+        var fresh = store.Get("conv1")!;
+        fresh.LastPromptTokens = 60;
+        store.Update(fresh);
+
+        await Task.Delay(500);
+
+        Assert.NotNull(summarizer.LastMessages);
+    }
+
+    [Fact]
     public void ContextWindowTokens_persists_and_round_trips()
     {
         var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");

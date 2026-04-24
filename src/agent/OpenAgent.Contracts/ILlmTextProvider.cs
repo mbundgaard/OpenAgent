@@ -25,4 +25,11 @@ public interface ILlmTextProvider : IConfigurable
         string model,
         CompletionOptions? options = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the context window size in tokens for the given model, or null if the
+    /// provider cannot determine it (e.g. unknown model, misconfiguration). Callers fall
+    /// back to <see cref="CompactionConfig.MaxContextTokens"/>.
+    /// </summary>
+    int? GetContextWindow(string model);
 }
