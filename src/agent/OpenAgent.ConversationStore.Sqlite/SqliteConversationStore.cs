@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using OpenAgent.Compaction;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
@@ -508,16 +509,20 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
     private async Task RunCompactionAsync(Conversation conversation)
     {
+        // Load full tool result blobs so the summarizer sees real content, not the
+        // compact {tool,status,size} stubs in Content.
         var liveMessages = ReadMessagesFromDb(conversation.Id, conversation.CompactedUpToRowId);
+        LoadToolResultBlobs(conversation.Id, liveMessages);
 
-        var keepCount = _compactionConfig.KeepLatestMessagePairs * 2;
-        if (liveMessages.Count <= keepCount)
+        var cutIndex = CompactionCutPoint.Find(liveMessages, _compactionConfig.KeepRecentTokens);
+        if (cutIndex is null or 0)
         {
-            _logger.LogDebug("Not enough messages to compact for conversation {ConversationId}", conversation.Id);
+            _logger.LogDebug("Nothing to compact for conversation {ConversationId} — history fits in {Budget} tokens",
+                conversation.Id, _compactionConfig.KeepRecentTokens);
             return;
         }
 
-        var toCompact = liveMessages.GetRange(0, liveMessages.Count - keepCount);
+        var toCompact = liveMessages.GetRange(0, cutIndex.Value);
         var newCutoffRowId = toCompact[^1].RowId;
 
         _logger.LogInformation("Compacting {Count} messages for conversation {ConversationId}, cutoff rowid {RowId}",

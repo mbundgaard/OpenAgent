@@ -120,7 +120,7 @@ public class SqliteConversationStoreTests : IDisposable
         {
             MaxContextTokens = 100,
             CompactionTriggerPercent = 50,
-            KeepLatestMessagePairs = 1
+            KeepRecentTokens = 5 // tiny budget so only the last user turn stays uncompacted
         };
         var summarizer = new FakeCompactionSummarizer("## Summary\nTest summary.\n[ref: msg1, msg2, msg3, msg4]");
         var env = new AgentEnvironment { DataPath = _dbDir };
