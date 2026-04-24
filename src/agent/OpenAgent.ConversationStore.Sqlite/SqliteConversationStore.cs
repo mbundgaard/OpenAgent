@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 {
     private readonly ILogger<SqliteConversationStore> _logger;
     private readonly string _connectionString;
+    private readonly string _dataPath;
     private readonly CompactionConfig _compactionConfig;
     private readonly ICompactionSummarizer? _compactionSummarizer;
 
@@ -26,7 +28,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         _logger = logger;
         _compactionConfig = compactionConfig;
         _compactionSummarizer = compactionSummarizer;
-        var dbPath = Path.Combine(environment.DataPath, "conversations.db");
+        _dataPath = environment.DataPath;
+        var dbPath = Path.Combine(_dataPath, "conversations.db");
         _connectionString = $"Data Source={dbPath}";
 
         InitializeDatabase();
@@ -575,6 +578,78 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@id", conversationId);
         cmd.Parameters.AddWithValue("@displayName", (object?)displayName ?? DBNull.Value);
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Returns the absolute path to the tool-results directory for a conversation.
+    /// Creates the directory if it does not exist.
+    /// </summary>
+    private string GetToolResultsDir(string conversationId)
+    {
+        var dir = Path.Combine(_dataPath, "conversations", conversationId, "tool-results");
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>
+    /// Writes a tool result to disk atomically and returns the relative path
+    /// (e.g. "tool-results/abc123.txt") for storage in ToolResultRef.
+    /// Uses UTF-8 no BOM, matching FileSystemToolHandler.
+    /// </summary>
+    private string SaveToolResultBlob(string conversationId, string messageId, string content)
+    {
+        var dir = GetToolResultsDir(conversationId);
+        var finalPath = Path.Combine(dir, $"{messageId}.txt");
+        var tempPath = $"{finalPath}.tmp";
+
+        File.WriteAllText(tempPath, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.Move(tempPath, finalPath, overwrite: true);
+
+        return $"tool-results/{messageId}.txt";
+    }
+
+    /// <summary>
+    /// Reads a tool result from disk. Returns null if the file is missing (logged as a warning) —
+    /// callers fall back to the compact summary in Message.Content.
+    /// </summary>
+    private string? ReadToolResultBlob(string conversationId, string relativePath)
+    {
+        var absolutePath = Path.Combine(_dataPath, "conversations", conversationId, relativePath);
+        if (!File.Exists(absolutePath))
+        {
+            _logger.LogWarning("Tool result blob missing: {Path}", absolutePath);
+            return null;
+        }
+
+        try
+        {
+            return File.ReadAllText(absolutePath);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Failed to read tool result blob: {Path}", absolutePath);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Removes the entire conversations/{conversationId} directory, including all tool result blobs.
+    /// Idempotent — no-op if the directory does not exist.
+    /// </summary>
+    private void DeleteConversationBlobs(string conversationId)
+    {
+        var dir = Path.Combine(_dataPath, "conversations", conversationId);
+        if (!Directory.Exists(dir)) return;
+
+        try
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete conversation blob directory: {Path}", dir);
+        }
     }
 
     private static Message ReadMessage(SqliteDataReader reader)
