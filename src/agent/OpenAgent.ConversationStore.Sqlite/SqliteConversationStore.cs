@@ -315,7 +315,12 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "DELETE FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
-        return cmd.ExecuteNonQuery() > 0;
+        var deleted = cmd.ExecuteNonQuery() > 0;
+
+        // Remove on-disk tool result blobs for this conversation
+        DeleteConversationBlobs(conversationId);
+
+        return deleted;
     }
 
     public void AddMessage(string conversationId, Message message)

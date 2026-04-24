@@ -211,6 +211,25 @@ public class SqliteConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public void Delete_removes_conversation_blob_directory()
+    {
+        _store.GetOrCreate("conv2", "test", ConversationType.Text, "p", "m");
+        _store.AddMessage("conv2", new Message
+        {
+            Id = "tm1", ConversationId = "conv2", Role = "tool",
+            Content = "summary", FullToolResult = "full", ToolCallId = "c"
+        });
+
+        var blobDir = Path.Combine(_dbDir, "conversations", "conv2");
+        Assert.True(Directory.Exists(blobDir));
+
+        var deleted = _store.Delete("conv2");
+
+        Assert.True(deleted);
+        Assert.False(Directory.Exists(blobDir), "Blob directory should be removed");
+    }
+
+    [Fact]
     public void AddMessage_persists_full_tool_result_to_disk_and_sets_ref()
     {
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");
