@@ -89,6 +89,20 @@ public sealed class WhatsAppMessageHandler
             _logger?.LogInformation("First conversation created for connection {ConnectionId}, auto-locked new conversations", _connectionId);
         }
 
+        // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
+        var providerKey = _agentConfig.TextProvider;
+        var model = _agentConfig.TextModel;
+        var conversation = _store.FindOrCreateChannelConversation(
+            "whatsapp", _connectionId, chatId,
+            "whatsapp", ConversationType.Text, providerKey, model);
+
+        // Mention filter — drop message silently if no mention matches
+        if (!MentionMatcher.ShouldAccept(conversation, message.Text))
+        {
+            _logger?.LogDebug("Mention filter dropped message in conversation {ConversationId}", conversation.Id);
+            return;
+        }
+
         // Send composing indicator (best-effort)
         try
         {
@@ -100,13 +114,6 @@ public sealed class WhatsAppMessageHandler
         }
 
         _logger?.LogInformation("Message from chat {ChatId}: {Text}", chatId, message.Text);
-
-        // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
-        var providerKey = _agentConfig.TextProvider;
-        var model = _agentConfig.TextModel;
-        var conversation = _store.FindOrCreateChannelConversation(
-            "whatsapp", _connectionId, chatId,
-            "whatsapp", ConversationType.Text, providerKey, model);
 
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.Provider);
