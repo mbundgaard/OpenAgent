@@ -385,13 +385,13 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
         list.AddRange(ReadMessagesFromDb(conversationId, conversation?.CompactedUpToRowId));
 
-        // Blob loading is added in Task 7 (this parameter is currently accepted but ignored).
-        _ = includeToolResultBlobs;
+        if (includeToolResultBlobs)
+            LoadToolResultBlobs(conversationId, list);
 
         return list;
     }
 
-    public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds)
+    public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds, bool includeToolResultBlobs = false)
     {
         if (messageIds.Count == 0) return [];
 
@@ -411,7 +411,73 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             list.Add(ReadMessage(reader));
         }
 
+        if (includeToolResultBlobs)
+        {
+            // Group by conversationId — each blob lives under its conversation's directory
+            var groups = list
+                .Select((msg, idx) => (msg, idx))
+                .Where(t => t.msg.Role == "tool" && t.msg.ToolResultRef is not null)
+                .GroupBy(t => t.msg.ConversationId);
+
+            foreach (var group in groups)
+            {
+                foreach (var (msg, idx) in group)
+                {
+                    var full = ReadToolResultBlob(group.Key, msg.ToolResultRef!);
+                    if (full is null) continue;
+                    list[idx] = CopyWithFullToolResult(msg, full);
+                }
+            }
+        }
+
         return list;
+    }
+
+    /// <summary>
+    /// Walks the given list of messages and, for any tool messages with a ToolResultRef,
+    /// reads the on-disk blob and returns a new Message copy with FullToolResult populated.
+    /// Missing files are tolerated (logged as warnings in ReadToolResultBlob).
+    /// </summary>
+    private void LoadToolResultBlobs(string conversationId, List<Message> messages)
+    {
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var msg = messages[i];
+            if (msg.Role != "tool" || msg.ToolResultRef is null) continue;
+
+            var full = ReadToolResultBlob(conversationId, msg.ToolResultRef);
+            if (full is null) continue;
+
+            messages[i] = CopyWithFullToolResult(msg, full);
+        }
+    }
+
+    /// <summary>
+    /// Returns a new Message with all fields copied from <paramref name="source"/>, plus
+    /// <see cref="Message.FullToolResult"/> set to <paramref name="fullToolResult"/>.
+    /// Message uses init-only properties so this explicit copy is how we "update" it.
+    /// </summary>
+    private static Message CopyWithFullToolResult(Message source, string fullToolResult)
+    {
+        return new Message
+        {
+            Id = source.Id,
+            ConversationId = source.ConversationId,
+            Role = source.Role,
+            Content = source.Content,
+            CreatedAt = source.CreatedAt,
+            Modality = source.Modality,
+            ToolCalls = source.ToolCalls,
+            ToolCallId = source.ToolCallId,
+            ChannelMessageId = source.ChannelMessageId,
+            ReplyToChannelMessageId = source.ReplyToChannelMessageId,
+            RowId = source.RowId,
+            PromptTokens = source.PromptTokens,
+            CompletionTokens = source.CompletionTokens,
+            ElapsedMs = source.ElapsedMs,
+            ToolResultRef = source.ToolResultRef,
+            FullToolResult = fullToolResult
+        };
     }
 
     public void Dispose()

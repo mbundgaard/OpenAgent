@@ -230,6 +230,49 @@ public class SqliteConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public void GetMessages_with_blobs_populates_FullToolResult()
+    {
+        _store.GetOrCreate("conv3", "test", ConversationType.Text, "p", "m");
+        _store.AddMessage("conv3", new Message
+        {
+            Id = "tm1", ConversationId = "conv3", Role = "tool",
+            Content = "summary",
+            FullToolResult = "This is the full tool output.\nLine 2.",
+            ToolCallId = "c"
+        });
+
+        // Without blobs — ToolResultRef is set, FullToolResult is null
+        var plain = _store.GetMessages("conv3").Single(m => m.Id == "tm1");
+        Assert.Equal("tool-results/tm1.txt", plain.ToolResultRef);
+        Assert.Null(plain.FullToolResult);
+
+        // With blobs — FullToolResult populated from disk
+        var withBlobs = _store.GetMessages("conv3", includeToolResultBlobs: true).Single(m => m.Id == "tm1");
+        Assert.Equal("This is the full tool output.\nLine 2.", withBlobs.FullToolResult);
+    }
+
+    [Fact]
+    public void GetMessages_with_blobs_tolerates_missing_file()
+    {
+        _store.GetOrCreate("conv4", "test", ConversationType.Text, "p", "m");
+        _store.AddMessage("conv4", new Message
+        {
+            Id = "tm1", ConversationId = "conv4", Role = "tool",
+            Content = "summary",
+            FullToolResult = "full content",
+            ToolCallId = "c"
+        });
+
+        // Simulate a missing blob file
+        var blobPath = Path.Combine(_dbDir, "conversations", "conv4", "tool-results", "tm1.txt");
+        File.Delete(blobPath);
+
+        var msg = _store.GetMessages("conv4", includeToolResultBlobs: true).Single(m => m.Id == "tm1");
+        Assert.Equal("tool-results/tm1.txt", msg.ToolResultRef);
+        Assert.Null(msg.FullToolResult); // missing blob does not throw; falls back to Content
+    }
+
+    [Fact]
     public void AddMessage_persists_full_tool_result_to_disk_and_sets_ref()
     {
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");

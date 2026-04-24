@@ -177,12 +177,17 @@ public sealed class InMemoryConversationStore : IConversationStore
         return list.AsReadOnly();
     }
 
-    public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds)
+    public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds, bool includeToolResultBlobs = false)
     {
         var idSet = messageIds.ToHashSet();
-        return _messages.Values
+        var results = _messages.Values
             .SelectMany(msgs => msgs)
             .Where(m => idSet.Contains(m.Id))
             .ToList();
+
+        // Blob loading is added in Task 10 (this parameter is currently accepted but ignored).
+        _ = includeToolResultBlobs;
+
+        return results;
     }
 }

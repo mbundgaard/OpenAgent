@@ -66,6 +66,10 @@ public interface IConversationStore : IConfigurable
     /// </summary>
     IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false);
 
-    /// <summary>Returns messages by their IDs, regardless of compaction state. Used by the expand tool.</summary>
-    IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds);
+    /// <summary>
+    /// Returns messages by their IDs, regardless of compaction state. Used by the expand tool.
+    /// When <paramref name="includeToolResultBlobs"/> is true, tool result messages include
+    /// their full on-disk content via <see cref="Message.FullToolResult"/>.
+    /// </summary>
+    IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds, bool includeToolResultBlobs = false);
 }
