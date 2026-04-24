@@ -424,6 +424,20 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
     private List<AnthropicMessage> BuildMessages(Conversation conversation)
     {
         var result = new List<AnthropicMessage>();
+
+        // If the conversation has been compacted, inject the summary as a user message
+        // wrapped in <summary> tags. Keeps the real system prompt (system blocks) stable
+        // across turns — Anthropic prompt caching is strict about system prefix changes.
+        if (!string.IsNullOrEmpty(conversation.Context))
+        {
+            result.Add(new AnthropicMessage
+            {
+                Role = "user",
+                Content = "The conversation history before this point was compacted into the following summary:\n\n"
+                          + "<summary>\n" + conversation.Context + "\n</summary>"
+            });
+        }
+
         // Opt into blob loading so persisted tool results are inlined as their original full
         // content (not the compact summary in Content).
         var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
