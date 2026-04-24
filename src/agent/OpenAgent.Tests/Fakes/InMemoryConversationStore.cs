@@ -147,7 +147,7 @@ public sealed class InMemoryConversationStore : IConversationStore
         }
     }
 
-    public IReadOnlyList<Message> GetMessages(string conversationId)
+    public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false)
     {
         var conversation = Get(conversationId);
         var list = new List<Message>();
@@ -170,6 +170,10 @@ public sealed class InMemoryConversationStore : IConversationStore
             : allMessages;
 
         list.AddRange(messages);
+
+        // Blob loading is added in Task 10 (this parameter is currently accepted but ignored).
+        _ = includeToolResultBlobs;
+
         return list.AsReadOnly();
     }
 

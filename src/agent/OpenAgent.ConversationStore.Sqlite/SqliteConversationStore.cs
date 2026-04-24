@@ -366,7 +366,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.ExecuteNonQuery();
     }
 
-    public IReadOnlyList<Message> GetMessages(string conversationId)
+    public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false)
     {
         var conversation = Get(conversationId);
         var list = new List<Message>();
@@ -384,6 +384,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         }
 
         list.AddRange(ReadMessagesFromDb(conversationId, conversation?.CompactedUpToRowId));
+
+        // Blob loading is added in Task 7 (this parameter is currently accepted but ignored).
+        _ = includeToolResultBlobs;
+
         return list;
     }
 

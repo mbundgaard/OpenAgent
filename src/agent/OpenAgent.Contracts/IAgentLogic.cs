@@ -20,8 +20,12 @@ public interface IAgentLogic
     /// <summary>Persists a message in the conversation history.</summary>
     void AddMessage(string conversationId, Message message);
 
-    /// <summary>Returns the full message history for a conversation.</summary>
-    IReadOnlyList<Message> GetMessages(string conversationId);
+    /// <summary>
+    /// Returns the full message history for a conversation. When <paramref name="includeToolResultBlobs"/>
+    /// is true, tool result messages include their full on-disk content via
+    /// <see cref="Message.FullToolResult"/>; providers should pass true when building LLM requests.
+    /// </summary>
+    IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false);
 
     /// <summary>Returns the conversation by ID, or null if not found.</summary>
     Conversation? GetConversation(string conversationId);

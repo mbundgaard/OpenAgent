@@ -57,8 +57,14 @@ public interface IConversationStore : IConfigurable
     /// <summary>Updates the channel message ID on an existing message.</summary>
     void UpdateChannelMessageId(string messageId, string channelMessageId);
 
-    /// <summary>Returns all messages for the given conversation, in order.</summary>
-    IReadOnlyList<Message> GetMessages(string conversationId);
+    /// <summary>
+    /// Returns all messages for the given conversation, in order.
+    /// When <paramref name="includeToolResultBlobs"/> is true, tool result messages have their
+    /// <see cref="Message.FullToolResult"/> populated by reading the on-disk blob referenced by
+    /// <see cref="Message.ToolResultRef"/>. If the blob is missing, FullToolResult stays null and
+    /// the caller falls back to <see cref="Message.Content"/>.
+    /// </summary>
+    IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false);
 
     /// <summary>Returns messages by their IDs, regardless of compaction state. Used by the expand tool.</summary>
     IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds);
