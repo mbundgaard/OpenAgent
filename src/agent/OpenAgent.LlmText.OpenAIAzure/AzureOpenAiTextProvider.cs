@@ -72,6 +72,18 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         return null;
     }
 
+    /// <summary>
+    /// Detects Azure OpenAI's context-length error. Azure returns HTTP 400 with an error
+    /// object whose <c>code</c> is <c>context_length_exceeded</c>, or a message mentioning
+    /// "maximum context length". Heuristic — tune as new error shapes appear.
+    /// </summary>
+    private static bool IsContextOverflow(System.Net.HttpStatusCode status, string body)
+    {
+        if (status != System.Net.HttpStatusCode.BadRequest) return false;
+        return body.Contains("context_length_exceeded", StringComparison.Ordinal)
+            || body.Contains("maximum context length", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -109,18 +121,47 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
         // Completion loop (handles tool calls across streaming rounds)
         const int maxToolRounds = 10;
+        var overflowRetried = false;
         for (var round = 0; round < maxToolRounds; round++)
         {
-
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+            // Inner loop lets us retry ONCE on a context-length error by running compaction
+            // and rebuilding the request. overflowRetried is scoped to this CompleteAsync
+            // call — at most one recovery attempt per turn.
+            HttpResponseMessage httpResponse;
+            while (true)
             {
-                Content = JsonContent.Create(request)
-            };
-            var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = JsonContent.Create(request)
+                };
+                httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
 
-            if (!httpResponse.IsSuccessStatusCode)
-            {
+                if (httpResponse.IsSuccessStatusCode) break;
+
                 var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                if (!overflowRetried && IsContextOverflow(httpResponse.StatusCode, errorBody))
+                {
+                    overflowRetried = true;
+                    logger.LogWarning(
+                        "Azure OpenAI context overflow for conversation {ConversationId} — compacting and retrying once",
+                        conversationId);
+
+                    httpResponse.Dispose();
+
+                    var compacted = await agentLogic.CompactAsync(conversationId, CompactionReason.Overflow, null, ct);
+                    if (!compacted)
+                    {
+                        throw new HttpRequestException(
+                            "Context overflow, and compaction could not reduce history (already minimal or disabled).");
+                    }
+
+                    // Rebuild from the compacted state — GetConversation re-reads with the new
+                    // Conversation.Context set by compaction.
+                    var compactedConv = agentLogic.GetConversation(conversationId) ?? conversation;
+                    request.Messages = BuildChatMessages(compactedConv);
+                    continue;
+                }
+
                 logger.LogError("Azure OpenAI returned {StatusCode} for conversation {ConversationId}: {ErrorBody}",
                     (int)httpResponse.StatusCode, conversationId, errorBody);
                 throw new HttpRequestException(
