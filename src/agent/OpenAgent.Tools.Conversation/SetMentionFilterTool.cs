@@ -49,7 +49,7 @@ public sealed class SetMentionFilterTool(IConversationStore store) : ITool
             var value = item.GetString()?.Trim();
             if (string.IsNullOrEmpty(value)) continue;
             if (value.Length > MaxNameLength)
-                return Task.FromResult(JsonSerializer.Serialize(new { error = $"Name '{value[..Math.Min(20, value.Length)]}...' exceeds max length of {MaxNameLength}." }));
+                return Task.FromResult(JsonSerializer.Serialize(new { error = $"Name '{value[..20]}...' exceeds max length of {MaxNameLength}." }));
             cleaned.Add(value);
         }
 
