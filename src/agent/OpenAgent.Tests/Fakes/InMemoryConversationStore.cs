@@ -12,6 +12,7 @@ public sealed class InMemoryConversationStore : IConversationStore
 {
     private readonly Dictionary<string, Conversation> _conversations = new();
     private readonly Dictionary<string, List<Message>> _messages = new();
+    private readonly Dictionary<(string ConversationId, string MessageId), string> _toolResultBlobs = new();
     private long _nextRowId = 1;
 
     // IConfigurable — no-op for tests
@@ -94,13 +95,31 @@ public sealed class InMemoryConversationStore : IConversationStore
             conv.DisplayName = displayName;
     }
 
-    public bool Delete(string conversationId) =>
-        _conversations.Remove(conversationId) | _messages.Remove(conversationId);
+    public bool Delete(string conversationId)
+    {
+        // Mirror SqliteConversationStore: drop any blob entries for this conversation
+        var blobKeysToRemove = _toolResultBlobs.Keys
+            .Where(k => k.ConversationId == conversationId)
+            .ToList();
+        foreach (var key in blobKeysToRemove)
+            _toolResultBlobs.Remove(key);
+
+        return _conversations.Remove(conversationId) | _messages.Remove(conversationId);
+    }
 
     public void AddMessage(string conversationId, Message message)
     {
         if (!_messages.ContainsKey(conversationId))
             _messages[conversationId] = [];
+
+        // Mirror SqliteConversationStore: capture FullToolResult into the in-memory blob map
+        // and record a synthetic ToolResultRef matching the real store's layout.
+        string? toolResultRef = null;
+        if (!string.IsNullOrEmpty(message.FullToolResult))
+        {
+            _toolResultBlobs[(conversationId, message.Id)] = message.FullToolResult;
+            toolResultRef = $"tool-results/{message.Id}.txt";
+        }
 
         var withRowId = new Message
         {
@@ -116,7 +135,11 @@ public sealed class InMemoryConversationStore : IConversationStore
             ReplyToChannelMessageId = message.ReplyToChannelMessageId,
             PromptTokens = message.PromptTokens,
             CompletionTokens = message.CompletionTokens,
-            ElapsedMs = message.ElapsedMs
+            ElapsedMs = message.ElapsedMs,
+            Modality = message.Modality,
+            ToolResultRef = toolResultRef
+            // FullToolResult deliberately NOT copied onto the stored message —
+            // it's populated on demand when callers pass includeToolResultBlobs: true.
         };
         _messages[conversationId].Add(withRowId);
     }
@@ -167,13 +190,12 @@ public sealed class InMemoryConversationStore : IConversationStore
 
         var messages = conversation?.CompactedUpToRowId is not null
             ? allMessages.Where(m => m.RowId > conversation.CompactedUpToRowId.Value).ToList()
-            : allMessages;
+            : allMessages.ToList();
+
+        if (includeToolResultBlobs)
+            PopulateFullToolResults(messages);
 
         list.AddRange(messages);
-
-        // Blob loading is added in Task 10 (this parameter is currently accepted but ignored).
-        _ = includeToolResultBlobs;
-
         return list.AsReadOnly();
     }
 
@@ -185,9 +207,43 @@ public sealed class InMemoryConversationStore : IConversationStore
             .Where(m => idSet.Contains(m.Id))
             .ToList();
 
-        // Blob loading is added in Task 10 (this parameter is currently accepted but ignored).
-        _ = includeToolResultBlobs;
+        if (includeToolResultBlobs)
+            PopulateFullToolResults(results);
 
         return results;
+    }
+
+    /// <summary>
+    /// Replaces tool messages in-place with copies that include FullToolResult, mirroring
+    /// SqliteConversationStore's blob-loading behavior for tests.
+    /// </summary>
+    private void PopulateFullToolResults(List<Message> messages)
+    {
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var msg = messages[i];
+            if (msg.Role != "tool" || msg.ToolResultRef is null) continue;
+            if (!_toolResultBlobs.TryGetValue((msg.ConversationId, msg.Id), out var full)) continue;
+
+            messages[i] = new Message
+            {
+                RowId = msg.RowId,
+                Id = msg.Id,
+                ConversationId = msg.ConversationId,
+                Role = msg.Role,
+                Content = msg.Content,
+                CreatedAt = msg.CreatedAt,
+                ToolCalls = msg.ToolCalls,
+                ToolCallId = msg.ToolCallId,
+                ChannelMessageId = msg.ChannelMessageId,
+                ReplyToChannelMessageId = msg.ReplyToChannelMessageId,
+                PromptTokens = msg.PromptTokens,
+                CompletionTokens = msg.CompletionTokens,
+                ElapsedMs = msg.ElapsedMs,
+                Modality = msg.Modality,
+                ToolResultRef = msg.ToolResultRef,
+                FullToolResult = full
+            };
+        }
     }
 }
