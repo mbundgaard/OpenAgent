@@ -207,13 +207,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
                     yield return new ToolResultEvent(id, name, result);
 
-                    // Persist tool result summary (compact), keep full result in-memory for current turn
+                    // Persist tool result: Content keeps the compact summary (for UI and
+                    // backward compat), FullToolResult carries the raw output to disk via the
+                    // store's blob writer. Next turn's BuildChatMessages loads the blob back.
                     agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, result),
+                        FullToolResult = result,
                         ToolCallId = id,
                         Modality = MessageModality.Text
                     });
@@ -329,8 +332,9 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         if (!string.IsNullOrEmpty(systemPrompt))
             chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
 
-        // Reconstruct full message history including tool calls
-        var storedMessages = agentLogic.GetMessages(conversation.Id);
+        // Reconstruct full message history including tool calls. Opt into blob loading so
+        // persisted tool results are inlined as their original full content (not the summary).
+        var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
         for (var i = 0; i < storedMessages.Count; i++)
         {
             var msg = storedMessages[i];
@@ -368,25 +372,31 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                     // Complete round — add assistant message with tool calls
                     chatMessages.Add(new ChatMessage { Role = "assistant", Content = msg.Content, Name = ChannelMessageName(msg), ToolCalls = toolCalls });
 
-                    // Add the matching tool result messages
+                    // Add the matching tool result messages. Prefer the full on-disk content
+                    // (loaded via includeToolResultBlobs above); fall back to the compact summary
+                    // in Content only for legacy rows or when the blob is missing.
                     foreach (var id in expectedIds)
                     {
                         i++;
+                        var toolMsg = storedMessages[i];
                         chatMessages.Add(new ChatMessage
                         {
                             Role = "tool",
-                            Content = storedMessages[i].Content,
-                            ToolCallId = storedMessages[i].ToolCallId
+                            Content = toolMsg.FullToolResult ?? toolMsg.Content,
+                            ToolCallId = toolMsg.ToolCallId
                         });
                     }
                     continue;
                 }
             }
 
-            // Regular message (user, assistant text, or tool with id)
-            var content = msg.ReplyToChannelMessageId is not null
-                ? $"[Reply to Msg: {msg.ReplyToChannelMessageId}] {msg.Content}"
-                : msg.Content;
+            // Regular message (user, assistant text, or tool with id). For tool messages,
+            // prefer the full on-disk result loaded via ToolResultRef.
+            var content = msg.Role == "tool" && msg.FullToolResult is not null
+                ? msg.FullToolResult
+                : msg.ReplyToChannelMessageId is not null
+                    ? $"[Reply to Msg: {msg.ReplyToChannelMessageId}] {msg.Content}"
+                    : msg.Content;
             var chatMsg = new ChatMessage { Role = msg.Role, Content = content, Name = ChannelMessageName(msg) };
             if (msg.ToolCallId is not null)
                 chatMsg.ToolCallId = msg.ToolCallId;
