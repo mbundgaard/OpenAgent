@@ -575,6 +575,14 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             var liveMessages = ReadMessagesFromDb(conversationId, conversation.CompactedUpToRowId);
             LoadToolResultBlobs(conversationId, liveMessages);
 
+            // Snapshot the max rowid seen at this moment. Any message inserted by a concurrent
+            // turn after this point must NOT be absorbed into the compaction cutoff. The cut
+            // algorithm only considers entries from this snapshot, so this is an invariant
+            // rather than a runtime check — but make it explicit to catch future regressions.
+            var maxRowIdAtSnapshot = liveMessages.Count > 0
+                ? liveMessages[^1].RowId
+                : conversation.CompactedUpToRowId ?? 0;
+
             var cutIndex = CompactionCutPoint.Find(liveMessages, _compactionConfig.KeepRecentTokens);
             if (cutIndex is null or 0)
             {
@@ -585,6 +593,13 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
             var toCompact = liveMessages.GetRange(0, cutIndex.Value);
             var newCutoffRowId = toCompact[^1].RowId;
+
+            // Invariant: the cutoff must be ≤ the snapshot max. Holds by construction because
+            // toCompact is a prefix of liveMessages, but assert to guard against regressions
+            // in the cut-point algorithm.
+            if (newCutoffRowId > maxRowIdAtSnapshot)
+                throw new InvalidOperationException(
+                    $"Compaction cutoff {newCutoffRowId} exceeds snapshot {maxRowIdAtSnapshot} — logic error.");
 
             _logger.LogInformation("Compacting {Count} messages for conversation {ConversationId} (reason: {Reason}), cutoff rowid {RowId}",
                 toCompact.Count, conversationId, reason, newCutoffRowId);
