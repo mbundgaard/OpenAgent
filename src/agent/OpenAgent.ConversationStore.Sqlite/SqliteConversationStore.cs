@@ -494,55 +494,86 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         var triggerThreshold = window * _compactionConfig.CompactionTriggerPercent / 100;
         if (conversation.LastPromptTokens.Value < triggerThreshold) return;
 
-        // Set lock
-        conversation.CompactionRunning = true;
-        UpdateCompactionState(conversation.Id, compactionRunning: true, context: null, compactedUpToRowId: null);
-
+        // Background fire-and-forget — PerformCompactionAsync acquires the lock itself and
+        // clears it on success/failure. No pre-locking here (doing so would race with the
+        // guard inside PerformCompactionAsync, which reads the conversation fresh).
         _ = Task.Run(async () =>
         {
             try
             {
-                await RunCompactionAsync(conversation);
+                await PerformCompactionAsync(conversation.Id, CompactionReason.Threshold, null, CancellationToken.None);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Compaction failed for conversation {ConversationId}", conversation.Id);
-            }
-            finally
-            {
-                UpdateCompactionState(conversation.Id, compactionRunning: false, context: null, compactedUpToRowId: null);
+                _logger.LogError(ex, "Threshold compaction failed for conversation {ConversationId}", conversation.Id);
             }
         });
     }
 
-    private async Task RunCompactionAsync(Conversation conversation)
+    /// <summary>
+    /// Core compaction path. Serves Threshold (background), Overflow (provider-sync), and
+    /// Manual (endpoint) triggers. Returns true if a cut was made, false if there was
+    /// nothing to compact or if compaction is disabled. Throws on summarizer errors —
+    /// caller decides whether to surface, retry, or swallow.
+    /// </summary>
+    private async Task<bool> PerformCompactionAsync(
+        string conversationId,
+        CompactionReason reason,
+        string? customInstructions,
+        CancellationToken ct)
     {
-        // Load full tool result blobs so the summarizer sees real content, not the
-        // compact {tool,status,size} stubs in Content.
-        var liveMessages = ReadMessagesFromDb(conversation.Id, conversation.CompactedUpToRowId);
-        LoadToolResultBlobs(conversation.Id, liveMessages);
+        if (_compactionSummarizer is null) return false;
 
-        var cutIndex = CompactionCutPoint.Find(liveMessages, _compactionConfig.KeepRecentTokens);
-        if (cutIndex is null or 0)
+        var conversation = Get(conversationId);
+        if (conversation is null) return false;
+        if (conversation.CompactionRunning) return false;
+
+        // Acquire the running lock
+        UpdateCompactionState(conversationId, compactionRunning: true, context: null, compactedUpToRowId: null);
+
+        try
         {
-            _logger.LogDebug("Nothing to compact for conversation {ConversationId} — history fits in {Budget} tokens",
-                conversation.Id, _compactionConfig.KeepRecentTokens);
-            return;
+            // Load full tool result blobs so the summarizer sees real content, not stubs.
+            var liveMessages = ReadMessagesFromDb(conversationId, conversation.CompactedUpToRowId);
+            LoadToolResultBlobs(conversationId, liveMessages);
+
+            var cutIndex = CompactionCutPoint.Find(liveMessages, _compactionConfig.KeepRecentTokens);
+            if (cutIndex is null or 0)
+            {
+                _logger.LogDebug("Nothing to compact for conversation {ConversationId} (reason: {Reason})",
+                    conversationId, reason);
+                return false;
+            }
+
+            var toCompact = liveMessages.GetRange(0, cutIndex.Value);
+            var newCutoffRowId = toCompact[^1].RowId;
+
+            _logger.LogInformation("Compacting {Count} messages for conversation {ConversationId} (reason: {Reason}), cutoff rowid {RowId}",
+                toCompact.Count, conversationId, reason, newCutoffRowId);
+
+            // Task 6 adds customInstructions + ct to this call.
+            var result = await _compactionSummarizer.SummarizeAsync(conversation.Context, toCompact);
+
+            UpdateCompactionState(conversationId,
+                compactionRunning: false,
+                context: result.Context,
+                compactedUpToRowId: newCutoffRowId);
+
+            _logger.LogInformation("Compaction complete for conversation {ConversationId}, context length {Length} chars",
+                conversationId, result.Context.Length);
+
+            return true;
         }
-
-        var toCompact = liveMessages.GetRange(0, cutIndex.Value);
-        var newCutoffRowId = toCompact[^1].RowId;
-
-        _logger.LogInformation("Compacting {Count} messages for conversation {ConversationId}, cutoff rowid {RowId}",
-            toCompact.Count, conversation.Id, newCutoffRowId);
-
-        var result = await _compactionSummarizer!.SummarizeAsync(conversation.Context, toCompact);
-
-        UpdateCompactionState(conversation.Id, compactionRunning: false, context: result.Context, compactedUpToRowId: newCutoffRowId);
-
-        _logger.LogInformation("Compaction complete for conversation {ConversationId}, context length {Length} chars",
-            conversation.Id, result.Context.Length);
+        finally
+        {
+            // If an exception bailed us out before the success-path state swap, clear the lock.
+            // The success path already cleared it via UpdateCompactionState above.
+            var fresh = Get(conversationId);
+            if (fresh?.CompactionRunning == true)
+                UpdateCompactionState(conversationId, compactionRunning: false, context: null, compactedUpToRowId: null);
+        }
     }
+
 
     /// <summary>Updates compaction-related fields on a conversation. Null values mean "don't change".</summary>
     private void UpdateCompactionState(string conversationId, bool compactionRunning, string? context, long? compactedUpToRowId)
