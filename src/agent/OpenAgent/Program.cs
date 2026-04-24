@@ -270,6 +270,7 @@ app.MapConnectionEndpoints();
 app.MapFileExplorerEndpoints();
 app.MapLogEndpoints();
 app.MapTelegramWebhookEndpoints();
+app.MapWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
 app.MapToolEndpoints();
