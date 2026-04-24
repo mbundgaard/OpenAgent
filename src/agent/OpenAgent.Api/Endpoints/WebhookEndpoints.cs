@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,7 +31,7 @@ public static class WebhookEndpoints
             CancellationToken ct) =>
         {
             // Read raw body as UTF-8 text — Content-Type is not validated
-            using var reader = new StreamReader(request.Body);
+            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
             var body = await reader.ReadToEndAsync(ct);
 
             if (string.IsNullOrWhiteSpace(body))
