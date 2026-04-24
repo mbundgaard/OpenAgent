@@ -266,13 +266,16 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
 
                     yield return new ToolResultEvent(id, name, result);
 
-                    // Persist compact summary; keep full result in-memory for the LLM
+                    // Persist tool result: Content keeps the compact summary (for UI and
+                    // backward compat), FullToolResult carries the raw output to disk via the
+                    // store's blob writer. Next turn's BuildMessages loads the blob back.
                     agentLogic.AddMessage(conversationId, new Message
                     {
                         Id = Guid.NewGuid().ToString(),
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, result),
+                        FullToolResult = result,
                         ToolCallId = id,
                         Modality = MessageModality.Text
                     });
@@ -421,7 +424,9 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
     private List<AnthropicMessage> BuildMessages(Conversation conversation)
     {
         var result = new List<AnthropicMessage>();
-        var storedMessages = agentLogic.GetMessages(conversation.Id);
+        // Opt into blob loading so persisted tool results are inlined as their original full
+        // content (not the compact summary in Content).
+        var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
 
         for (var i = 0; i < storedMessages.Count; i++)
         {
@@ -471,16 +476,19 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                     }).ToList<AnthropicContentBlock>();
                     result.Add(new AnthropicMessage { Role = "assistant", Content = toolUseBlocks });
 
-                    // Collect tool results in a single user message (Anthropic convention)
+                    // Collect tool results in a single user message (Anthropic convention).
+                    // Prefer the full on-disk content; fall back to the compact summary in
+                    // Content only for legacy rows or when the blob is missing.
                     var toolResultBlocks = new List<AnthropicContentBlock>();
                     foreach (var id in expectedIds)
                     {
                         i++;
+                        var toolMsg = storedMessages[i];
                         toolResultBlocks.Add(new AnthropicContentBlock
                         {
                             Type = "tool_result",
-                            ToolUseId = storedMessages[i].ToolCallId,
-                            Content = storedMessages[i].Content
+                            ToolUseId = toolMsg.ToolCallId,
+                            Content = toolMsg.FullToolResult ?? toolMsg.Content
                         });
                     }
                     result.Add(new AnthropicMessage { Role = "user", Content = toolResultBlocks });
