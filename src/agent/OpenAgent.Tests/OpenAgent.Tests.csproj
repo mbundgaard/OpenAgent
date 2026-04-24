@@ -20,6 +20,7 @@
     <ProjectReference Include="..\OpenAgent\OpenAgent.csproj" />
     <ProjectReference Include="..\OpenAgent.Channel.Telegram\OpenAgent.Channel.Telegram.csproj" />
     <ProjectReference Include="..\OpenAgent.Channel.WhatsApp\OpenAgent.Channel.WhatsApp.csproj" />
+    <ProjectReference Include="..\OpenAgent.Compaction\OpenAgent.Compaction.csproj" />
     <ProjectReference Include="..\OpenAgent.ConversationStore.Sqlite\OpenAgent.ConversationStore.Sqlite.csproj" />
     <ProjectReference Include="..\OpenAgent.Tools.Expand\OpenAgent.Tools.Expand.csproj" />
     <ProjectReference Include="..\OpenAgent.Skills\OpenAgent.Skills.csproj" />
