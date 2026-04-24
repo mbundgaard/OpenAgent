@@ -332,6 +332,19 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         if (!string.IsNullOrEmpty(systemPrompt))
             chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
 
+        // If the conversation has been compacted, inject the summary as a user message
+        // wrapped in <summary> tags. Keeps the real system prompt stable across turns
+        // (cache-friendly) while still giving the model visibility into pre-cut history.
+        if (!string.IsNullOrEmpty(conversation.Context))
+        {
+            chatMessages.Add(new ChatMessage
+            {
+                Role = "user",
+                Content = "The conversation history before this point was compacted into the following summary:\n\n"
+                          + "<summary>\n" + conversation.Context + "\n</summary>"
+            });
+        }
+
         // Reconstruct full message history including tool calls. Opt into blob loading so
         // persisted tool results are inlined as their original full content (not the summary).
         var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
