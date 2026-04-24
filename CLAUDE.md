@@ -247,7 +247,7 @@ When `OpenAgent.Api` needs a type from the host project, extract an interface in
 - Skills are instructions, not tooling — they teach the agent how to use existing tools (shell_exec, file_read, etc.)
 - No wrapper scripts (.sh, .py) — the agent calls curl/jq directly via shell_exec
 - Skill config (API keys, credentials) lives in `{dataPath}/config/{name}.json`
-- Working data goes in `{dataPath}/projects/{skill-name}/`
+- Working data goes in `{dataPath}/skills/{skill-name}/data/` (co-located with the skill)
 - API specs should be inline in SKILL.md — don't use progressive disclosure for small files (<10KB)
 - Separate GET response schemas from POST/PUT request schemas — response-only fields (index, id, timestamps) must not appear in request examples
 
@@ -281,7 +281,7 @@ GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a Docker image a
 - SQLite conversation store (conversations.db in dataPath) — persistent across restarts, with schema migration via TryAddColumn
 - File tools use UTF-8 without BOM, controlled from a single constant in FileSystemToolHandler
 - All tools scoped to `{dataPath}` — no access outside data directory
-- Data directory bootstrapped on first startup by `DataDirectoryBootstrap.Run()` — creates required folders (`projects/`, `repos/`, `memory/`, `config/`, `connections/`) and extracts embedded default personality files (AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md, MEMORY.md, BOOTSTRAP.md) if missing. Also writes empty `config/agent.json` and `config/connections.json`. Never overwrites existing files.
+- Data directory bootstrapped on first startup by `DataDirectoryBootstrap.Run()` — creates required folders (`repos/`, `memory/`, `config/`, `connections/`, `skills/`) and extracts embedded default personality files (AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md, MEMORY.md, BOOTSTRAP.md) if missing. Also writes empty `config/agent.json` and `config/connections.json`. Never overwrites existing files.
 - BOOTSTRAP.md is a first-run conversation ritual — guides the agent through identity discovery with the user, then self-deletes. AGENTS.md checks for its presence on session startup.
 - System prompt composed from markdown files in dataPath: AGENTS.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, VOICE.md — loaded once at startup, filtered by ConversationType
 - System prompt includes current time in Europe/Copenhagen timezone with weekday and ISO week number (e.g. `Saturday 2026-04-11T17:10 Europe/Copenhagen (UTC+2), week 15`). Hardcoded timezone — does not rely on OS locale.

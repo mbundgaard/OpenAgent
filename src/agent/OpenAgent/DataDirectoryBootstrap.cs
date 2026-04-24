@@ -15,7 +15,6 @@ public static class DataDirectoryBootstrap
 {
     private static readonly string[] RequiredDirectories =
     [
-        "projects",
         "repos",
         "memory",
         "config",
