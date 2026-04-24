@@ -567,6 +567,11 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         // Acquire the running lock
         UpdateCompactionState(conversationId, compactionRunning: true, context: null, compactedUpToRowId: null);
 
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _logger.LogInformation(
+            "{@Event}",
+            new { @event = "compaction.start", conversationId, reason = reason.ToString() });
+
         try
         {
             // Rebind ct inside the try so callees use the linked token
@@ -601,9 +606,6 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 throw new InvalidOperationException(
                     $"Compaction cutoff {newCutoffRowId} exceeds snapshot {maxRowIdAtSnapshot} — logic error.");
 
-            _logger.LogInformation("Compacting {Count} messages for conversation {ConversationId} (reason: {Reason}), cutoff rowid {RowId}",
-                toCompact.Count, conversationId, reason, newCutoffRowId);
-
             CompactionResult result;
             try
             {
@@ -622,10 +624,35 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 context: result.Context,
                 compactedUpToRowId: newCutoffRowId);
 
-            _logger.LogInformation("Compaction complete for conversation {ConversationId}, context length {Length} chars",
-                conversationId, result.Context.Length);
+            sw.Stop();
+            _logger.LogInformation(
+                "{@Event}",
+                new
+                {
+                    @event = "compaction.complete",
+                    conversationId,
+                    reason = reason.ToString(),
+                    messagesCompacted = toCompact.Count,
+                    tokensBefore = conversation.LastPromptTokens,
+                    summaryChars = result.Context.Length,
+                    durationMs = sw.ElapsedMilliseconds
+                });
 
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation(
+                "{@Event}",
+                new { @event = "compaction.cancelled", conversationId, reason = reason.ToString() });
+            return false;
+        }
+        catch (Exception ex) when (ex is not CompactionDisabledException)
+        {
+            _logger.LogError(ex,
+                "{@Event}",
+                new { @event = "compaction.error", conversationId, reason = reason.ToString(), error = ex.Message });
+            throw;
         }
         finally
         {
