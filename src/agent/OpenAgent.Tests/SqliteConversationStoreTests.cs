@@ -63,13 +63,16 @@ public class SqliteConversationStoreTests : IDisposable
         conv.Context = "## Summary\nOld conversation about greetings.\n[ref: msg1, msg2]";
         _store.Update(conv);
 
-        // Now GetMessages should only return msg3 plus the context
+        // GetMessages returns ONLY post-cut messages. The summary lives on
+        // Conversation.Context for providers/UI to render separately.
         var messages = _store.GetMessages("conv1");
 
-        Assert.Equal(2, messages.Count);
-        Assert.Equal("system", messages[0].Role);
-        Assert.Contains("Old conversation about greetings", messages[0].Content);
-        Assert.Equal("msg3", messages[1].Id);
+        Assert.Single(messages);
+        Assert.Equal("msg3", messages[0].Id);
+
+        var refreshed = _store.Get("conv1");
+        Assert.NotNull(refreshed);
+        Assert.Contains("Old conversation about greetings", refreshed.Context);
     }
 
     [Fact]
@@ -143,11 +146,13 @@ public class SqliteConversationStoreTests : IDisposable
 
         var messages = store.GetMessages("conv1");
 
-        Assert.Equal("system", messages[0].Role);
-        Assert.Contains("Test summary", messages[0].Content);
-        Assert.Equal("msg5", messages[1].Id);
-        Assert.Equal("msg6", messages[2].Id);
-        Assert.Equal(3, messages.Count);
+        Assert.Equal(2, messages.Count);
+        Assert.Equal("msg5", messages[0].Id);
+        Assert.Equal("msg6", messages[1].Id);
+
+        var freshConv = store.Get("conv1");
+        Assert.NotNull(freshConv);
+        Assert.Contains("Test summary", freshConv.Context);
 
         Assert.Equal(4, summarizer.LastMessages!.Count);
         Assert.Equal("msg1", summarizer.LastMessages[0].Id);

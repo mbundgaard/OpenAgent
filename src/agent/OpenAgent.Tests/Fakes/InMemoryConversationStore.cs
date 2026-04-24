@@ -172,20 +172,9 @@ public sealed class InMemoryConversationStore : IConversationStore
 
     public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false)
     {
+        // Mirror SqliteConversationStore: only post-cut messages are returned. The summary
+        // lives on Conversation.Context and is injected by providers, not the store.
         var conversation = Get(conversationId);
-        var list = new List<Message>();
-
-        if (conversation?.Context is not null)
-        {
-            list.Add(new Message
-            {
-                Id = "context",
-                ConversationId = conversationId,
-                Role = "system",
-                Content = conversation.Context
-            });
-        }
-
         var allMessages = _messages.GetValueOrDefault(conversationId) ?? [];
 
         var messages = conversation?.CompactedUpToRowId is not null
@@ -195,8 +184,7 @@ public sealed class InMemoryConversationStore : IConversationStore
         if (includeToolResultBlobs)
             PopulateFullToolResults(messages);
 
-        list.AddRange(messages);
-        return list.AsReadOnly();
+        return messages.AsReadOnly();
     }
 
     public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds, bool includeToolResultBlobs = false)

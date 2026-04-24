@@ -368,22 +368,11 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
     public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false)
     {
+        // UI-facing and provider-facing reads both get ONLY post-cut messages here.
+        // The compaction summary lives on Conversation.Context; providers read it directly
+        // and inject it as a <summary>-wrapped user message in their BuildChatMessages pass.
         var conversation = Get(conversationId);
-        var list = new List<Message>();
-
-        // Prepend compaction summary as a system message if present
-        if (conversation?.Context is not null)
-        {
-            list.Add(new Message
-            {
-                Id = "context",
-                ConversationId = conversationId,
-                Role = "system",
-                Content = conversation.Context
-            });
-        }
-
-        list.AddRange(ReadMessagesFromDb(conversationId, conversation?.CompactedUpToRowId));
+        var list = ReadMessagesFromDb(conversationId, conversation?.CompactedUpToRowId);
 
         if (includeToolResultBlobs)
             LoadToolResultBlobs(conversationId, list);
