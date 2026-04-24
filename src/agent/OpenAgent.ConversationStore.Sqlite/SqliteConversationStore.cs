@@ -112,6 +112,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Conversations", "Intention", "TEXT");
         TryAddColumn(connection, "Messages", "ToolResultRef", "TEXT");
         TryAddColumn(connection, "Conversations", "ContextWindowTokens", "INTEGER");
+        TryAddColumn(connection, "Conversations", "MentionNames", "TEXT");
 
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
@@ -137,8 +138,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT OR IGNORE INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model, ActiveSkills, ChannelType, ConnectionId, ChannelChatId)
-            VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId)
+            INSERT OR IGNORE INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, MentionNames)
+            VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId, @mentionNames)
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
         cmd.Parameters.AddWithValue("@source", conversation.Source);
@@ -155,6 +156,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@channelType", (object?)conversation.ChannelType ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@connectionId", (object?)conversation.ConnectionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@channelChatId", (object?)conversation.ChannelChatId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@mentionNames",
+            conversation.MentionNames is { Count: > 0 }
+                ? (object)JsonSerializer.Serialize(conversation.MentionNames)
+                : DBNull.Value);
         cmd.ExecuteNonQuery();
 
         // Re-read in case of a race (INSERT OR IGNORE means another thread may have created it)
@@ -166,7 +171,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens FROM Conversations
+            SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionNames FROM Conversations
             WHERE ChannelType = @channelType AND ConnectionId = @connectionId AND ChannelChatId = @channelChatId
             LIMIT 1
             """;
@@ -210,8 +215,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = """
-                INSERT INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model, ActiveSkills, ChannelType, ConnectionId, ChannelChatId)
-                VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId)
+                INSERT INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, MentionNames)
+                VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId, @mentionNames)
                 """;
             cmd.Parameters.AddWithValue("@id", conversation.Id);
             cmd.Parameters.AddWithValue("@source", conversation.Source);
@@ -225,6 +230,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             cmd.Parameters.AddWithValue("@channelType", channelType);
             cmd.Parameters.AddWithValue("@connectionId", connectionId);
             cmd.Parameters.AddWithValue("@channelChatId", channelChatId);
+            cmd.Parameters.AddWithValue("@mentionNames",
+                conversation.MentionNames is { Count: > 0 }
+                    ? (object)JsonSerializer.Serialize(conversation.MentionNames)
+                    : DBNull.Value);
             cmd.ExecuteNonQuery();
         }
 
@@ -235,7 +244,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens FROM Conversations ORDER BY COALESCE(LastActivity, CreatedAt) DESC";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionNames FROM Conversations ORDER BY COALESCE(LastActivity, CreatedAt) DESC";
 
         using var reader = cmd.ExecuteReader();
         var list = new List<Conversation>();
@@ -249,7 +258,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens FROM Conversations WHERE Id = @id";
+        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionNames FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -269,7 +278,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 TotalPromptTokens = @totalPromptTokens, TotalCompletionTokens = @totalCompletionTokens,
                 TurnCount = @turnCount, LastActivity = @lastActivity, ActiveSkills = @activeSkills,
                 ChannelType = @channelType, ConnectionId = @connectionId, ChannelChatId = @channelChatId,
-                Intention = @intention, ContextWindowTokens = @contextWindowTokens
+                Intention = @intention, ContextWindowTokens = @contextWindowTokens,
+                MentionNames = @mentionNames
             WHERE Id = @id
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
@@ -296,6 +306,10 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.Parameters.AddWithValue("@channelChatId", (object?)conversation.ChannelChatId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@intention", (object?)conversation.Intention ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@contextWindowTokens", (object?)conversation.ContextWindowTokens ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@mentionNames",
+            conversation.MentionNames is { Count: > 0 }
+                ? (object)JsonSerializer.Serialize(conversation.MentionNames)
+                : DBNull.Value);
         cmd.ExecuteNonQuery();
 
         TryStartCompaction(conversation);
@@ -776,7 +790,8 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             ChannelChatId = reader.IsDBNull(19) ? null : reader.GetString(19),
             DisplayName = reader.IsDBNull(20) ? null : reader.GetString(20),
             Intention = reader.IsDBNull(21) ? null : reader.GetString(21),
-            ContextWindowTokens = reader.IsDBNull(22) ? null : reader.GetInt32(22)
+            ContextWindowTokens = reader.IsDBNull(22) ? null : reader.GetInt32(22),
+            MentionNames = reader.IsDBNull(23) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(23))
         };
     }
 

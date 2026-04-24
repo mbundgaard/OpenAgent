@@ -401,6 +401,29 @@ public class SqliteConversationStoreTests : IDisposable
         }
     }
 
+    [Fact]
+    public void MentionNames_RoundTripsThroughUpdateAndGet()
+    {
+        var conversationId = Guid.NewGuid().ToString();
+        var conv = _store.GetOrCreate(conversationId, "app", ConversationType.Text, "p", "m");
+
+        conv.MentionNames = ["Dex", "fox"];
+        _store.Update(conv);
+
+        var reloaded = _store.Get(conversationId);
+        Assert.NotNull(reloaded);
+        Assert.NotNull(reloaded!.MentionNames);
+        Assert.Equal(new[] { "Dex", "fox" }, reloaded.MentionNames);
+
+        // Clearing via empty list stores NULL and hydrates as null.
+        reloaded.MentionNames = [];
+        _store.Update(reloaded);
+
+        var cleared = _store.Get(conversationId);
+        Assert.NotNull(cleared);
+        Assert.Null(cleared!.MentionNames);
+    }
+
     private sealed class GatedSummarizer(Task gate) : ICompactionSummarizer
     {
         public async Task<CompactionResult> SummarizeAsync(
