@@ -554,8 +554,18 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             _logger.LogInformation("Compacting {Count} messages for conversation {ConversationId} (reason: {Reason}), cutoff rowid {RowId}",
                 toCompact.Count, conversationId, reason, newCutoffRowId);
 
-            var result = await _compactionSummarizer.SummarizeAsync(
-                conversation.Context, toCompact, customInstructions, ct);
+            CompactionResult result;
+            try
+            {
+                result = await _compactionSummarizer.SummarizeAsync(
+                    conversation.Context, toCompact, customInstructions, ct);
+            }
+            catch (CompactionDisabledException)
+            {
+                // Summarizer already logged once; we just skip quietly so repeated triggers
+                // don't produce a log storm.
+                return false;
+            }
 
             UpdateCompactionState(conversationId,
                 compactionRunning: false,

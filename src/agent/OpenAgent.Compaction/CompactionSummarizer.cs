@@ -24,6 +24,7 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
     private readonly Func<string, ILlmTextProvider> _providerFactory;
     private readonly AgentConfig _agentConfig;
     private readonly ILogger<CompactionSummarizer> _logger;
+    private bool _providerUnsetLogged;
 
     public CompactionSummarizer(
         Func<string, ILlmTextProvider> providerFactory,
@@ -41,6 +42,19 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
         string? customInstructions = null,
         CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(_agentConfig.CompactionProvider)
+            || string.IsNullOrWhiteSpace(_agentConfig.CompactionModel))
+        {
+            if (!_providerUnsetLogged)
+            {
+                _providerUnsetLogged = true;
+                _logger.LogWarning(
+                    "Compaction skipped: AgentConfig.CompactionProvider or CompactionModel is unset. " +
+                    "Set both to enable automatic and manual compaction.");
+            }
+            throw new CompactionDisabledException();
+        }
+
         var systemPrompt = existingContext is null
             ? CompactionPrompt.Initial
             : CompactionPrompt.Update;
@@ -108,4 +122,15 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
         var truncated = text.Length - maxChars;
         return $"{text[..maxChars]}\n\n[... {truncated} more characters truncated]";
     }
+}
+
+/// <summary>
+/// Thrown by <see cref="CompactionSummarizer"/> when compaction cannot run because the
+/// compaction provider/model is unset in <c>AgentConfig</c>. Callers should treat this as
+/// "skip compaction", not an error.
+/// </summary>
+public sealed class CompactionDisabledException : Exception
+{
+    public CompactionDisabledException()
+        : base("Compaction is disabled because CompactionProvider or CompactionModel is unset.") { }
 }
