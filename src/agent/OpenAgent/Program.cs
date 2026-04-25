@@ -284,6 +284,7 @@ app.MapFileExplorerEndpoints();
 app.MapLogEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapTelnyxWebhookEndpoints();
+app.MapTelnyxStreamingEndpoint();
 app.MapWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
