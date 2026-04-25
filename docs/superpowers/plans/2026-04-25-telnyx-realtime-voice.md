@@ -2712,6 +2712,24 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
 }
 ```
 
+The streaming endpoint must switch from `using var bridge` (sync) to `await using var bridge`
+(IAsyncDisposable) AND add a polite close handshake after `RunAsync` returns — otherwise a
+server-driven exit (session disposal, etc.) leaves the WS open and the client blocks waiting
+for the close frame:
+
+```csharp
+// TelnyxStreamingEndpoint.cs — after await bridge.RunAsync();
+if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
+{
+    try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); }
+    catch { /* best-effort close */ }
+}
+```
+
+> Namespace gotcha: tests under `OpenAgent.Channel.*` namespaces must fully qualify
+> `System.Threading.Channels.Channel.CreateUnbounded<...>` because the unqualified `Channel`
+> token resolves to the project's own `OpenAgent.Channel` namespace.
+
 - [ ] **Step 5: Run tests, expect PASS.**
 
 - [ ] **Step 6: Commit.**
