@@ -502,6 +502,14 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         // content (not the compact summary in Content).
         var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
 
+        // Build channel-message-id -> content lookup for inline reply-quote rendering.
+        var channelMessageContent = new Dictionary<string, string?>();
+        foreach (var stored in storedMessages)
+        {
+            if (stored.ChannelMessageId is { } cmid)
+                channelMessageContent[cmid] = stored.Content;
+        }
+
         for (var i = 0; i < storedMessages.Count; i++)
         {
             var msg = storedMessages[i];
@@ -570,8 +578,20 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                 }
             }
 
-            // Regular user or assistant message
-            result.Add(new AnthropicMessage { Role = msg.Role, Content = msg.Content ?? "" });
+            // Regular user or assistant message. When ReplyToChannelMessageId resolves to
+            // a known earlier message, render an inline blockquote so the LLM can
+            // disambiguate which earlier message is being replied to.
+            string content;
+            if (msg.ReplyToChannelMessageId is { } replyId
+                && channelMessageContent.TryGetValue(replyId, out var quoted))
+            {
+                content = ReplyQuoteFormatter.Format(msg.Content, quoted);
+            }
+            else
+            {
+                content = msg.Content ?? "";
+            }
+            result.Add(new AnthropicMessage { Role = msg.Role, Content = content });
         }
 
         foreach (var m in result)
