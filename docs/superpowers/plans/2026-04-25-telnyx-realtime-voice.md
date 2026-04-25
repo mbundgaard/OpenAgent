@@ -2415,21 +2415,30 @@ public static class TelnyxStreamingEndpoint
                 return;
             }
 
+            // Accept the WebSocket FIRST so all error paths report through WS Close frames rather
+            // than HTTP status codes during upgrade — clients (including Telnyx) only need to
+            // handle one shape of error.
+            var ws = await context.WebSockets.AcceptWebSocketAsync();
+
             var provider = connectionManager.GetProviders()
                 .Select(p => p.Provider)
                 .OfType<TelnyxChannelProvider>()
                 .FirstOrDefault(p => p.Options.WebhookId == webhookId);
-            if (provider is null) { context.Response.StatusCode = 404; return; }
-
-            var callControlId = context.Request.Query["call"].ToString();
-            if (string.IsNullOrWhiteSpace(callControlId) || !provider.TryDequeuePending(callControlId, out var pending) || pending is null)
+            if (provider is null)
             {
-                var ws404 = await context.WebSockets.AcceptWebSocketAsync();
-                await ws404.CloseAsync(WebSocketCloseStatus.NormalClosure, "unknown call", CancellationToken.None);
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "unknown webhook", CancellationToken.None);
                 return;
             }
 
-            var ws = await context.WebSockets.AcceptWebSocketAsync();
+            var callControlId = context.Request.Query["call"].ToString();
+            if (string.IsNullOrWhiteSpace(callControlId) ||
+                !provider.TryDequeuePending(callControlId, out var pending) ||
+                pending is null)
+            {
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "unknown call", CancellationToken.None);
+                return;
+            }
+
             using var bridge = new TelnyxMediaBridge(
                 provider, pending, ws,
                 loggerFactory.CreateLogger<TelnyxMediaBridge>(),
@@ -2479,14 +2488,25 @@ public sealed class TelnyxMediaBridge : IDisposable
 }
 ```
 
-- [ ] **Step 5: Run, expect PASS.**
+- [ ] **Step 5: Wire the route in `Program.cs` next to `MapTelnyxWebhookEndpoints()`.**
 
-- [ ] **Step 6: Commit.**
+```csharp
+app.MapTelnyxStreamingEndpoint();
+```
+
+- [ ] **Step 6: Run tests, expect PASS.**
+
+```bash
+dotnet test --filter TelnyxStreamingEndpointTests
+```
+
+- [ ] **Step 7: Commit.**
 
 ```bash
 git add src/agent/OpenAgent.Channel.Telnyx/TelnyxStreamingEndpoint.cs \
         src/agent/OpenAgent.Channel.Telnyx/TelnyxMediaBridge.cs \
-        src/agent/OpenAgent.Tests/TelnyxStreamingEndpointTests.cs
+        src/agent/OpenAgent.Tests/TelnyxStreamingEndpointTests.cs \
+        src/agent/OpenAgent/Program.cs
 git commit -m "feat(telnyx): WS streaming endpoint with stub bridge"
 ```
 
