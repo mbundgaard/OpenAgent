@@ -1468,10 +1468,13 @@ public class ThinkingClipFactoryTests
 
     private static double MeanAmplitude(byte[] ulaw, int start, int end)
     {
-        // µ-law decode is not necessary for a relative comparison; bytes near 0xFF are silence (negative)
-        // and bytes near 0x7F are silence (positive). We measure |b - 0x7F| as a coarse proxy.
+        // µ-law decode is not necessary for a relative comparison. The G.711 encoder inverts the
+        // sign+exponent+mantissa bits in its final step, so silence (pcm=0) maps to bytes near
+        // 0xFF (positive zero) or 0x7F (negative zero), and full-scale maps to bytes near 0x80
+        // / 0x00. The 7-bit magnitude after inverting (~b & 0x7F) is therefore a monotonic
+        // proxy for amplitude — 0 at silence, 0x7F at full-scale.
         double sum = 0;
-        for (var i = start; i < end; i++) sum += Math.Abs(ulaw[i] - 0x7F);
+        for (var i = start; i < end; i++) sum += ~ulaw[i] & 0x7F;
         return sum / (end - start);
     }
 }
