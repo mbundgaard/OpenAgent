@@ -50,6 +50,12 @@ public sealed record NodeEvent
     [JsonPropertyName("timestamp")]
     public long? Timestamp { get; init; }
 
+    /// <summary>The message ID this message is replying to (for type=message).
+    /// Populated from Baileys extendedTextMessage.contextInfo.stanzaId; null when the
+    /// message is not a reply.</summary>
+    [JsonPropertyName("replyTo")]
+    public string? ReplyTo { get; init; }
+
     /// <summary>Disconnect reason (for type=disconnected).</summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }

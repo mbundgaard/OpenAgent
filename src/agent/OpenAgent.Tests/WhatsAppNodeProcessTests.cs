@@ -107,4 +107,23 @@ public class WhatsAppNodeProcessTests
         var json = WhatsAppNodeProcess.FormatShutdownCommand();
         Assert.Contains("\"type\":\"shutdown\"", json);
     }
+
+    [Fact]
+    public void ParseLine_MessageEventWithReplyTo_ParsesReplyToField()
+    {
+        var json = "{\"type\":\"message\",\"id\":\"ABC\",\"chatId\":\"+45@s.whatsapp.net\",\"text\":\"got it\",\"replyTo\":\"XYZ\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Equal("ABC", evt.Id);
+        Assert.Equal("XYZ", evt.ReplyTo);
+    }
+
+    [Fact]
+    public void ParseLine_MessageEventWithoutReplyTo_HasNullReplyTo()
+    {
+        var json = "{\"type\":\"message\",\"id\":\"ABC\",\"chatId\":\"+45@s.whatsapp.net\",\"text\":\"hi\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Null(evt.ReplyTo);
+    }
 }
