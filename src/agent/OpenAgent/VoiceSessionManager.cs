@@ -33,7 +33,7 @@ public sealed class VoiceSessionManager : IVoiceSessionManager, IAsyncDisposable
             : conversation.Provider;
 
         var provider = _providerFactory(providerKey);
-        var session = await provider.StartSessionAsync(conversation, ct);
+        var session = await provider.StartSessionAsync(conversation, ct: ct);
 
         if (!_sessions.TryAdd(conversationId, session))
         {

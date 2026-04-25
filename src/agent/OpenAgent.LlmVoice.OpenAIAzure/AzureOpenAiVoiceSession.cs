@@ -165,7 +165,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         }, ct);
 
         // Advertise negotiated audio format to the client. OpenAI Realtime has fixed rates per codec.
-        var rate = RateForCodec(codec);
+        var rate = _sampleRate;
         await _channel.Writer.WriteAsync(new SessionReady(
             InputSampleRate: rate,
             OutputSampleRate: rate,

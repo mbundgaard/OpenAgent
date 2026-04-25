@@ -1,4 +1,5 @@
 using OpenAgent.LlmVoice.OpenAIAzure;
+using OpenAgent.LlmVoice.OpenAIAzure.Models;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -39,5 +40,31 @@ public class AzureOpenAiVoiceProviderOptionsTests
 
         Assert.DoesNotContain(provider.ConfigFields, f => f.Key == "codec");
         Assert.DoesNotContain(provider.ConfigFields, f => f.Key == "sampleRate");
+    }
+
+    [Fact]
+    public void Session_RejectsCodecRateMismatch()
+    {
+        var config = new AzureRealtimeConfig
+        {
+            ApiKey = "k",
+            Endpoint = "https://x",
+            Models = ["gpt-realtime"]
+        };
+        var conversation = new Conversation
+        {
+            Id = "c1",
+            Source = "t",
+            Type = ConversationType.Voice,
+            Provider = "azure-openai-voice",
+            Model = "gpt-realtime"
+        };
+        var bad = new VoiceSessionOptions("g711_ulaw", 16000); // wrong rate for codec
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            new AzureOpenAiVoiceSession(config, conversation, agentLogic: null!, bad,
+                NullLogger<AzureOpenAiVoiceSession>.Instance));
+        Assert.Contains("8000", ex.Message);
+        Assert.Equal("options", ex.ParamName);
     }
 }
