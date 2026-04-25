@@ -12,8 +12,9 @@ namespace OpenAgent.Channel.Telnyx;
 /// Per-call bridge between the Telnyx Media Streaming WebSocket and an
 /// <see cref="IVoiceSession"/>. Decodes inbound µ-law frames into the session, encodes outbound
 /// <see cref="AudioDelta"/> events back as Telnyx media frames, and registers itself in the
-/// <see cref="TelnyxBridgeRegistry"/> for the lifetime of the call. Barge-in, thinking-clip
-/// pumping, and hangup land in subsequent tasks (19/20/21).
+/// <see cref="TelnyxBridgeRegistry"/> for the lifetime of the call. Owns barge-in (clear +
+/// CancelResponseAsync on SpeechStarted), the thinking-clip pump during tool calls, and the
+/// agent-initiated hangup state machine (SetPendingHangup with 500ms early-exit + 5s hard cap).
 /// </summary>
 public sealed class TelnyxMediaBridge : IAsyncDisposable
 {
@@ -27,6 +28,12 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
     // web_fetch invoking extract_text) keep the pump running until the LAST completion.
     private CancellationTokenSource? _pumpCts;
     private int _activeToolCalls;
+    // Agent-initiated hangup state (Task 21). EndCallTool calls SetPendingHangup; the bridge
+    // waits for the farewell audio to complete before invoking Telnyx HangupAsync, with a 500ms
+    // early-exit when no audio flows and a 5s hard fallback if AudioDone never arrives.
+    private bool _pendingHangup;
+    private bool _audioObservedSinceFlag;
+    private CancellationTokenSource? _hangupTimerCts;
 
     public TelnyxMediaBridge(
         TelnyxChannelProvider provider,
@@ -150,9 +157,10 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
     }
 
     /// <summary>
-    /// Pumps voice events from the session out to the Telnyx WebSocket. Currently forwards
-    /// <see cref="AudioDelta"/> only; later tasks add SpeechStarted (barge-in), tool-call
-    /// thinking pumps, and AudioDone-driven hangup.
+    /// Pumps voice events from the session out to the Telnyx WebSocket. Forwards
+    /// <see cref="AudioDelta"/> as media frames, runs the barge-in flush on SpeechStarted, the
+    /// thinking-clip pump on tool start/complete, and the agent-initiated hangup completion on
+    /// <see cref="AudioDone"/> when <see cref="SetPendingHangup"/> has been called.
     /// </summary>
     private async Task WriteLoopAsync(CancellationToken ct)
     {
@@ -164,7 +172,17 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
                 switch (evt)
                 {
                     case AudioDelta audio:
+                        // Mark farewell audio so the hangup timer's 500ms early-exit doesn't fire.
+                        if (_pendingHangup) _audioObservedSinceFlag = true;
                         await SendTextAsync(TelnyxMediaFrame.ComposeMedia(audio.Audio.Span), ct);
+                        break;
+                    case AudioDone:
+                        // Clean farewell case: agent finished speaking after EndCallTool fired.
+                        if (_pendingHangup && _audioObservedSinceFlag)
+                        {
+                            try { _hangupTimerCts?.Cancel(); } catch { /* CTS may already be disposed */ }
+                            await DoHangupAsync();
+                        }
                         break;
                     case SpeechStarted:
                         // Barge-in: flush any buffered TTS at Telnyx and cancel the LLM response so
@@ -182,7 +200,6 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
                         // at Telnyx with a clear frame; nested calls keep the pump alive.
                         await StopPumpAsync(ct);
                         break;
-                        // Task 21: AudioDone with pending hangup, etc.
                 }
             }
         }
@@ -246,6 +263,69 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
         catch (WebSocketException ex)
         {
             _logger.LogWarning(ex, "Telnyx thinking pump WS send failed");
+        }
+    }
+
+    /// <summary>
+    /// Marks this bridge as ready to hang up after the agent's farewell audio. Invoked by
+    /// <c>EndCallTool</c> (Task 23) via <see cref="TelnyxBridgeRegistry"/>. Three branches resolve
+    /// the hangup: AudioDone after observed audio (clean), 500ms with no audio (model already
+    /// done or didn't speak), or 5s hard fallback (model misbehaves / API stalls).
+    /// </summary>
+    public void SetPendingHangup()
+    {
+        _pendingHangup = true;
+        // Reset every time so a second SetPendingHangup attempt can't be shortcut by stale state.
+        _audioObservedSinceFlag = false;
+        _hangupTimerCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _ = HangupTimerAsync(_hangupTimerCts.Token);
+    }
+
+    /// <summary>
+    /// Drives the two-stage hangup fallback: 500ms early-exit if no audio flowed since
+    /// <see cref="SetPendingHangup"/> (model already finished or never spoke), then a hard 5s
+    /// total cap if audio started but AudioDone never arrives.
+    /// </summary>
+    private async Task HangupTimerAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+            // Early-exit window: if no audio has flowed since SetPendingHangup, the agent isn't going to speak.
+            if (_pendingHangup && !_audioObservedSinceFlag)
+            {
+                await DoHangupAsync();
+                return;
+            }
+            // Hard fallback: 4500ms more = 5s total. Catches model stalls.
+            await Task.Delay(TimeSpan.FromMilliseconds(4500), ct);
+            if (_pendingHangup) await DoHangupAsync();
+        }
+        catch (OperationCanceledException) { /* AudioDone path completed first, or session closed */ }
+    }
+
+    /// <summary>
+    /// Idempotent hangup invocation. The first call flips the flag and POSTs to Telnyx; concurrent
+    /// callers (timer racing AudioDone) must no-op. HangupAsync itself is idempotent server-side
+    /// (404/410 treated as success) so duplicate POSTs are safe — but we still gate to avoid noise.
+    /// </summary>
+    private async Task DoHangupAsync()
+    {
+        if (!_pendingHangup) return; // Idempotent — concurrent paths must no-op after the first.
+        _pendingHangup = false;
+        try
+        {
+            // Best-effort: hangup uses default token because the endpoint is idempotent and we
+            // want it to complete even if the bridge is already tearing down.
+            await _provider.CallControlClient.HangupAsync(_pending.CallControlId, default);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Telnyx HangupAsync failed for call {CallControlId}", _pending.CallControlId);
+        }
+        finally
+        {
+            try { _hangupTimerCts?.Cancel(); } catch { /* CTS may already be disposed */ }
         }
     }
 

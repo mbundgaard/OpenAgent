@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -29,6 +31,7 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
     private const string TestCallControlAppId = "telnyx-cc-app-bridge";
 
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly RecordingHandler _recordingHandler = new();
 
     public TelnyxMediaBridgeTests(WebApplicationFactory<Program> factory)
     {
@@ -45,6 +48,11 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
                 services.AddSingleton<ILlmVoiceProvider>(sp => sp.GetRequiredService<TestVoiceProvider>());
                 services.AddSingleton<Func<string, ILlmVoiceProvider>>(sp =>
                     _ => sp.GetRequiredService<TestVoiceProvider>());
+
+                // Replace the named HttpClient that TelnyxCallControlClient consumes with one
+                // wired to a recording handler so hangup tests don't hit live Telnyx.
+                services.AddHttpClient(nameof(TelnyxCallControlClient))
+                    .ConfigurePrimaryHttpMessageHandler(() => _recordingHandler);
             });
         });
     }
@@ -230,6 +238,86 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task PendingHangup_AfterAudioDelta_HangsUpOnAudioDone()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (ws, fakeProvider, conversationId) = await ConnectStreamAsync(cts.Token);
+
+        var session = await fakeProvider.WaitForSessionAsync(conversationId, cts.Token);
+        var bridge = await WaitForBridgeAsync(conversationId, cts.Token);
+
+        // Clean farewell case: agent calls EndCallTool (sets pending), speaks farewell, finishes.
+        bridge.SetPendingHangup();
+        session.Emit(new AudioDelta(new byte[] { 0, 1, 2 }));
+        await Task.Delay(20, cts.Token);
+        session.Emit(new AudioDone());
+
+        await WaitUntilAsync(() => _recordingHandler.HangupCalled, cts.Token);
+        Assert.True(_recordingHandler.HangupCalled);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task PendingHangup_NoAudioInFlight_HangsUpAfter500ms()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (ws, _, conversationId) = await ConnectStreamAsync(cts.Token);
+
+        var bridge = await WaitForBridgeAsync(conversationId, cts.Token);
+
+        // Model already finished or didn't speak — no AudioDelta after SetPendingHangup. The
+        // 500ms early-exit timer must fire and hang up the call.
+        bridge.SetPendingHangup();
+
+        // Generous 2s window for the 500ms timer plus dispatch slack.
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        waitCts.CancelAfter(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => _recordingHandler.HangupCalled, waitCts.Token);
+        Assert.True(_recordingHandler.HangupCalled);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task PendingHangup_ModelMisbehaves_HangsUpAfter5s_Hard()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var (ws, fakeProvider, conversationId) = await ConnectStreamAsync(cts.Token);
+
+        var session = await fakeProvider.WaitForSessionAsync(conversationId, cts.Token);
+        var bridge = await WaitForBridgeAsync(conversationId, cts.Token);
+
+        // Hard fallback case: agent starts speaking but AudioDone never arrives (model stalled or
+        // API hiccup). The 5s total cap must trip and hang up regardless.
+        bridge.SetPendingHangup();
+        session.Emit(new AudioDelta(new byte[] { 0 }));
+        // No AudioDone emitted.
+
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        waitCts.CancelAfter(TimeSpan.FromSeconds(7));
+        await WaitUntilAsync(() => _recordingHandler.HangupCalled, waitCts.Token);
+        Assert.True(_recordingHandler.HangupCalled);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Polls the bridge registry until the bridge for the given conversation has registered itself.
+    /// </summary>
+    private async Task<TelnyxMediaBridge> WaitForBridgeAsync(string conversationId, CancellationToken ct)
+    {
+        var registry = _factory.Services.GetRequiredService<TelnyxBridgeRegistry>();
+        for (var i = 0; i < 200; i++)
+        {
+            if (registry.TryGet(conversationId, out var bridge) && bridge is TelnyxMediaBridge b)
+                return b;
+            await Task.Delay(20, ct);
+        }
+        throw new TimeoutException($"No bridge registered for conversation {conversationId}.");
+    }
+
     /// <summary>
     /// Spins up a Telnyx connection in the host, seeds a Phone conversation, registers a pending
     /// bridge for a synthetic call control id, and connects a WebSocket to the streaming endpoint.
@@ -364,6 +452,28 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
                 await Task.Delay(20, ct);
             }
             throw new TimeoutException($"No fake voice session created for conversation {conversationId}.");
+        }
+    }
+
+    /// <summary>
+    /// HTTP message handler that records all outgoing requests and returns 200 OK without hitting
+    /// the network. Used by the hangup state machine tests so we can assert the bridge POSTed to
+    /// Telnyx's hangup action without making a live API call.
+    /// </summary>
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        private readonly ConcurrentBag<string> _requestUris = new();
+
+        public IReadOnlyCollection<string> AllRequestUris => _requestUris;
+        public bool HangupCalled => _requestUris.Any(u => u.Contains("/actions/hangup"));
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            _requestUris.Add(request.RequestUri?.ToString() ?? string.Empty);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{}")
+            });
         }
     }
 }
