@@ -2630,7 +2630,7 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
         try
         {
             var voiceProvider = _provider.VoiceProviderResolver(_pending.VoiceProviderKey);
-            var conversation = _provider.ConversationStore.GetById(_pending.ConversationId)
+            var conversation = _provider.ConversationStore.Get(_pending.ConversationId)
                 ?? throw new InvalidOperationException("Conversation missing");
 
             _session = await voiceProvider.StartSessionAsync(
@@ -3082,7 +3082,14 @@ public sealed class EndCallTool : ITool
     {
         Name = "end_call",
         Description = "Politely end the current phone call. Use only after speaking a brief farewell. The line drops after the farewell finishes playing.",
-        Parameters = """{"type":"object","properties":{},"additionalProperties":false}"""
+        // AgentToolDefinition.Parameters is `object`, not a JSON string — anonymous object matches the
+        // pattern used by FileSystem/Shell tools (the serializer turns it into proper JSON Schema).
+        Parameters = new
+        {
+            type = "object",
+            properties = new { },
+            additionalProperties = false
+        }
     };
 
     public EndCallTool(TelnyxBridgeRegistry registry, IConversationStore store)
@@ -3093,7 +3100,7 @@ public sealed class EndCallTool : ITool
 
     public Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
-        var conv = _store.GetById(conversationId);
+        var conv = _store.Get(conversationId);
         if (conv is null || conv.Type != ConversationType.Phone)
             return Task.FromResult("error: end_call only works during a phone call");
 
