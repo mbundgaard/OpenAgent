@@ -118,14 +118,17 @@ public sealed class WhatsAppMessageHandler
             userText = $"[{message.PushName}] {userText}";
         }
 
-        // Build user message
+        // Build user message. ReplyToChannelMessageId comes from Baileys
+        // contextInfo.stanzaId — when set, the LLM-context builder will render the
+        // replied-to message inline as a markdown blockquote.
         var userMessage = new Message
         {
             Id = Guid.NewGuid().ToString(),
             ConversationId = conversation.Id,
             Role = "user",
             Content = userText,
-            ChannelMessageId = message.Id
+            ChannelMessageId = message.Id,
+            ReplyToChannelMessageId = message.ReplyTo
         };
 
         // Call LLM and collect response
