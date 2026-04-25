@@ -76,4 +76,11 @@ public class ReplyQuoteFormatterTests
         var result = ReplyQuoteFormatter.Format("ok", "   earlier   ");
         Assert.Equal("> earlier\n\nok", result);
     }
+
+    [Fact]
+    public void Format_WhitespaceOnlyQuoted_ReturnsContentUnchanged()
+    {
+        var result = ReplyQuoteFormatter.Format("ok", "   \t\n  ");
+        Assert.Equal("ok", result);
+    }
 }

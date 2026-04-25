@@ -29,6 +29,10 @@ public static class ReplyQuoteFormatter
         // Collapse all whitespace runs (newlines, tabs, multiple spaces) to a single space, trim.
         var collapsed = WhitespaceRun.Replace(quotedContent, " ").Trim();
 
+        // Whitespace-only input collapses to empty — treat as no-quote.
+        if (collapsed.Length == 0)
+            return content ?? "";
+
         // Truncate to MaxQuotedLength, append ellipsis if cut.
         var quoted = collapsed.Length > MaxQuotedLength
             ? collapsed[..MaxQuotedLength] + "…"
