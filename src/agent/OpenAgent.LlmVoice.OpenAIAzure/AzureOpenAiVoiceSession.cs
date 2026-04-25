@@ -23,6 +23,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
     private readonly Conversation _conversation;
     private readonly IAgentLogic _agentLogic;
     private readonly ILogger _logger;
+    private readonly string _codec;
+    private readonly int _sampleRate;
     private readonly ClientWebSocket _ws = new();
     private readonly Channel<VoiceEvent> _channel = Channel.CreateUnbounded<VoiceEvent>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
@@ -32,12 +34,26 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     public string SessionId { get; private set; } = string.Empty;
 
-    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, Conversation conversation, IAgentLogic agentLogic, ILogger logger)
+    internal AzureOpenAiVoiceSession(
+        AzureRealtimeConfig config,
+        Conversation conversation,
+        IAgentLogic agentLogic,
+        VoiceSessionOptions? options,
+        ILogger logger)
     {
         _config = config;
         _conversation = conversation;
         _agentLogic = agentLogic;
         _logger = logger;
+
+        var requested = options ?? new VoiceSessionOptions("pcm16", 24000);
+        var expectedRate = RateForCodec(requested.Codec);
+        if (requested.SampleRate != expectedRate)
+            throw new ArgumentException(
+                $"Azure Realtime supports {requested.Codec} only at {expectedRate} Hz, got {requested.SampleRate}.",
+                nameof(options));
+        _codec = requested.Codec;
+        _sampleRate = requested.SampleRate;
     }
 
     internal async Task ConnectAsync(CancellationToken ct)
@@ -127,7 +143,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
-        var codec = string.IsNullOrWhiteSpace(_config.Codec) ? "pcm16" : _config.Codec!;
+        var codec = _codec;
 
         var sessionConfig = new RealtimeSessionConfig
         {
