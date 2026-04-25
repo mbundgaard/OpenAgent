@@ -16,7 +16,7 @@ namespace OpenAgent.Channel.Telnyx;
 /// CancelResponseAsync on SpeechStarted), the thinking-clip pump during tool calls, and the
 /// agent-initiated hangup state machine (SetPendingHangup with 500ms early-exit + 5s hard cap).
 /// </summary>
-public sealed class TelnyxMediaBridge : IAsyncDisposable
+public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
 {
     private readonly TelnyxChannelProvider _provider;
     private readonly PendingBridge _pending;
