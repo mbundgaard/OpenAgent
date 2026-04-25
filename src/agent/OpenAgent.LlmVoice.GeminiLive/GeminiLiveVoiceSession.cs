@@ -481,11 +481,15 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
 
             _ = Task.Run(async () =>
             {
+                // Emit thinking-cue before the tool runs so the endpoint can push a placeholder.
+                await _channel.Writer.WriteAsync(new VoiceToolCallStarted(capturedName, capturedCallId), ct);
+                string? completionResult = null;
                 try
                 {
                     _logger.LogDebug("Executing Gemini voice tool {ToolName} for conversation {ConversationId}",
                         capturedName, conversationId);
                     var result = await _agentLogic.ExecuteToolAsync(conversationId, capturedName, capturedArguments, ct);
+                    completionResult = result;
 
                     _agentLogic.AddMessage(conversationId, new Message
                     {
@@ -503,6 +507,7 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
                     _logger.LogError(ex, "Gemini voice tool {ToolName} failed for conversation {ConversationId}",
                         capturedName, conversationId);
                     var errorResult = JsonSerializer.Serialize(new { error = ex.Message });
+                    completionResult = errorResult;
 
                     _agentLogic.AddMessage(conversationId, new Message
                     {
@@ -514,6 +519,12 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
                     });
 
                     await SendToolResponseAsync(capturedCallId, capturedName, errorResult, ct);
+                }
+                finally
+                {
+                    // Always emit the completed cue — even on cancellation — so the browser pump
+                    // never gets stuck on thinking_started. TryWrite is safe during channel completion.
+                    _channel.Writer.TryWrite(new VoiceToolCallCompleted(capturedCallId, completionResult ?? "cancelled"));
                 }
             }, ct);
         }

@@ -279,10 +279,12 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             {
                 // Emit thinking-cue before the tool runs so the endpoint can push a placeholder.
                 await _channel.Writer.WriteAsync(new VoiceToolCallStarted(name, callId), ct);
+                string? completionResult = null;
                 try
                 {
                     _logger.LogDebug("Executing voice tool {ToolName} for conversation {ConversationId}", name, conversationId);
                     var result = await _agentLogic.ExecuteToolAsync(conversationId, name, arguments, ct);
+                    completionResult = result;
 
                     // Persist tool result summary
                     _agentLogic.AddMessage(conversationId, new Message
@@ -295,13 +297,13 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                         Modality = MessageModality.Voice
                     });
 
-                    await _channel.Writer.WriteAsync(new VoiceToolCallCompleted(callId, result), ct);
                     await SendToolResultAndContinueAsync(callId, result, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Voice tool {ToolName} failed for conversation {ConversationId}", name, conversationId);
                     var errorResult = JsonSerializer.Serialize(new { error = ex.Message });
+                    completionResult = errorResult;
 
                     // Persist error summary
                     _agentLogic.AddMessage(conversationId, new Message
@@ -314,8 +316,13 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                         Modality = MessageModality.Voice
                     });
 
-                    await _channel.Writer.WriteAsync(new VoiceToolCallCompleted(callId, errorResult), ct);
                     await SendToolResultAndContinueAsync(callId, errorResult, ct);
+                }
+                finally
+                {
+                    // Always emit the completed cue — even on cancellation — so the browser/Telnyx pump
+                    // never gets stuck on thinking_started. TryWrite is safe during channel completion.
+                    _channel.Writer.TryWrite(new VoiceToolCallCompleted(callId, completionResult ?? "cancelled"));
                 }
             }, ct);
             return;
