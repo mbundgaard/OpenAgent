@@ -2017,21 +2017,28 @@ git commit -m "feat(telnyx): channel provider + factory with config parsing"
 ```csharp
 // OpenAgent.Tests/TelnyxWebhookEndpointTests.cs
 using System.Net;
-using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using OpenAgent;
+using OpenAgent.Contracts;
+using OpenAgent.Models.Connections;
 using Xunit;
 
 namespace OpenAgent.Tests;
 
 public class TelnyxWebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
+    private const string TestConnectionId = "test-telnyx";
+    private const string TestWebhookId = "abcdef123456";
+    private const string TestCallControlAppId = "telnyx-cc-app";
+
     private readonly WebApplicationFactory<Program> _factory;
 
     public TelnyxWebhookEndpointTests(WebApplicationFactory<Program> factory)
     {
+        TestSetup.EnsureConfigSeeded();
         _factory = factory;
     }
 
@@ -2048,10 +2055,8 @@ public class TelnyxWebhookEndpointTests : IClassFixture<WebApplicationFactory<Pr
     [Fact]
     public async Task CallInitiated_BadConnectionId_Returns401()
     {
-        // requires test factory to register a Telnyx connection with known webhookId/connectionId/etc.
-        // Use TestSetup.SeedTelnyxConnection helper (added in this task).
-        using var (factory, webhookId, _) = TestSetup.WithTelnyxConnection(_factory);
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
+        await SetupRunningConnectionAsync();
 
         var body = JsonSerializer.Serialize(new
         {
@@ -2061,16 +2066,47 @@ public class TelnyxWebhookEndpointTests : IClassFixture<WebApplicationFactory<Pr
                 payload = new { call_control_id = "call-1", from = "+4520", to = "+4535150636", connection_id = "WRONG" }
             }
         });
-        var res = await client.PostAsync($"/api/webhook/telnyx/{webhookId}/call",
+        var res = await client.PostAsync($"/api/webhook/telnyx/{TestWebhookId}/call",
             new StringContent(body, Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+    }
+
+    /// <summary>
+    /// Seeds a Telnyx connection into the running host's IConnectionStore and starts it via
+    /// IConnectionManager. WebhookPublicKey is left blank so the verifier takes the dev-skip
+    /// path — incoming requests don't need to be signed for the route handler to run.
+    /// </summary>
+    private async Task SetupRunningConnectionAsync()
+    {
+        var store = _factory.Services.GetRequiredService<IConnectionStore>();
+        var manager = _factory.Services.GetRequiredService<IConnectionManager>();
+
+        var config = JsonSerializer.SerializeToElement(new
+        {
+            apiKey = "test-key",
+            phoneNumber = "+4535150636",
+            baseUrl = "https://example.com",
+            callControlAppId = TestCallControlAppId,
+            webhookId = TestWebhookId,
+            // webhookPublicKey deliberately omitted → dev-skip path in TelnyxSignatureVerifier
+        });
+
+        store.Save(new Connection
+        {
+            Id = TestConnectionId,
+            Name = "Test Telnyx",
+            Type = "telnyx",
+            Enabled = true,
+            ConversationId = "unused",  // Telnyx derives per-call conversation from caller E.164
+            Config = config,
+        });
+
+        await manager.StartConnectionAsync(TestConnectionId, default);
     }
 
     // Additional cases (allowlist, signature failure with key set) follow the same shape.
 }
 ```
-
-The test depends on a `TestSetup.WithTelnyxConnection` helper that creates a `WebApplicationFactory` with a known Telnyx connection seeded into the connection store and a fake `TelnyxCallControlClient`. Add the helper in this task. (See the existing `TestSetup` class in `OpenAgent.Tests/TestSetup.cs` for the pattern.)
 
 - [ ] **Step 2: Run, expect FAIL.**
 
@@ -2078,6 +2114,7 @@ The test depends on a `TestSetup.WithTelnyxConnection` helper that creates a `We
 
 ```csharp
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -2126,7 +2163,8 @@ public static class TelnyxWebhookEndpoints
             return Results.Unauthorized();
         }
 
-        // Parse the envelope
+        // Parse the envelope. Properties carry [JsonPropertyName] attributes for the snake_case
+        // wire shape, so default JsonSerializerOptions are sufficient.
         TelnyxWebhookEnvelope env;
         try { env = JsonSerializer.Deserialize<TelnyxWebhookEnvelope>(rawBody)
               ?? throw new JsonException("null"); }
@@ -2247,35 +2285,62 @@ public static class TelnyxWebhookEndpoints
 
     private sealed class TelnyxWebhookEnvelope
     {
-        public TelnyxData? Data { get; set; }
+        [JsonPropertyName("data")] public TelnyxData? Data { get; set; }
     }
     private sealed class TelnyxData
     {
-        public string? EventType { get; set; }
-        public TelnyxPayload? Payload { get; set; }
+        [JsonPropertyName("event_type")] public string? EventType { get; set; }
+        [JsonPropertyName("payload")] public TelnyxPayload? Payload { get; set; }
     }
     private sealed class TelnyxPayload
     {
-        public string? CallControlId { get; set; }
-        public string? ConnectionId { get; set; }
-        public string? From { get; set; }
-        public string? To { get; set; }
+        [JsonPropertyName("call_control_id")] public string? CallControlId { get; set; }
+        [JsonPropertyName("connection_id")] public string? ConnectionId { get; set; }
+        [JsonPropertyName("from")] public string? From { get; set; }
+        [JsonPropertyName("to")] public string? To { get; set; }
     }
 }
 ```
 
-> Note: the JSON envelope class names use PascalCase but System.Text.Json default snake_case binding requires explicit converter or attributes. Use `JsonSerializerOptions { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }` consistently in the deserialise call (see `TelnyxMediaFrame.Options` for the pattern).
+- [ ] **Step 4: Wire minimum DI in `Program.cs` so the endpoint is reachable in integration tests.**
 
-- [ ] **Step 4: Run tests.**
+The remaining DI for the bridge / `EndCallTool` lands in Task 22; this step adds only what the
+webhook endpoint test requires:
+
+```csharp
+// OpenAgent/Program.cs — alongside the existing channel factory registrations
+builder.Services.AddHttpClient(); // first IHttpClientFactory consumer in this codebase
+builder.Services.AddSingleton<TelnyxBridgeRegistry>();
+builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
+    new TelnyxChannelProviderFactory(
+        sp.GetRequiredService<IConversationStore>(),
+        sp.GetRequiredService<IConnectionStore>(),
+        sp.GetRequiredService<Func<string, ILlmVoiceProvider>>(),
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<TelnyxBridgeRegistry>(),
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<ILoggerFactory>()));
+
+// alongside the existing app.MapTelegramWebhookEndpoints() etc.
+app.MapTelnyxWebhookEndpoints();
+```
+
+The `OpenAgent.Channel.Telnyx` project must already be referenced from `OpenAgent.csproj`
+(this happened in Task 8). Add `using OpenAgent.Channel.Telnyx;` at the top of `Program.cs`.
+
+- [ ] **Step 5: Run tests.**
 
 ```bash
 dotnet test --filter TelnyxWebhookEndpointTests
 ```
 
-- [ ] **Step 5: Commit.**
+- [ ] **Step 6: Commit.**
 
 ```bash
-git add src/agent/OpenAgent.Channel.Telnyx/TelnyxWebhookEndpoints.cs src/agent/OpenAgent.Tests/TelnyxWebhookEndpointTests.cs src/agent/OpenAgent.Tests/TestSetup.cs
+git add src/agent/OpenAgent.Channel.Telnyx/TelnyxWebhookEndpoints.cs \
+        src/agent/OpenAgent.Tests/TelnyxWebhookEndpointTests.cs \
+        src/agent/OpenAgent/Program.cs
 git commit -m "feat(telnyx): call lifecycle webhook endpoint with rollback + idempotent hangup"
 ```
 
