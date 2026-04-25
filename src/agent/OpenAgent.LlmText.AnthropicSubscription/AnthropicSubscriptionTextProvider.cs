@@ -503,6 +503,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
 
         // Build channel-message-id -> content lookup for inline reply-quote rendering.
+        // Keyed by ChannelMessageId so we can resolve ReplyToChannelMessageId at render time.
         var channelMessageContent = new Dictionary<string, string?>();
         foreach (var stored in storedMessages)
         {
