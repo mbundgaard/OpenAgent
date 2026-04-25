@@ -1669,10 +1669,18 @@ git commit -m "feat(telnyx): bridge registry for active-call lookup"
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent.Channel.Telnyx;
+using OpenAgent.Contracts;
 using OpenAgent.Models.Connections;
 using Xunit;
 
 namespace OpenAgent.Tests;
+
+// TelnyxChannelProvider eagerly materialises a Call Control HttpClient in its ctor, so the
+// IHttpClientFactory cannot be null! in unit tests.
+file sealed class StubHttpClientFactory : IHttpClientFactory
+{
+    public HttpClient CreateClient(string name) => new();
+}
 
 public class TelnyxChannelProviderFactoryTests
 {
@@ -1705,6 +1713,9 @@ public class TelnyxChannelProviderFactoryTests
         var conn = new Connection
         {
             Id = "c", Name = "n", Type = "telnyx", Enabled = true,
+            // Connection.ConversationId is required by the model. Telnyx derives a per-call
+            // conversation from the caller E.164 at runtime, so this property is unused.
+            ConversationId = "unused",
             Config = JsonSerializer.Deserialize<JsonElement>(json)
         };
         var factory = NewFactory();
@@ -1721,8 +1732,9 @@ public class TelnyxChannelProviderFactoryTests
             connectionStore: null!,
             voiceProviderResolver: _ => null!,
             agentConfig: null!,
+            environment: new AgentEnvironment { DataPath = Path.GetTempPath() },
             bridgeRegistry: new TelnyxBridgeRegistry(),
-            httpClientFactory: null!,
+            httpClientFactory: new StubHttpClientFactory(),
             loggerFactory: NullLoggerFactory.Instance);
 }
 ```
@@ -1747,6 +1759,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
     private readonly IConnectionStore _connectionStore;
     private readonly Func<string, ILlmVoiceProvider> _voiceProviderResolver;
     private readonly AgentConfig _agentConfig;
+    private readonly AgentEnvironment _environment;
     private readonly TelnyxBridgeRegistry _bridgeRegistry;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILoggerFactory _loggerFactory;
@@ -1772,6 +1785,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
         IConnectionStore connectionStore,
         Func<string, ILlmVoiceProvider> voiceProviderResolver,
         AgentConfig agentConfig,
+        AgentEnvironment environment,
         TelnyxBridgeRegistry bridgeRegistry,
         IHttpClientFactory httpClientFactory,
         ILoggerFactory loggerFactory)
@@ -1780,6 +1794,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
         _connectionStore = connectionStore;
         _voiceProviderResolver = voiceProviderResolver;
         _agentConfig = agentConfig;
+        _environment = environment;
         _bridgeRegistry = bridgeRegistry;
         _httpClientFactory = httpClientFactory;
         _loggerFactory = loggerFactory;
@@ -1795,6 +1810,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
             _connectionStore,
             _voiceProviderResolver,
             _agentConfig,
+            _environment,
             _bridgeRegistry,
             _httpClientFactory,
             _loggerFactory);
@@ -1854,6 +1870,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
     private readonly IConversationStore _store;
     private readonly Func<string, ILlmVoiceProvider> _voiceProviderResolver;
     private readonly AgentConfig _agentConfig;
+    private readonly AgentEnvironment _environment;
     private readonly TelnyxBridgeRegistry _bridgeRegistry;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILoggerFactory _loggerFactory;
@@ -1867,6 +1884,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
     public TelnyxCallControlClient CallControlClient { get; }
     public byte[] ThinkingClip { get; private set; } = [];
     public AgentConfig AgentConfig => _agentConfig;
+    public AgentEnvironment Environment => _environment;
     public IConversationStore ConversationStore => _store;
     public Func<string, ILlmVoiceProvider> VoiceProviderResolver => _voiceProviderResolver;
     public ILoggerFactory LoggerFactory => _loggerFactory;
@@ -1878,6 +1896,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         IConnectionStore connectionStore,
         Func<string, ILlmVoiceProvider> voiceProviderResolver,
         AgentConfig agentConfig,
+        AgentEnvironment environment,
         TelnyxBridgeRegistry bridgeRegistry,
         IHttpClientFactory httpClientFactory,
         ILoggerFactory loggerFactory)
@@ -1888,6 +1907,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         _connectionStore = connectionStore;
         _voiceProviderResolver = voiceProviderResolver;
         _agentConfig = agentConfig;
+        _environment = environment;
         _bridgeRegistry = bridgeRegistry;
         _httpClientFactory = httpClientFactory;
         _loggerFactory = loggerFactory;
@@ -1947,7 +1967,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         if (string.IsNullOrWhiteSpace(_options.ThinkingClipPath))
             return ThinkingClipFactory.Generate();
 
-        var fullPath = Path.Combine(_agentConfig.DataPath, _options.ThinkingClipPath);
+        var fullPath = Path.Combine(_environment.DataPath, _options.ThinkingClipPath);
         if (!File.Exists(fullPath))
         {
             _logger.LogWarning("Telnyx ThinkingClipPath {Path} missing — falling back to procedural default", fullPath);
