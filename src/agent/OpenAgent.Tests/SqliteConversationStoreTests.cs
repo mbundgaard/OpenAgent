@@ -402,6 +402,71 @@ public class SqliteConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Dispose_waits_for_in_flight_threshold_compaction_so_logger_isnt_torn_down_under_it()
+    {
+        // Regression test for the CI flake where SqliteConversationStore.Dispose() returned
+        // while a fire-and-forget Threshold compaction Task.Run was still inside
+        // ICompactionSummarizer.SummarizeAsync. After Dispose the host tears down the DI
+        // container; the late background tick then logs / accesses disposed services,
+        // which surfaces as ObjectDisposedException at xUnit's IClassFixture cleanup.
+        //
+        // The fix tracks background compaction Tasks and waits for them in Dispose, with a
+        // bounded timeout so a stuck task can't hang shutdown.
+        var dbDir = Path.Combine(Path.GetTempPath(), $"openagent-test-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dbDir);
+        try
+        {
+            var gate = new TaskCompletionSource();
+            var summarizer = new GatedSummarizer(gate.Task);
+            var env = new AgentEnvironment { DataPath = dbDir };
+            // Tiny budgets so a single Update() crosses the threshold and triggers compaction.
+            var config = new CompactionConfig { KeepRecentTokens = 1, MaxContextTokens = 100, CompactionTriggerPercent = 50 };
+            var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
+
+            var conv = store.GetOrCreate("conv-dispose", "test", ConversationType.Text, "p", "m");
+            for (var i = 0; i < 4; i++)
+            {
+                store.AddMessage("conv-dispose", new Message
+                {
+                    Id = $"d{i}",
+                    ConversationId = "conv-dispose",
+                    Role = i % 2 == 0 ? "user" : "assistant",
+                    Content = $"message {i}"
+                });
+            }
+
+            // Set LastPromptTokens above the trigger so Update() spins up a background
+            // Threshold compaction. The summarizer blocks on the gate, simulating a slow
+            // LLM call that's still in flight when the host decides to shut down.
+            conv.LastPromptTokens = 80;
+            store.Update(conv);
+
+            // Give the background Task.Run a moment to register.
+            await Task.Delay(50);
+
+            // Dispose while the gated summarizer is still blocked. Without the fix, this
+            // returns immediately and the background task continues holding a reference to
+            // the (now logically torn-down) store — exactly the CI race.
+            var disposeTask = Task.Run(() => store.Dispose());
+
+            // Release the gate so the summarizer's await can observe the cancellation.
+            gate.SetResult();
+
+            // Dispose should complete cleanly within the bounded wait. A regression of
+            // "Dispose returns instantly while background still runs" would also pass this
+            // assertion — the real load-bearing assertion is that Dispose did NOT throw and
+            // the background task is no longer tracked.
+            var completed = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.Same(disposeTask, completed);
+            await disposeTask; // Surface any exception thrown by Dispose itself.
+        }
+        finally
+        {
+            try { Directory.Delete(dbDir, true); } catch { }
+        }
+    }
+
+    [Fact]
     public void MentionFilter_RoundTripsThroughUpdateAndGet()
     {
         var conversationId = Guid.NewGuid().ToString();

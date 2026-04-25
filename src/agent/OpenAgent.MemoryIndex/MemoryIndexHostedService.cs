@@ -41,37 +41,47 @@ public sealed class MemoryIndexHostedService : IHostedService, IDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        _cts?.Cancel();
-        _timer?.Dispose();
+        try { _cts?.Cancel(); } catch (ObjectDisposedException) { }
+        try { _timer?.Dispose(); } catch (ObjectDisposedException) { }
         _timer = null;
         if (_loopTask is not null)
         {
             try { await _loopTask.WaitAsync(cancellationToken); }
             catch (OperationCanceledException) { }
+            catch (ObjectDisposedException) { /* loop already torn itself down */ }
         }
         _logger.LogInformation("MemoryIndexHostedService stopped");
     }
 
     private async Task LoopAsync(CancellationToken ct)
     {
-        await CheckAndRunAsync(ct);
-
-        var timer = _timer;
-        if (timer is null) return;
-
-        while (!ct.IsCancellationRequested)
+        // The whole loop must catch its own exceptions: this Task is observed by StopAsync
+        // via WaitAsync, and any unhandled exception there would surface as an
+        // ObjectDisposedException / generic fault during xUnit's IClassFixture teardown.
+        try
         {
-            try
+            await CheckAndRunAsync(ct);
+
+            var timer = _timer;
+            if (timer is null) return;
+
+            while (!ct.IsCancellationRequested)
             {
-                if (!await timer.WaitForNextTickAsync(ct)) return;
-                await CheckAndRunAsync(ct);
-            }
-            catch (OperationCanceledException) { return; }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "MemoryIndexHostedService tick threw; continuing");
+                try
+                {
+                    if (!await timer.WaitForNextTickAsync(ct)) return;
+                    await CheckAndRunAsync(ct);
+                }
+                catch (OperationCanceledException) { return; }
+                catch (ObjectDisposedException) { return; } // host is tearing down — exit cleanly
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "MemoryIndexHostedService tick threw; continuing");
+                }
             }
         }
+        catch (OperationCanceledException) { /* host stopping — normal */ }
+        catch (ObjectDisposedException) { /* host stopping — normal */ }
     }
 
     /// <summary>

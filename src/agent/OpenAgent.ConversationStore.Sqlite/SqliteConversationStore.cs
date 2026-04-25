@@ -27,6 +27,20 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     /// </summary>
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _compactionCts = new();
 
+    /// <summary>
+    /// Tracks fire-and-forget background compaction tasks started by <see cref="TryStartCompaction"/>.
+    /// <see cref="Dispose"/> waits on these so the host doesn't tear down while a background task
+    /// is still using the logger / ICompactionSummarizer / DI container — a known cause of
+    /// ObjectDisposedException flakes in CI test cleanup.
+    /// </summary>
+    private readonly ConcurrentDictionary<Task, byte> _backgroundCompactions = new();
+
+    /// <summary>
+    /// Set once <see cref="Dispose"/> has been called. Background compactions check this before
+    /// they start work so we don't hand them resources we're about to dispose.
+    /// </summary>
+    private volatile bool _disposed;
+
     public SqliteConversationStore(
         AgentEnvironment environment,
         ILogger<SqliteConversationStore> logger,
@@ -507,14 +521,35 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
     public void Dispose()
     {
-        // Cancel and dispose any in-flight compaction CTS. Each compaction task's finally
-        // block may race with us here; the ConcurrentDictionary removal and null-safe
-        // Cancel/Dispose make the double-free benign.
+        // Mark disposed first so any compaction Task.Run that hasn't started yet bails out
+        // before touching resources we're about to tear down.
+        _disposed = true;
+
+        // Cancel any in-flight compactions so their summarizer awaits unblock promptly.
+        // We deliberately do NOT Dispose the CTS here — the background task's finally
+        // block holds a reference to linkedCts.Token, and disposing while it's still in
+        // flight risks ObjectDisposedException on token registrations. The background
+        // finally clears the dictionary entry and disposes the CTS itself; we'll wait
+        // for those tasks below.
         foreach (var entry in _compactionCts)
         {
-            try { entry.Value.Cancel(); entry.Value.Dispose(); } catch { /* ignore */ }
+            try { entry.Value.Cancel(); } catch { /* ignore — already disposed by background */ }
         }
+
+        // Wait for all background compaction tasks to finish before we let the host tear
+        // down the DI container. Without this, a fire-and-forget Task.Run from
+        // TryStartCompaction can still be running when the logger / summarizer / hosted
+        // services get disposed, producing ObjectDisposedException at xUnit class teardown.
+        // Bound the wait so a stuck task can't hang the host's 5-second StopAsync budget.
+        var pending = _backgroundCompactions.Keys.ToArray();
+        if (pending.Length > 0)
+        {
+            try { Task.WhenAll(pending).Wait(TimeSpan.FromSeconds(2)); }
+            catch { /* individual task exceptions are already logged in PerformCompactionAsync */ }
+        }
+
         _compactionCts.Clear();
+        _backgroundCompactions.Clear();
         // No persistent connection to dispose — each operation opens/closes its own.
     }
 
@@ -524,6 +559,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     /// </summary>
     private void TryStartCompaction(Conversation conversation)
     {
+        if (_disposed) return;
         if (_compactionSummarizer is null) return;
         if (conversation.CompactionRunning) return;
         if (conversation.LastPromptTokens is null) return;
@@ -538,17 +574,29 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         // Background fire-and-forget — PerformCompactionAsync acquires the lock itself and
         // clears it on success/failure. No pre-locking here (doing so would race with the
         // guard inside PerformCompactionAsync, which reads the conversation fresh).
-        _ = Task.Run(async () =>
+        // We track the Task so Dispose() can wait for it; without that, a stale background
+        // run can outlive the DI container and throw ObjectDisposedException during
+        // xUnit's IClassFixture teardown.
+        Task? runTask = null;
+        runTask = Task.Run(async () =>
         {
             try
             {
+                if (_disposed) return;
                 await PerformCompactionAsync(conversation.Id, CompactionReason.Threshold, null, CancellationToken.None);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Threshold compaction failed for conversation {ConversationId}", conversation.Id);
+                if (!_disposed)
+                    _logger.LogError(ex, "Threshold compaction failed for conversation {ConversationId}", conversation.Id);
+            }
+            finally
+            {
+                if (runTask is not null)
+                    _backgroundCompactions.TryRemove(runTask, out _);
             }
         });
+        _backgroundCompactions.TryAdd(runTask, 0);
     }
 
     /// <summary>
