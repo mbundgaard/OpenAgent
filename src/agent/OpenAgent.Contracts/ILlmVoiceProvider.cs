@@ -9,7 +9,12 @@ namespace OpenAgent.Contracts;
 public interface ILlmVoiceProvider: IConfigurable
 {
     /// <summary>Opens a new bidirectional voice session with the configured backend.</summary>
-    Task<IVoiceSession> StartSessionAsync(Conversation conversation, CancellationToken ct = default);
+    /// <param name="conversation">Owning conversation; the session inherits its system prompt and history.</param>
+    /// <param name="options">Per-session codec/rate. When null the provider uses its default (pcm16 24 kHz on Azure/Grok).</param>
+    Task<IVoiceSession> StartSessionAsync(
+        Conversation conversation,
+        VoiceSessionOptions? options = null,
+        CancellationToken ct = default);
 }
 
 /// <summary>
