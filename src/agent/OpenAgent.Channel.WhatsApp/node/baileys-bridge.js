@@ -75,6 +75,22 @@ function extractText(message) {
 }
 
 /**
+ * Extract the replied-to message ID, if this message is a reply.
+ * Baileys exposes it at message.extendedTextMessage.contextInfo.stanzaId.
+ * Returns undefined for non-replies and plain conversation messages.
+ */
+function extractReplyTo(message) {
+  if (!message) {
+    return undefined;
+  }
+  const stanzaId = message.extendedTextMessage?.contextInfo?.stanzaId;
+  if (typeof stanzaId === "string" && stanzaId.length > 0) {
+    return stanzaId;
+  }
+  return undefined;
+}
+
+/**
  * Extract the sender phone number from a message key.
  * For group messages the sender is key.participant; for DMs it is key.remoteJid.
  * Strips the @s.whatsapp.net suffix.
@@ -205,6 +221,7 @@ async function main() {
           from,
           pushName: msg.pushName || undefined,
           text,
+          replyTo: extractReplyTo(msg.message),
           timestamp,
         });
       }
