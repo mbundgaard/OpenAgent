@@ -89,6 +89,9 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
     private Task? _stderrTask;
     private Task? _stdinTask;
     private Channel<string>? _stdinChannel;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private TaskCompletionSource<string?>? _pendingSend;
+    private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Callback invoked for each parsed event from the Node.js process stdout.
@@ -235,6 +238,39 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
     }
 
     /// <summary>
+    /// Sends a text message and awaits the bridge's <c>sent</c> response, returning the
+    /// resulting Baileys stanza ID (or null on error/timeout). Sends are serialized per
+    /// process instance — at most one send-and-wait is in flight at a time.
+    /// </summary>
+    /// <param name="chatId">Target chat JID.</param>
+    /// <param name="text">Message text to send.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The stanza ID assigned by Baileys, or null if the send failed or timed out.</returns>
+    public async Task<string?> SendTextAndWaitAsync(string chatId, string text, CancellationToken ct)
+    {
+        await _sendLock.WaitAsync(ct);
+        try
+        {
+            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _pendingSend = tcs;
+
+            await WriteAsync(FormatSendCommand(chatId, text));
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(SendTimeout);
+            using (timeoutCts.Token.Register(() => tcs.TrySetResult(null)))
+            {
+                return await tcs.Task;
+            }
+        }
+        finally
+        {
+            _pendingSend = null;
+            _sendLock.Release();
+        }
+    }
+
+    /// <summary>
     /// Gracefully stops the Node.js process. Sends shutdown command, waits up to 5 seconds,
     /// then force-kills if the process has not exited.
     /// </summary>
@@ -333,6 +369,25 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
                 var evt = ParseLine(line);
                 if (evt is not null)
                 {
+                    // Intercept 'sent' events to resolve the pending SendTextAndWaitAsync.
+                    // 'sent' events are an internal protocol detail — don't propagate to OnEvent.
+                    if (evt.Type == "sent")
+                    {
+                        var pending = Interlocked.Exchange(ref _pendingSend, null);
+                        if (pending is null)
+                        {
+                            _logger.LogWarning("WhatsApp bridge emitted 'sent' with no pending send (id={Id}, message={Message})",
+                                evt.Id, evt.Message);
+                        }
+                        else
+                        {
+                            pending.TrySetResult(evt.Id);
+                            if (evt.Message is not null)
+                                _logger.LogWarning("WhatsApp send returned error: {Message}", evt.Message);
+                        }
+                        continue;
+                    }
+
                     try
                     {
                         OnEvent?.Invoke(evt);
