@@ -126,4 +126,26 @@ public class WhatsAppNodeProcessTests
         Assert.NotNull(evt);
         Assert.Null(evt.ReplyTo);
     }
+
+    [Fact]
+    public void ParseLine_SentEvent_ParsesStanzaId()
+    {
+        var json = "{\"type\":\"sent\",\"id\":\"3EB0ABCD1234\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Equal("sent", evt.Type);
+        Assert.Equal("3EB0ABCD1234", evt.Id);
+        Assert.Null(evt.Message);
+    }
+
+    [Fact]
+    public void ParseLine_SentEventWithError_ParsesMessage()
+    {
+        var json = "{\"type\":\"sent\",\"message\":\"connection lost\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Equal("sent", evt.Type);
+        Assert.Null(evt.Id);
+        Assert.Equal("connection lost", evt.Message);
+    }
 }
