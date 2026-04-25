@@ -177,6 +177,14 @@ public static class WebSocketVoiceEndpoints
                         Message = err.Message
                     }, ct);
                     break;
+
+                case VoiceToolCallStarted:
+                    await SendJsonAsync(ws, new VoiceThinkingStartedEvent(), ct);
+                    break;
+
+                case VoiceToolCallCompleted:
+                    await SendJsonAsync(ws, new VoiceThinkingStoppedEvent(), ct);
+                    break;
             }
         }
     }

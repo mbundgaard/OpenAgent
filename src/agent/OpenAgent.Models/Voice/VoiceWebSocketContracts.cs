@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
 namespace OpenAgent.Models.Voice;
@@ -49,4 +50,29 @@ public sealed class VoiceSessionReadyEvent : VoiceWebSocketEvent
 
     [JsonPropertyName("output_codec")]
     public required string OutputCodec { get; init; }
+}
+
+/// <summary>
+/// Outbound thinking-cue: emitted right before a voice tool call executes so the client
+/// can play a placeholder while the agent works.
+/// </summary>
+public sealed class VoiceThinkingStartedEvent : VoiceWebSocketEvent
+{
+    [SetsRequiredMembers]
+    public VoiceThinkingStartedEvent()
+    {
+        Type = "thinking_started";
+    }
+}
+
+/// <summary>
+/// Outbound thinking-cue: emitted once the voice tool call has completed (success or error).
+/// </summary>
+public sealed class VoiceThinkingStoppedEvent : VoiceWebSocketEvent
+{
+    [SetsRequiredMembers]
+    public VoiceThinkingStoppedEvent()
+    {
+        Type = "thinking_stopped";
+    }
 }

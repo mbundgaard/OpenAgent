@@ -277,6 +277,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
             _ = Task.Run(async () =>
             {
+                // Emit thinking-cue before the tool runs so the endpoint can push a placeholder.
+                await _channel.Writer.WriteAsync(new VoiceToolCallStarted(name, callId), ct);
                 try
                 {
                     _logger.LogDebug("Executing voice tool {ToolName} for conversation {ConversationId}", name, conversationId);
@@ -293,6 +295,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                         Modality = MessageModality.Voice
                     });
 
+                    await _channel.Writer.WriteAsync(new VoiceToolCallCompleted(callId, result), ct);
                     await SendToolResultAndContinueAsync(callId, result, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -311,6 +314,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                         Modality = MessageModality.Voice
                     });
 
+                    await _channel.Writer.WriteAsync(new VoiceToolCallCompleted(callId, errorResult), ct);
                     await SendToolResultAndContinueAsync(callId, errorResult, ct);
                 }
             }, ct);
