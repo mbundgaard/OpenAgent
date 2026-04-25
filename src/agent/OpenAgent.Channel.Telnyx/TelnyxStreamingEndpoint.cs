@@ -60,11 +60,23 @@ public static class TelnyxStreamingEndpoint
                 return;
             }
 
-            using var bridge = new TelnyxMediaBridge(
+            await using var bridge = new TelnyxMediaBridge(
                 provider, pending, ws,
                 loggerFactory.CreateLogger<TelnyxMediaBridge>(),
                 ct);
             await bridge.RunAsync();
+
+            // Politely close the WebSocket if either side hasn't already; the bridge's read loop
+            // returns on Close from the peer, but a server-driven exit (e.g. session disposal)
+            // leaves the socket open and the client waiting for the close handshake.
+            if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            {
+                try
+                {
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                }
+                catch { /* best-effort close */ }
+            }
         }).AllowAnonymous();
 
         return app;
