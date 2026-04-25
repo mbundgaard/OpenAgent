@@ -160,15 +160,16 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
                 switch (evt)
                 {
                     case AudioDelta audio:
-                        var json = TelnyxMediaFrame.ComposeMedia(audio.Audio.Span);
-                        await _ws.SendAsync(
-                            Encoding.UTF8.GetBytes(json),
-                            WebSocketMessageType.Text,
-                            true,
-                            ct);
+                        await SendTextAsync(TelnyxMediaFrame.ComposeMedia(audio.Audio.Span), ct);
                         break;
-                        // Tasks 19-22: SpeechStarted (barge-in), VoiceToolCallStarted (thinking clip),
-                        // AudioDone with pending hangup, etc.
+                    case SpeechStarted:
+                        // Barge-in: flush any buffered TTS at Telnyx and cancel the LLM response so
+                        // the model stops generating into a user that's already talking over it.
+                        await SendTextAsync(TelnyxMediaFrame.ComposeClear(), ct);
+                        await _session!.CancelResponseAsync(ct);
+                        break;
+                        // Tasks 20-22: VoiceToolCallStarted (thinking clip), AudioDone with pending
+                        // hangup, etc.
                 }
             }
         }
@@ -179,6 +180,10 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
                 _pending.ConversationId);
         }
     }
+
+    /// <summary>Sends a UTF-8 text frame to the Telnyx WebSocket. Used for media + clear frames.</summary>
+    private Task SendTextAsync(string json, CancellationToken ct) =>
+        _ws.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, ct);
 
     public ValueTask DisposeAsync()
     {

@@ -155,6 +155,28 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task SpeechStarted_SendsClearFrame_AndCancelsResponse()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (ws, fakeProvider, conversationId) = await ConnectStreamAsync(cts.Token);
+
+        var session = await fakeProvider.WaitForSessionAsync(conversationId, cts.Token);
+
+        // Barge-in: user starts speaking while the agent is mid-response. Bridge must flush any
+        // buffered TTS via Telnyx's clear frame and tell the LLM session to abort the response.
+        session.Emit(new SpeechStarted());
+
+        var msg = await ReceiveTextMessageAsync(ws, cts.Token);
+        using var doc = JsonDocument.Parse(msg);
+        Assert.Equal("clear", doc.RootElement.GetProperty("event").GetString());
+
+        await WaitUntilAsync(() => session.CancelCalled, cts.Token);
+        Assert.True(session.CancelCalled);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
     /// <summary>
     /// Spins up a Telnyx connection in the host, seeds a Phone conversation, registers a pending
     /// bridge for a synthetic call control id, and connects a WebSocket to the streaming endpoint.
