@@ -675,20 +675,20 @@ If the file doesn't already use `[JsonPropertyName]`, follow whatever attribute 
 Look at `OpenAgent.Api/Endpoints/WebSocketVoiceEndpoints.cs` around lines 119–182 and add two cases to the switch in `WriteLoopAsync`:
 
 ```csharp
-case ToolCallEvent:
-    await SendJsonAsync(ws, new VoiceThinkingStartedEvent { Type = "thinking_started" }, ct);
+case VoiceToolCallStarted:
+    await SendJsonAsync(ws, new VoiceThinkingStartedEvent(), ct);
     break;
 
-case ToolResultEvent:
-    await SendJsonAsync(ws, new VoiceThinkingStoppedEvent { Type = "thinking_stopped" }, ct);
+case VoiceToolCallCompleted:
+    await SendJsonAsync(ws, new VoiceThinkingStoppedEvent(), ct);
     break;
 ```
 
-(`ToolCallEvent`/`ToolResultEvent` should already exist as `VoiceEvent` subtypes from the voice provider session. If not, add minimal record types in `OpenAgent.Models/Voice/VoiceEvents.cs`:
+(`VoiceToolCallStarted`/`VoiceToolCallCompleted` were added in Task 6. If you find that they're called something else in the codebase, the names below may have drifted — match what's actually there.
 
 ```csharp
-public sealed record ToolCallEvent(string Name, string CallId) : VoiceEvent;
-public sealed record ToolResultEvent(string CallId, string Result) : VoiceEvent;
+public sealed record VoiceToolCallStarted(string Name, string CallId) : VoiceEvent;
+public sealed record VoiceToolCallCompleted(string CallId, string Result) : VoiceEvent;
 ```
 
 and have the existing voice sessions emit them when they invoke tools — search for `ExecuteToolAsync` in `AzureOpenAiVoiceSession.cs` and emit the events around the call.)
@@ -2595,7 +2595,7 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable
                     var json = TelnyxMediaFrame.ComposeMedia(audio.Audio.Span);
                     await _ws.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, ct);
                     break;
-                // Tasks 19-22 add: SpeechStarted (barge-in), ToolCallEvent (thinking), AudioDone (hangup), etc.
+                // Tasks 19-22 add: SpeechStarted (barge-in), VoiceToolCallStarted (thinking), AudioDone (hangup), etc.
             }
         }
     }
@@ -2671,11 +2671,11 @@ git commit -am "feat(telnyx): barge-in via clear + CancelResponseAsync on Speech
 
 ```csharp
 [Fact]
-public async Task ToolCallEvent_StartsPump_FramesFlow()
+public async Task VoiceToolCallStarted_StartsPump_FramesFlow()
 {
     var (bridge, ws, session) = MakeBridge();
     _ = bridge.RunAsync();
-    session.Emit(new ToolCallEvent("web_fetch", "call-1"));
+    session.Emit(new VoiceToolCallStarted("web_fetch", "call-1"));
 
     // Wait briefly for first pump frame
     var msg = await ws.WaitForOutboundMessageAsync(TimeSpan.FromMilliseconds(200));
@@ -2683,13 +2683,13 @@ public async Task ToolCallEvent_StartsPump_FramesFlow()
 }
 
 [Fact]
-public async Task ToolResultEvent_StopsPump_AndSendsClear()
+public async Task VoiceToolCallCompleted_StopsPump_AndSendsClear()
 {
     var (bridge, ws, session) = MakeBridge();
     _ = bridge.RunAsync();
-    session.Emit(new ToolCallEvent("web_fetch", "call-1"));
+    session.Emit(new VoiceToolCallStarted("web_fetch", "call-1"));
     await Task.Delay(100);
-    session.Emit(new ToolResultEvent("call-1", "ok"));
+    session.Emit(new VoiceToolCallCompleted("call-1", "ok"));
     var clearMsg = await ws.WaitForOutboundUntilAsync(s => s.Contains("\"event\":\"clear\""));
     Assert.Contains("\"event\":\"clear\"", clearMsg);
 }
@@ -2740,10 +2740,10 @@ private async Task PumpAsync(CancellationToken ct)
 Add the cases to `WriteLoopAsync`:
 
 ```csharp
-case ToolCallEvent:
+case VoiceToolCallStarted:
     StartPump(ct);
     break;
-case ToolResultEvent:
+case VoiceToolCallCompleted:
     await StopPumpAsync(ct);
     break;
 ```
