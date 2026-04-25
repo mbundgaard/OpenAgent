@@ -21,7 +21,7 @@ COPY src/agent/ .
 COPY --from=web-build /web/wwwroot.zip OpenAgent/wwwroot.zip
 RUN dotnet restore
 RUN dotnet build -c Release --no-restore -p:SkipNpmInstall=true
-RUN dotnet test -c Release --no-build --no-restore
+RUN dotnet test -c Release --no-build --no-restore -l "console;verbosity=detailed"
 
 # Publish
 FROM build AS publish

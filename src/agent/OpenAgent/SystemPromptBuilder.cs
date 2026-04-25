@@ -56,7 +56,7 @@ internal sealed class SystemPromptBuilder
     /// Builds the system prompt for the given conversation type by concatenating
     /// the relevant files in order, separated by blank lines.
     /// </summary>
-    public string Build(ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null)
+    public string Build(string conversationId, ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null)
     {
         var sections = new List<string>();
 
@@ -156,6 +156,10 @@ internal sealed class SystemPromptBuilder
         var weekNumber = System.Globalization.ISOWeek.GetWeekOfYear(now.DateTime);
         var weekday = now.DateTime.ToString("dddd", System.Globalization.CultureInfo.InvariantCulture);
         sections.Add($"Current time: {weekday} {now:yyyy-MM-ddTHH:mm} Europe/Copenhagen ({utcLabel}), week {weekNumber}");
+
+        // The active conversation's identifier — exposed so the agent can pass it to
+        // tools that take a conversation_id argument (e.g. operating on its own state).
+        sections.Add($"Current conversation ID: {conversationId}");
 
         // Per-conversation intention — scopes the topic and anchors the agent across turns.
         // Placed last so it's the most recent context the model sees before the user turns.

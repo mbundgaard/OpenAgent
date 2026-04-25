@@ -101,18 +101,6 @@ public sealed class TelegramMessageHandler
             _logger?.LogInformation("First conversation created for connection {ConnectionId}, auto-locked new conversations", _connectionId);
         }
 
-        // Send typing indicator (best-effort, don't fail the whole flow)
-        try
-        {
-            await sender.SendTypingAsync(chatId, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "Failed to send typing indicator to chat {ChatId}", chatId);
-        }
-
-        _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
-
         // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
         var providerKey = _agentConfig.TextProvider;
         var model = _agentConfig.TextModel;
@@ -128,6 +116,25 @@ public sealed class TelegramMessageHandler
             _store.UpdateDisplayName(conversation.Id, displayName);
             conversation.DisplayName = displayName;
         }
+
+        // Mention filter — drop silently if the message doesn't mention an expected name
+        if (!MentionMatcher.ShouldAccept(conversation, userText))
+        {
+            _logger?.LogDebug("Mention filter dropped message in conversation {ConversationId}", conversation.Id);
+            return;
+        }
+
+        // Send typing indicator (best-effort, don't fail the whole flow)
+        try
+        {
+            await sender.SendTypingAsync(chatId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to send typing indicator to chat {ChatId}", chatId);
+        }
+
+        _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
 
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.Provider);

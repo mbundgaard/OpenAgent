@@ -93,6 +93,29 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
         Assert.Equal("new episode added: Foo S01E02", _capturingProvider.LastUserMessage!.Content);
     }
 
+    [Fact]
+    public async Task PostWebhook_NoMentionMatch_DropsAndDoesNotTriggerCompletion()
+    {
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversationId = Guid.NewGuid().ToString();
+        var conv = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+        conv.MentionFilter = ["Dex"];
+        store.Update(conv);
+
+        var callCountBefore = _capturingProvider.CallCount;
+
+        var client = _factory.CreateClient();
+        var response = await client.PostAsync(
+            $"/api/webhook/conversation/{conversationId}",
+            new StringContent("hello there", Encoding.UTF8, "text/plain"));
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // Give the background task a chance to (incorrectly) run.
+        await Task.Delay(200);
+        Assert.Equal(callCountBefore, _capturingProvider.CallCount);
+    }
+
     private sealed class CapturingTextProvider : ILlmTextProvider
     {
         private int _callCount;

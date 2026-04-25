@@ -49,6 +49,10 @@ public sealed class ConversationListItemResponse
     [JsonPropertyName("intention")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Intention { get; init; }
+
+    [JsonPropertyName("mention_filter")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? MentionFilter { get; init; }
 }
 
 /// <summary>
@@ -119,6 +123,10 @@ public sealed class ConversationDetailResponse
     [JsonPropertyName("intention")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Intention { get; init; }
+
+    [JsonPropertyName("mention_filter")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? MentionFilter { get; init; }
 }
 
 /// <summary>
@@ -142,4 +150,7 @@ public sealed class UpdateConversationRequest
 
     [JsonPropertyName("intention")]
     public string? Intention { get; init; }
+
+    [JsonPropertyName("mention_filter")]
+    public List<string>? MentionFilter { get; init; }
 }

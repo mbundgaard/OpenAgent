@@ -184,6 +184,46 @@ public class WhatsAppMessageHandlerTests
         Assert.Equal("FAKE-1", assistant.ChannelMessageId);
     }
 
+    [Fact]
+    public async Task MentionFilterSet_NoMatch_DropsSilently()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new FakeTelegramTextProvider("should not reach");
+        var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, new AgentConfig { TextProvider = "azure-openai-text", TextModel = "gpt-5.2-chat" });
+        var sender = new FakeWhatsAppSender();
+
+        var conv = store.FindOrCreateChannelConversation("whatsapp", ConnectionId, AllowedDmChatId,
+            "whatsapp", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+        conv.MentionFilter = ["Dex"];
+        store.Update(conv);
+
+        var message = CreateTextMessage(AllowedDmChatId, "hello world");
+        await handler.HandleMessageAsync(sender, message, CancellationToken.None);
+
+        Assert.Empty(sender.ComposingCalls);
+        Assert.Empty(sender.TextCalls);
+    }
+
+    [Fact]
+    public async Task MentionFilterSet_Match_Replies()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new FakeTelegramTextProvider("Hi back");
+        var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, new AgentConfig { TextProvider = "azure-openai-text", TextModel = "gpt-5.2-chat" });
+        var sender = new FakeWhatsAppSender();
+
+        var conv = store.FindOrCreateChannelConversation("whatsapp", ConnectionId, AllowedDmChatId,
+            "whatsapp", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+        conv.MentionFilter = ["Dex"];
+        store.Update(conv);
+
+        var message = CreateTextMessage(AllowedDmChatId, "hey Dex!");
+        await handler.HandleMessageAsync(sender, message, CancellationToken.None);
+
+        Assert.Single(sender.ComposingCalls);
+        Assert.Contains("Hi back", sender.TextCalls[0].Text);
+    }
+
     /// <summary>
     /// Fake text provider that saves the assistant message to the store and emits
     /// AssistantMessageSaved — mirrors what real providers do so UpdateChannelMessageId

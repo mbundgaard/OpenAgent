@@ -49,7 +49,7 @@ public class SystemPromptSymlinkBlockTests : IDisposable
             new AgentConfig(),
             NullLogger<SystemPromptBuilder>.Instance);
 
-        var prompt = builder.Build(ConversationType.Text);
+        var prompt = builder.Build("test-conv", ConversationType.Text);
 
         Assert.Contains("<path_conventions>", prompt);
         Assert.Contains("media/", prompt);
@@ -64,7 +64,7 @@ public class SystemPromptSymlinkBlockTests : IDisposable
             new AgentConfig(),
             NullLogger<SystemPromptBuilder>.Instance);
 
-        var prompt = builder.Build(ConversationType.Text);
+        var prompt = builder.Build("test-conv", ConversationType.Text);
 
         Assert.DoesNotContain("<path_conventions>", prompt);
     }

@@ -91,12 +91,15 @@ public sealed class ScheduledTaskService : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// Disposes the timer and semaphore.
+    /// Disposes the timer. The SemaphoreSlim is intentionally NOT disposed: tick / CRUD
+    /// operations may still hold a reference at host-shutdown time, and disposing while
+    /// they're awaiting WaitAsync surfaces ObjectDisposedException during xUnit teardown.
+    /// SemaphoreSlim has no native handles when WaitAsync is the only waiter API used,
+    /// so leaving it to the GC is safe.
     /// </summary>
     public void Dispose()
     {
-        _timer?.Dispose();
-        _lock.Dispose();
+        try { _timer?.Dispose(); } catch (ObjectDisposedException) { }
     }
 
     /// <summary>

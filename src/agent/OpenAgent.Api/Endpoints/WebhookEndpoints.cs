@@ -41,6 +41,9 @@ public static class WebhookEndpoints
             if (conversation is null)
                 return Results.NotFound();
 
+            if (!MentionMatcher.ShouldAccept(conversation, body))
+                return Results.Accepted();
+
             var userMessage = new Message
             {
                 Id = Guid.NewGuid().ToString(),

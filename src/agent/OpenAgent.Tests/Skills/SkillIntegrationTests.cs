@@ -59,7 +59,7 @@ public class SkillIntegrationTests : IDisposable
             catalog,
             new OpenAgent.Models.Configs.AgentConfig(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<SystemPromptBuilder>.Instance);
-        var prompt = promptBuilder.Build(ConversationType.Text, conversation.ActiveSkills);
+        var prompt = promptBuilder.Build(conversation.Id, ConversationType.Text, conversation.ActiveSkills);
         Assert.Contains("# Git Workflow", prompt);
         Assert.Contains("<active_skill name=\"git-workflow\" directory=", prompt);
 
@@ -68,7 +68,7 @@ public class SkillIntegrationTests : IDisposable
 
         // After deactivation — skill body no longer in prompt
         conversation = _store.Get("conv1")!;
-        var promptAfter = promptBuilder.Build(ConversationType.Text, conversation.ActiveSkills);
+        var promptAfter = promptBuilder.Build(conversation.Id, ConversationType.Text, conversation.ActiveSkills);
         Assert.DoesNotContain("# Git Workflow", promptAfter);
         Assert.DoesNotContain("<active_skill", promptAfter);
     }

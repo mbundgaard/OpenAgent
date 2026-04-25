@@ -138,7 +138,7 @@ internal sealed class GrokVoiceSession : IVoiceSession
             {
                 Modalities = ["audio", "text"],
                 Voice = _config.Voice ?? "rex",
-                Instructions = _agentLogic.GetSystemPrompt(_conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention),
+                Instructions = _agentLogic.GetSystemPrompt(_conversation.Id, _conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention),
                 Audio = new GrokAudioConfig
                 {
                     Input = new GrokAudioDirection { Format = new GrokAudioFormat { Type = CodecToWire(codec), Rate = rate } },
