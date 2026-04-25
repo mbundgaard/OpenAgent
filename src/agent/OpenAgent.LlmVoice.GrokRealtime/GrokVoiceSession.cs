@@ -25,6 +25,8 @@ internal sealed class GrokVoiceSession : IVoiceSession
     private readonly Conversation _conversation;
     private readonly IAgentLogic _agentLogic;
     private readonly ILogger _logger;
+    private readonly string _codec;
+    private readonly int _sampleRate;
     private readonly ClientWebSocket _ws = new();
     private readonly Channel<VoiceEvent> _channel = Channel.CreateUnbounded<VoiceEvent>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
@@ -35,12 +37,30 @@ internal sealed class GrokVoiceSession : IVoiceSession
 
     public string SessionId { get; private set; } = string.Empty;
 
-    internal GrokVoiceSession(GrokConfig config, Conversation conversation, IAgentLogic agentLogic, ILogger logger)
+    internal GrokVoiceSession(
+        GrokConfig config,
+        Conversation conversation,
+        IAgentLogic agentLogic,
+        VoiceSessionOptions? options,
+        ILogger logger)
     {
         _config = config;
         _conversation = conversation;
         _agentLogic = agentLogic;
         _logger = logger;
+
+        var requested = options ?? new VoiceSessionOptions("pcm16", 24000);
+        if (requested.Codec is "g711_ulaw" or "g711_alaw" && requested.SampleRate != 8000)
+            throw new ArgumentException(
+                $"Grok Realtime requires {requested.Codec} at 8000 Hz, got {requested.SampleRate}.",
+                nameof(options));
+        if (requested.Codec is "pcm16" && requested.SampleRate is not (8000 or 16000 or 24000))
+            throw new ArgumentException(
+                $"Grok Realtime supports pcm16 at 8000/16000/24000 Hz, got {requested.SampleRate}.",
+                nameof(options));
+
+        _codec = requested.Codec;
+        _sampleRate = requested.SampleRate;
     }
 
     internal async Task ConnectAsync(CancellationToken ct)
@@ -128,8 +148,8 @@ internal sealed class GrokVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
-        var codec = NormalizeCodec(_config.Codec);
-        var rate = ResolveRate(_config.SampleRate, codec);
+        var codec = _codec;
+        var rate = _sampleRate;
 
         await SendEventAsync(new GrokClientEvent
         {
@@ -158,14 +178,6 @@ internal sealed class GrokVoiceSession : IVoiceSession
             OutputCodec: codec), ct);
     }
 
-    // "pcm16" | "g711_ulaw" | "g711_alaw"
-    private static string NormalizeCodec(string? codec) => codec switch
-    {
-        "g711_ulaw" => "g711_ulaw",
-        "g711_alaw" => "g711_alaw",
-        _ => "pcm16"
-    };
-
     // Neutral codec → xAI wire value
     private static string CodecToWire(string codec) => codec switch
     {
@@ -173,13 +185,6 @@ internal sealed class GrokVoiceSession : IVoiceSession
         "g711_alaw" => "audio/pcma",
         _ => "audio/pcm"
     };
-
-    private static int ResolveRate(string? configured, string codec)
-    {
-        // μ-law / A-law are fixed at 8 kHz regardless of configured rate.
-        if (codec is "g711_ulaw" or "g711_alaw") return 8000;
-        return int.TryParse(configured, out var rate) ? rate : 24000;
-    }
 
     private async Task SendToolResultAndContinueAsync(string callId, string result, CancellationToken ct)
     {
