@@ -126,6 +126,8 @@ builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
+builder.Services.AddSingleton<EndCallTool>();
+builder.Services.AddSingleton<IToolHandler, TelnyxToolHandler>();
 builder.Services.AddSingleton<IToolHandler>(sp =>
     new ConversationToolHandler(
         sp.GetRequiredService<IConversationStore>(),
