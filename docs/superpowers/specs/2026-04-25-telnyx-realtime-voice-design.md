@@ -15,7 +15,7 @@ Inbound phone calls to a Telnyx-owned number stream audio bidirectionally over a
 - E.164-keyed conversations: caller's number maps to a single ongoing `Conversation` across calls.
 - Same tool surface as text channels (web fetch, file ops, scheduled tasks, …) via Realtime function calling. Tools are channel-agnostic.
 - Barge-in (caller interrupts agent mid-speech) — server-side VAD plus an outbound `clear` event flushes queued audio.
-- Agent-initiated hangup (`end_call` tool issuing a Call Control `hangup` action).
+- Agent-initiated hangup via `EndCallTool` (sets a `pendingHangup` flag; bridge issues `HangupAsync` on next `AudioDone` so the farewell audio plays out).
 - Thinking-clip pushed into the Telnyx WebSocket while a tool is executing; analogous browser-side cue triggered from the same provider event.
 - ED25519 webhook signature verification (300 s replay window).
 - Caller allowlist (empty list = allow all, exact E.164 match otherwise).
@@ -25,7 +25,7 @@ Inbound phone calls to a Telnyx-owned number stream audio bidirectionally over a
 - DTMF input (frames are still parsed but ignored).
 - Outbound calls (the `IOutboundSender` analogue stays unimplemented for this channel).
 - IVR / in-call conversation switching menu.
-- Concurrent calls beyond the Telnyx-side connection limit (currently 1).
+- App-side concurrency gating — Telnyx's `inbound.channel_limit` (currently 1) is the only enforcement.
 - Call recording.
 - Gemini Live phone support — Gemini's hardcoded PCM16 16k/24k cannot reach Telnyx without resampling, which we explicitly chose not to build.
 
@@ -90,9 +90,10 @@ Inbound phone calls to a Telnyx-owned number stream audio bidirectionally over a
 | `TelnyxCallControlClient.cs` | Three actions wrapping the Telnyx Call Control REST API: `AnswerAsync(callControlId)`, `StreamingStartAsync(callControlId, wsUrl)`, `HangupAsync(callControlId)`. Bearer-token auth from `TelnyxOptions.ApiKey`. |
 | `TelnyxWebhookEndpoints.cs` | HTTP routes for call lifecycle webhooks: `POST /api/webhook/telnyx/{webhookId}/call`. Single endpoint dispatches by `event_type`: `call.initiated`, `call.hangup`, `streaming.started`, `streaming.stopped`, `streaming.failed`. |
 | `TelnyxStreamingEndpoint.cs` | WebSocket route at `/api/webhook/telnyx/{webhookId}/stream`. Accepts the upgrade, parses `?call={callControlId}` query string, looks up the pending bridge, hands the WS to `TelnyxMediaBridge`. |
-| `TelnyxMediaBridge.cs` | Per-call lifetime. Owns the `IVoiceSession`. Read loop on Telnyx WS → base64-decode → `session.SendAudioAsync`. Provider-event loop → base64-encode → outbound media frame. Handles barge-in, tool-call thinking clip, hangup. |
-| `TelnyxMediaFrame.cs` | Record types for the JSON envelopes Telnyx sends and we send: `MediaStart`, `Media`, `MediaStop`, `Dtmf` (parsed but ignored), `Clear` (outbound), `Mark` (outbound, used to detect when the thinking clip has finished playing if needed). |
-| `Resources/thinking.ulaw` | Embedded default thinking clip — 8 kHz µ-law mono, 1–3 s, soft ambient. The bridge loops it. Path overridable per-connection via `TelnyxOptions.ThinkingClipPath`. |
+| `TelnyxMediaBridge.cs` | Per-call lifetime. Owns the `IVoiceSession`. Read loop on Telnyx WS → base64-decode → `session.SendAudioAsync`. Provider-event loop → base64-encode → outbound media frame. Handles barge-in, tool-call thinking clip, hangup, agent-initiated hangup via flag. |
+| `TelnyxMediaFrame.cs` | Record types for the JSON envelopes Telnyx sends and we send: `MediaStart`, `Media`, `MediaStop`, `Dtmf` (parsed but ignored), `Clear` (outbound). |
+| `EndCallTool.cs` | `ITool` implementation registered when a call is active. Sets a `pendingHangup` flag on the bridge and returns immediately so the agent's farewell audio can finish; the bridge issues `HangupAsync` on the next `AudioDone` event. Returns an error result when invoked outside a `ConversationType.Phone` conversation. |
+| `ThinkingClipFactory.cs` | Generates the default seamless-loop thinking clip procedurally at provider start: ~2 s of band-limited soft pink noise (300–1000 Hz) encoded as 8 kHz µ-law, with a ~50 ms cosine fade across the loop boundary so repeats are click-free. No third-party asset, no licensing concern. Custom clips override via `TelnyxOptions.ThinkingClipPath` — caller is responsible for loop seamlessness. |
 
 ### Provider contract changes
 
@@ -117,6 +118,7 @@ Task<IVoiceSession> StartSessionAsync(
 - Default to `pcm16 / 24000` internally when `options` is null.
 - Honour `VoiceSessionOptions` when provided. The Telnyx bridge passes `("g711_ulaw", 8000)`; the existing browser endpoint passes null and gets the default.
 - The `_config.Codec` field is removed from each provider's deserialised config struct; tests asserting it move accordingly.
+- **Wire mapping.** `VoiceSessionOptions.Codec` maps to OpenAI Realtime's `session.update.input_audio_format` and `output_audio_format` fields with the literal values `"pcm16"`, `"g711_ulaw"`, `"g711_alaw"`. Grok mirrors the same field names. `SampleRate` is implicit per codec on these providers (g711_* → 8000, pcm16 → 24000) so we validate it matches and reject the session otherwise rather than silently downgrading.
 
 `GeminiLiveVoiceProvider` is **not modified** — it stays at hardcoded PCM16 16k in / 24k out, no config field. Phone support for Gemini is a future follow-up that requires a resampler.
 
@@ -143,13 +145,15 @@ Task<IVoiceSession> StartSessionAsync(
 4. `FindOrCreateChannelConversation("telnyx", connectionId, From, ConversationType.Phone, voiceProvider, voiceModel)` — same caller, same conversation across calls. `DisplayName` set to the E.164 if missing.
 5. `TelnyxCallControlClient.AnswerAsync(callControlId)` (Telnyx now picks up the line — the caller stops hearing ringing).
 6. **Register the pending bridge first.** The provider stores a `{callControlId → PendingBridge(conversation, voiceProvider)}` entry in an in-memory dictionary. TTL ~30 s. This MUST happen before `streaming_start` because Telnyx may open the WS before that REST call returns.
-7. `TelnyxCallControlClient.StreamingStartAsync(callControlId, wsUrl)` — `wsUrl = "wss://{baseUrl-host}/api/webhook/telnyx/{webhookId}/stream?call={callControlId}"`. Streaming params: `stream_bidirectional_mode=rtp`, `stream_bidirectional_codec=PCMU`, `stream_bidirectional_sampling_rate=8000`, `stream_bidirectional_target_legs=self` (single inbound leg; revisit only if we add transfer/conference). `client_state` is set to a base64 of `callControlId` as a redundant correlation channel. Despite the mode name "rtp", Telnyx wraps payloads in JSON envelopes over the WS — no actual RTP framing on our side.
+7. `TelnyxCallControlClient.StreamingStartAsync(callControlId, wsUrl)` — `wsUrl = "wss://{baseUrl-host}/api/webhook/telnyx/{webhookId}/stream?call={callControlId}"`. Streaming params: `stream_bidirectional_mode=rtp`, `stream_bidirectional_codec=PCMU`, `stream_bidirectional_sampling_rate=8000`, `stream_bidirectional_target_legs=self` (single inbound leg; revisit only if we add transfer/conference), `stream_track=inbound_track` (only the caller's audio is delivered to us — we don't want our own outbound echoed back). `client_state` is set to a base64 of `callControlId` as a redundant correlation channel. Despite the mode name "rtp", Telnyx wraps payloads in JSON envelopes over the WS — no actual RTP framing on our side.
+
+   **Failure paths.** If `streaming_start` returns 5xx or the HTTP call throws, the provider calls `HangupAsync(callControlId)` and removes the pending entry — an answered call without a media bridge would be silent and would burn line-time. If Telnyx never opens the WS within TTL, the eviction callback (see §"Per-call ephemeral state") fires the same `HangupAsync` for the same reason.
 8. Telnyx opens the WebSocket. `TelnyxStreamingEndpoint` extracts `?call={callControlId}`, dequeues the pending bridge, calls `bridge.RunAsync(webSocket)`. (`client_state` from the inbound `start` event is checked as a sanity match.)
 9. `TelnyxMediaBridge.RunAsync`:
    - Resolves the voice provider via `Func<string, ILlmVoiceProvider>` keyed by `conversation.Provider`.
    - `var session = await provider.StartSessionAsync(conversation, new VoiceSessionOptions("g711_ulaw", 8000), ct);`.
    - Spawns `ReadLoop` (Telnyx → session) and `WriteLoop` (session → Telnyx) and a `ThinkingPump` task (idle by default).
-10. **Read loop:** parse JSON envelope. On `start` event capture sample rate / encoding for sanity. On `media` event base64-decode payload, call `session.SendAudioAsync(bytes)`. On `stop` close. On `dtmf` log + ignore (day one). On unknown event log.
+10. **Read loop:** parse JSON envelope. On `start` event capture sample rate / encoding for sanity. On `media` event, ignore the frame if `media.track != "inbound"` (defensive — `stream_track=inbound_track` should already prevent outbound frames, but the filter makes self-feedback impossible if the parameter is misset). Otherwise base64-decode `media.payload`, call `session.SendAudioAsync(bytes)`. On `stop` close. On `dtmf` log + ignore (day one). On unknown event log.
 11. **Write loop:** iterate `session.ReceiveEventsAsync()`:
     - `AudioDelta audio`: base64-encode, send `{"event":"media","media":{"payload":"<base64>"}}` over WS.
     - `SpeechStarted`: barge-in. Send `{"event":"clear"}` over WS, call `session.CancelResponseAsync()`.
@@ -158,7 +162,8 @@ Task<IVoiceSession> StartSessionAsync(
     - `TranscriptDelta` / `TranscriptDone`: forwarded to the conversation (existing voice provider already persists transcripts as messages — bridge is just a passthrough).
     - `SessionError err`: log; bridge will tear down the call via `HangupAsync`.
     - `SessionReady ready`: ignored on Telnyx (codec is fixed); on browser path we still emit it.
-12. **ThinkingPump:** when active, repeatedly write base64-encoded chunks of `thinking.ulaw` (or the per-connection override) to the WS at ~20 ms cadence, looping from start when end reached. When deactivated, the `clear` event from the write loop discards anything queued by Telnyx.
+    - `AudioDone`: if the bridge's `pendingHangup` flag is set (set by `EndCallTool`), call `TelnyxCallControlClient.HangupAsync(callControlId)` now that the agent's farewell has played out. Otherwise no-op.
+12. **ThinkingPump:** when active, repeatedly write base64-encoded chunks of the procedurally-generated thinking clip (or the per-connection override) to the WS at ~20 ms cadence, looping from start when end reached. When deactivated, the `clear` event from the write loop discards anything queued by Telnyx.
 13. **Hangup (caller).** Telnyx closes the WS and fires `call.hangup`. Either signal disposes the session and exits both loops. Pending bridge entry (if any) is removed.
 14. **Hangup (agent).** The `end_call` tool calls `TelnyxCallControlClient.HangupAsync(callControlId)`. Telnyx tears down the call, fires `call.hangup`, the bridge unwinds as in 13.
 
@@ -171,7 +176,7 @@ Task<IVoiceSession> StartSessionAsync(
 | `apiKey` | Telnyx API Key | Secret | Yes | v2 API key, used as `Authorization: Bearer …`. |
 | `phoneNumber` | Phone Number (E.164) | String | Yes | The number this connection owns; cosmetic but validated as E.164. |
 | `baseUrl` | Public Base URL | String | Yes | HTTPS URL of this OpenAgent instance; webhook + WS URLs derive from it. |
-| `callControlAppId` | Call Control App ID | String | Yes | Telnyx connection ID of the **Voice / Call Control** connection routing the number. |
+| `callControlAppId` | Call Control App ID | String | Yes | Telnyx connection ID of the **Voice / Call Control** connection routing the number. Used by `TelnyxWebhookEndpoints` to validate that incoming events' `payload.connection_id` matches — rejects events from other Call Control connections that share the same OpenAgent instance. |
 | `webhookPublicKey` | Webhook Public Key (PEM) | Secret | No | ED25519 PEM. Verification skipped with warning when blank. |
 | `allowedNumbers` | Allowed Caller Numbers | String | No | Comma-separated E.164. Empty = allow all. |
 | `thinkingClipPath` | Thinking Clip Path | String | No | Optional path under `dataPath` to a custom µ-law 8 kHz mono clip. Falls back to embedded default. |
@@ -206,8 +211,8 @@ Bridge does **no** codec or rate conversion. Pure byte pipe. Each leg's audio is
 
 ## Thinking-clip mechanism
 
-- Default clip embedded as `OpenAgent.Channel.Telnyx/Resources/thinking.ulaw` (8 kHz µ-law mono, 1–3 s, soft ambient — no speech). Loaded once at provider start.
-- Custom clip can be supplied per connection via `thinkingClipPath` (relative to `dataPath`). Validated on connection start: must exist, must be readable, must be a multiple of the µ-law frame size.
+- Default clip is **generated procedurally** at provider start by `ThinkingClipFactory.Generate()`: ~2 s of band-limited soft pink noise (300–1000 Hz), encoded as 8 kHz µ-law mono, with a ~50 ms cosine fade across the loop boundary so repeats are click-free. No third-party audio asset, no licensing concern, no embedded resource needed.
+- Custom clip can be supplied per connection via `thinkingClipPath` (relative to `dataPath`). Validated on connection start: must exist, must be readable, must be a multiple of the µ-law frame size. Caller is responsible for loop seamlessness — the bridge does not apply fades to user-provided audio.
 - Bridge `ThinkingPump`:
   - Idle by default.
   - On `ToolCallEvent`, transitions to active. Writes the clip in 20-ms slices (160 bytes/slice) to the WS at a 20 ms cadence (target one frame per slice; small jitter tolerated).
@@ -235,9 +240,48 @@ Bridge does **no** codec or rate conversion. Pure byte pipe. Each leg's audio is
 
 ## Per-call ephemeral state
 
-- The provider keeps a `ConcurrentDictionary<string, PendingBridge>` keyed by `callControlId`. Entries are added when `streaming_start` is issued and removed when either the WS connects or 30 s elapses.
-- Active bridges keep their own state (session, conversation, WS, thinking-pump cancellation). They are NOT registered globally — once `RunAsync` returns, all per-call state is GC'd.
-- One Telnyx connection's `inbound.channel_limit` defaults to 1. We don't enforce concurrency on our side beyond what the WS lifecycle naturally implies.
+- The provider keeps two `ConcurrentDictionary` instances, both keyed by `callControlId`:
+  - `_pending: PendingBridge` (waiting for Telnyx to open the WS)
+  - `_active: TelnyxMediaBridge` (WS open, bridge running) — used by `EndCallTool` to find the bridge for the conversation.
+- **Pending eviction.** Each pending entry owns a `CancellationTokenSource` with `CancelAfter(TimeSpan.FromSeconds(30))` whose registered callback removes the entry from `_pending` AND issues `HangupAsync(callControlId)` (a stranded answered call must not stay open). When the WS connects normally, `TelnyxStreamingEndpoint` disposes the CTS and removes the entry atomically before invoking `bridge.RunAsync` — promotes the entry from `_pending` to `_active`.
+- **Active eviction.** Active bridges remove themselves from `_active` in their `RunAsync` finally block. They keep their own state (session, conversation, WS, thinking-pump cancellation, pendingHangup flag); once `RunAsync` returns all per-call state is GC'd.
+- The `EndCallTool` looks up the active bridge by `conversation.Id` (one bridge per conversation at most). Tool returns an error if no active bridge exists or conversation is not `Phone`.
+- One Telnyx connection's `inbound.channel_limit` is enforced **on Telnyx's side** (today: 1 concurrent call). The OpenAgent host does not impose its own gate; the dictionaries above are sized for whatever Telnyx allows through.
+
+## WebSocket endpoint trust model
+
+- ED25519 signing applies to HTTP webhooks only — the WS upgrade carries no signature.
+- Two-factor authorisation:
+  1. `webhookId` in the URL path — 12-hex random, generated server-side, persisted to `connections.json`. Treat as a shared secret. Never log full webhook URLs (truncate to `…/{first-4}…/stream`).
+  2. `?call={callControlId}` query param must match an entry in `_pending`. The 30 s window means an attacker who learned `webhookId` would also have to win the race against Telnyx for any specific incoming call.
+- Threat accepted: leaked `webhookId` + race-win attaches an unauthorized WS to an in-flight call. Mitigation is operational (rotate webhook URLs by regenerating `webhookId`; HTTPS-only transport for the REST API tokens that carry the URL). Not a target for cryptographic mitigation in v1.
+
+## Cancellation during tool execution
+
+- `TelnyxMediaBridge` owns a `CancellationTokenSource` linked to the WS lifecycle. Both the `IVoiceSession` and any tool calls dispatched through `agentLogic.ExecuteToolAsync` receive a token derived from this CTS.
+- On `call.hangup` webhook OR WS close, the CTS is cancelled. Tools that honour the token (e.g. `WebFetchTool`, `ShellExecTool`) abort. Fast tools (file reads) typically complete before cancellation is observable.
+- Partial transcripts already emitted via `TranscriptDelta` are persisted by the existing voice provider's transcript handler. Transcripts in flight at hangup are best-effort and may be lost — accepted for v1, since call recording is out of scope and the conversation history is reconstructible from completed turns.
+
+## Conversation-history replay cost
+
+- The Realtime session is initialised with prior `Message` rows replayed as `conversation.item.create` events at session start (existing voice provider behaviour, unchanged).
+- Compaction does not run pre-replay — `LastPromptTokens` is unset at session-init. The first turn of each call therefore pays the un-compacted token cost of the entire phone conversation history.
+- For long-running E.164 conversations this becomes meaningful (many days of accumulated turns). **Accepted for v1.** Follow-ups: (a) trim replayed history to last N messages, (b) summarise via the existing compaction summariser before replay, (c) store a per-conversation "voice context" digest separate from the full message history. Defer until measurement shows it matters.
+
+## Browser thinking-cue protocol
+
+The bridge emits two new control events on the existing browser voice WS, alongside the current `transcript_delta`, `speech_started`, etc.:
+
+```jsonc
+{ "type": "thinking_started" }   // emitted on ToolCallEvent
+{ "type": "thinking_stopped" }   // emitted on ToolResultEvent
+```
+
+Schema additions:
+
+- `OpenAgent.Models/Voice/VoiceWebSocketEvents.cs` (existing file) — add two record types `VoiceThinkingStartedEvent` and `VoiceThinkingStoppedEvent` with `Type` only.
+- `OpenAgent.Api/Endpoints/WebSocketVoiceEndpoints.cs` — write loop adds two cases for the new provider-side events (or, more cleanly, emits them from `TelnyxMediaBridge`'s symmetric counterpart in the browser path; spec leaves implementation to the plan).
+- React side handles them in the voice client by playing/stopping a local audio file (`web/public/thinking.mp3` or similar). Out of this spec — the frontend change is its own follow-up plan once the protocol is agreed.
 
 ## File structure
 
@@ -254,13 +298,14 @@ src/agent/
     TelnyxStreamingEndpoint.cs
     TelnyxMediaBridge.cs
     TelnyxMediaFrame.cs
-    Resources/
-      thinking.ulaw
+    ThinkingClipFactory.cs
+    EndCallTool.cs
   OpenAgent.Contracts/
     ILlmVoiceProvider.cs                  (modified — VoiceSessionOptions param)
   OpenAgent.Models/
     Conversations/Conversation.cs         (modified — Phone enum)
     Voice/VoiceSessionOptions.cs          (new)
+    Voice/VoiceWebSocketEvents.cs         (modified — add ThinkingStarted/ThinkingStopped events)
   OpenAgent.LlmVoice.OpenAIAzure/
     AzureOpenAiRealtimeVoiceProvider.cs   (modified — drop codec field, honour options)
     AzureOpenAiVoiceSession.cs            (modified — accept format from options)
@@ -276,15 +321,34 @@ src/agent/
     TelnyxCallControlClientTests.cs
     TelnyxWebhookEndpointTests.cs
     TelnyxStreamingEndpointTests.cs
-    TelnyxMediaBridgeTests.cs
+    TelnyxMediaBridgeReadLoopTests.cs       (track filter, dtmf-ignored, base64 decode)
+    TelnyxMediaBridgeWriteLoopTests.cs      (audio→base64→envelope, transcripts forwarded)
+    TelnyxMediaBridgeBargeInTests.cs        (SpeechStarted → clear + cancel)
+    TelnyxMediaBridgeThinkingPumpTests.cs   (ToolCallEvent starts pump, ToolResult stops + clear)
+    TelnyxMediaBridgeHangupTests.cs         (caller hangup, agent end_call, AudioDone-then-hangup)
+    TelnyxEndCallToolTests.cs               (phone-only gating, pendingHangup flag)
+    ThinkingClipFactoryTests.cs             (procedural generation, frame size, fade boundary)
     Fakes/FakeVoiceSession.cs              (new — for bridge tests)
 ```
 
 ## Testing strategy
 
-- **Unit:** `TelnyxSignatureVerifierTests` (ported from P2). `TelnyxMediaFrame` parse/serialise roundtrip. `TelnyxCallControlClient` against a stub `HttpMessageHandler`.
-- **Integration:** `TelnyxWebhookEndpointTests` and `TelnyxStreamingEndpointTests` via `WebApplicationFactory<Program>`. For the webhook tests, assert `call.initiated` triggers `Answer` + `StreamingStart` REST calls (against a fake CallControlClient). For the streaming endpoint, drive WS frames through, verify base64 µ-law payloads reach a `FakeVoiceSession`, and that audio events from the session round-trip back into the WS as base64 envelopes.
-- **End-to-end manual:** existing Telnyx connection (number `+4535150636`, ED25519 key copied from the portal, allowlist set to the user's caller number), local devtunnel forwarding HTTPS+WSS. Real calls placed; verify barge-in, thinking clip during a tool call (e.g. `web_fetch`), agent-initiated hangup (`end_call` tool).
+- **Unit (no WS / no host):**
+  - `TelnyxSignatureVerifierTests` (ported from P2): valid sig, wrong sig, expired timestamp, missing key (skip-with-warning), malformed PEM.
+  - `TelnyxMediaFrame` parse/serialise roundtrip: each event type, base64 boundaries.
+  - `TelnyxCallControlClientTests` against a stub `HttpMessageHandler`: success, 5xx → exception, network error → exception. Verify exact request body for `streaming_start`.
+  - `ThinkingClipFactoryTests`: deterministic-seed generation produces clip of expected frame count, fade math, valid µ-law byte distribution.
+- **Bridge unit (no WS, with `FakeVoiceSession`):** split per behaviour so coverage is auditable —
+  - `TelnyxMediaBridgeReadLoopTests` — incoming `media` framing, base64 decode, `track="outbound"` filter (must be ignored), `dtmf` parsed-and-ignored, malformed JSON tolerated.
+  - `TelnyxMediaBridgeWriteLoopTests` — `AudioDelta` → outbound `media` envelope, `TranscriptDelta`/`TranscriptDone` forwarded to the conversation store passthrough, `SessionError` triggers hangup.
+  - `TelnyxMediaBridgeBargeInTests` — `SpeechStarted` triggers outbound `clear` AND `session.CancelResponseAsync()` exactly once.
+  - `TelnyxMediaBridgeThinkingPumpTests` — `ToolCallEvent` starts the pump (frames begin flowing), `ToolResultEvent` stops the pump and emits `clear`, multiple back-to-back tool calls keep the pump active across them.
+  - `TelnyxMediaBridgeHangupTests` — caller-initiated WS close disposes session, agent-initiated `pendingHangup` flag waits for `AudioDone` before invoking `HangupAsync`, `call.hangup` webhook arriving mid-tool cancels the linked CTS.
+  - `TelnyxEndCallToolTests` — non-phone conversation returns error result without touching the bridge, phone conversation with no active bridge returns error, phone conversation with active bridge sets the flag and returns OK.
+- **Integration (with `WebApplicationFactory<Program>`):**
+  - `TelnyxWebhookEndpointTests` — `call.initiated` triggers `Answer` then `StreamingStart` against a fake `TelnyxCallControlClient`; `call.hangup` triggers bridge teardown; signature failures return 401; `connection_id` mismatch returns 401.
+  - `TelnyxStreamingEndpointTests` — drive WS frames end-to-end: send `start`+`media` JSON envelopes, assert µ-law bytes reach `FakeVoiceSession.SendAudioAsync`; emit `AudioDelta` from the fake, assert outbound `media` envelopes are received with correct base64; `?call=` mismatch closes the WS.
+- **End-to-end manual:** existing Telnyx connection (number `+4535150636`, ED25519 key copied from the portal, allowlist set to the user's caller number), local devtunnel forwarding HTTPS+WSS. Real calls placed; verify barge-in, thinking clip during a `web_fetch` tool call, agent-initiated hangup via `end_call`, full transcript persisted in the conversation store.
 
 ## What we keep / remove from the prior P2 work
 
