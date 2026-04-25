@@ -162,18 +162,22 @@ public sealed class WhatsAppMessageHandler
         // Convert markdown to WhatsApp formatting
         var whatsAppText = WhatsAppMarkdownConverter.ToWhatsApp(replyText);
 
-        // Chunk and send
+        // Chunk and send. Keep the first chunk's stanza ID — that's what users will reply to.
         var chunks = WhatsAppMarkdownConverter.ChunkText(whatsAppText, WhatsAppMaxMessageLength);
+        string? firstStanzaId = null;
         foreach (var chunk in chunks)
         {
-            await sender.SendTextAsync(chatId, chunk);
+            var stanzaId = await sender.SendTextAsync(chatId, chunk);
+            firstStanzaId ??= stanzaId;
         }
 
-        // Update assistant message with channel message ID if available
-        if (assistantMessageId is not null)
+        // Back-fill the assistant message with the real Baileys stanza ID so reply-to-bot
+        // lookups resolve correctly in BuildChatMessages / BuildMessages.
+        if (assistantMessageId is not null && firstStanzaId is not null)
         {
-            _store.UpdateChannelMessageId(assistantMessageId, $"whatsapp:{chatId}");
-            _logger?.LogDebug("Updated assistant message {MessageId} for chat {ChatId}", assistantMessageId, chatId);
+            _store.UpdateChannelMessageId(assistantMessageId, firstStanzaId);
+            _logger?.LogDebug("Updated assistant message {MessageId} for chat {ChatId} with stanza {StanzaId}",
+                assistantMessageId, chatId, firstStanzaId);
         }
 
         _logger?.LogInformation("Reply sent to chat {ChatId}, {ChunkCount} chunk(s)", chatId, chunks.Count);

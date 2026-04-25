@@ -160,6 +160,82 @@ public class WhatsAppMessageHandlerTests
         Assert.Equal(AllowedDmChatId, conversation.ChannelChatId);
     }
 
+    [Fact]
+    public async Task HandleMessageAsync_PopulatesAssistantChannelMessageIdWithStanzaId()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new StorePersistingTextProvider(store, "Hi from bot");
+        var handler = new WhatsAppMessageHandler(
+            store,
+            new FakeConnectionStore(ConnectionId),
+            _ => provider,
+            ConnectionId,
+            new AgentConfig { TextProvider = "azure-openai-text", TextModel = "gpt-5.2-chat" });
+        var sender = new FakeWhatsAppSender();
+        var message = CreateTextMessage(AllowedDmChatId, "hello");
+
+        await handler.HandleMessageAsync(sender, message, CancellationToken.None);
+
+        var conversation = store.FindChannelConversation("whatsapp", ConnectionId, AllowedDmChatId);
+        Assert.NotNull(conversation);
+        var messages = store.GetMessages(conversation.Id);
+        var assistant = Assert.Single(messages, m => m.Role == "assistant");
+        // The first chunk's stanza ID from FakeWhatsAppSender is "FAKE-1".
+        Assert.Equal("FAKE-1", assistant.ChannelMessageId);
+    }
+
+    /// <summary>
+    /// Fake text provider that saves the assistant message to the store and emits
+    /// AssistantMessageSaved — mirrors what real providers do so UpdateChannelMessageId
+    /// receives a non-null message ID.
+    /// </summary>
+    private sealed class StorePersistingTextProvider : ILlmTextProvider
+    {
+        private readonly IConversationStore _store;
+        private readonly string _response;
+
+        public StorePersistingTextProvider(IConversationStore store, string response)
+        {
+            _store = store;
+            _response = response;
+        }
+
+        public string Key => "store-persisting-text";
+        public IReadOnlyList<ProviderConfigField> ConfigFields => [];
+        public void Configure(JsonElement configuration) { }
+        public int? GetContextWindow(string model) => null;
+
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
+            Conversation conversation,
+            Message userMessage,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            // Persist user message, then assistant message — mirrors real providers
+            _store.AddMessage(conversation.Id, userMessage);
+            yield return new TextDelta(_response);
+            var assistantId = Guid.NewGuid().ToString();
+            _store.AddMessage(conversation.Id, new Message
+            {
+                Id = assistantId,
+                ConversationId = conversation.Id,
+                Role = "assistant",
+                Content = _response
+            });
+            yield return new AssistantMessageSaved(assistantId);
+            await Task.CompletedTask;
+        }
+
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
+            IReadOnlyList<Message> messages,
+            string model,
+            CompletionOptions? options = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new TextDelta(_response);
+            await Task.CompletedTask;
+        }
+    }
+
     /// <summary>
     /// Fake text provider that captures the user message passed to CompleteAsync.
     /// </summary>
