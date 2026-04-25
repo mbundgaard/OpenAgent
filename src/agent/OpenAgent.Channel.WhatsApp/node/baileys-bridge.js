@@ -252,13 +252,13 @@ async function main() {
             const result = await sock.sendMessage(cmd.chatId, { text: cmd.text });
             const id = result?.key?.id;
             if (typeof id === "string" && id.length > 0) {
-              emit({ type: "sent", id });
+              emit({ type: "sent", correlationId: cmd.correlationId, id });
             } else {
-              emit({ type: "sent", message: "send returned no message id" });
+              emit({ type: "sent", correlationId: cmd.correlationId, message: "send returned no message id" });
             }
           } catch (sendErr) {
             console.error("send failed:", sendErr);
-            emit({ type: "sent", message: String(sendErr?.message || sendErr) });
+            emit({ type: "sent", correlationId: cmd.correlationId, message: String(sendErr?.message || sendErr) });
           }
           break;
 

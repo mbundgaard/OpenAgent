@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -29,6 +30,11 @@ public sealed record NodeEvent
     /// <summary>Message ID (for type=message).</summary>
     [JsonPropertyName("id")]
     public string? Id { get; init; }
+
+    /// <summary>Correlation ID echoed back on <c>sent</c> events to match a request to its response.
+    /// Null for inbound events.</summary>
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; init; }
 
     /// <summary>Chat ID / remote JID (for type=message).</summary>
     [JsonPropertyName("chatId")]
@@ -89,8 +95,7 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
     private Task? _stderrTask;
     private Task? _stdinTask;
     private Channel<string>? _stdinChannel;
-    private readonly SemaphoreSlim _sendLock = new(1, 1);
-    private TaskCompletionSource<string?>? _pendingSend;
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<string?>> _pendingSends = new();
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
@@ -140,10 +145,11 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
     /// </summary>
     /// <param name="chatId">Target chat JID.</param>
     /// <param name="text">Message text to send.</param>
+    /// <param name="correlationId">Correlation ID echoed back on the <c>sent</c> event for matching.</param>
     /// <returns>JSON string ready to write to stdin.</returns>
-    public static string FormatSendCommand(string chatId, string text)
+    public static string FormatSendCommand(string chatId, string text, string correlationId)
     {
-        return JsonSerializer.Serialize(new { type = "send", chatId, text }, WriteOptions);
+        return JsonSerializer.Serialize(new { type = "send", chatId, text, correlationId }, WriteOptions);
     }
 
     /// <summary>
@@ -239,34 +245,34 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
 
     /// <summary>
     /// Sends a text message and awaits the bridge's <c>sent</c> response, returning the
-    /// resulting Baileys stanza ID (or null on error/timeout). Sends are serialized per
-    /// process instance — at most one send-and-wait is in flight at a time.
+    /// resulting Baileys stanza ID (or null on send error/timeout). Each call uses a unique
+    /// correlation ID so concurrent and out-of-order responses are correctly matched —
+    /// even after a prior call has timed out.
     /// </summary>
     /// <param name="chatId">Target chat JID.</param>
     /// <param name="text">Message text to send.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The stanza ID assigned by Baileys, or null if the send failed or timed out.</returns>
+    /// <exception cref="OperationCanceledException">Thrown if <paramref name="ct"/> is cancelled.</exception>
     public async Task<string?> SendTextAndWaitAsync(string chatId, string text, CancellationToken ct)
     {
-        await _sendLock.WaitAsync(ct);
+        var correlationId = Guid.NewGuid().ToString("N");
+        var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingSends[correlationId] = tcs;
+
         try
         {
-            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _pendingSend = tcs;
+            await WriteAsync(FormatSendCommand(chatId, text, correlationId));
 
-            await WriteAsync(FormatSendCommand(chatId, text));
+            using var timeoutCts = new CancellationTokenSource(SendTimeout);
+            using var timeoutReg = timeoutCts.Token.Register(() => tcs.TrySetResult(null));
+            using var ctReg = ct.Register(() => tcs.TrySetCanceled(ct));
 
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(SendTimeout);
-            using (timeoutCts.Token.Register(() => tcs.TrySetResult(null)))
-            {
-                return await tcs.Task;
-            }
+            return await tcs.Task;
         }
         finally
         {
-            _pendingSend = null;
-            _sendLock.Release();
+            _pendingSends.TryRemove(correlationId, out _);
         }
     }
 
@@ -373,17 +379,22 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
                     // 'sent' events are an internal protocol detail — don't propagate to OnEvent.
                     if (evt.Type == "sent")
                     {
-                        var pending = Interlocked.Exchange(ref _pendingSend, null);
-                        if (pending is null)
+                        if (evt.CorrelationId is null)
                         {
-                            _logger.LogWarning("WhatsApp bridge emitted 'sent' with no pending send (id={Id}, message={Message})",
+                            _logger.LogWarning("WhatsApp bridge emitted 'sent' with no correlationId (id={Id}, message={Message})",
                                 evt.Id, evt.Message);
                         }
-                        else
+                        else if (_pendingSends.TryRemove(evt.CorrelationId, out var pending))
                         {
                             pending.TrySetResult(evt.Id);
                             if (evt.Message is not null)
-                                _logger.LogWarning("WhatsApp send returned error: {Message}", evt.Message);
+                                _logger.LogWarning("WhatsApp send {CorrelationId} returned error: {Message}",
+                                    evt.CorrelationId, evt.Message);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("WhatsApp bridge emitted 'sent' for unknown correlationId={CorrelationId} (id={Id})",
+                                evt.CorrelationId, evt.Id);
                         }
                         continue;
                     }

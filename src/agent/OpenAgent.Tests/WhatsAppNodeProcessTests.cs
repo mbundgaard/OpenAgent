@@ -80,10 +80,11 @@ public class WhatsAppNodeProcessTests
     [Fact]
     public void FormatSendCommand_ProducesValidJson()
     {
-        var json = WhatsAppNodeProcess.FormatSendCommand("+45@s.whatsapp.net", "Hello");
+        var json = WhatsAppNodeProcess.FormatSendCommand("+45@s.whatsapp.net", "Hello", "corr1");
         Assert.Contains("\"type\":\"send\"", json);
         Assert.Contains("\"chatId\":\"+45@s.whatsapp.net\"", json);
         Assert.Contains("\"text\":\"Hello\"", json);
+        Assert.Contains("\"correlationId\":\"corr1\"", json);
     }
 
     [Fact]
@@ -147,5 +148,16 @@ public class WhatsAppNodeProcessTests
         Assert.Equal("sent", evt.Type);
         Assert.Null(evt.Id);
         Assert.Equal("connection lost", evt.Message);
+    }
+
+    [Fact]
+    public void ParseLine_SentEventWithCorrelationId_ParsesField()
+    {
+        var json = "{\"type\":\"sent\",\"correlationId\":\"abc123\",\"id\":\"3EB0XYZ\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Equal("sent", evt.Type);
+        Assert.Equal("abc123", evt.CorrelationId);
+        Assert.Equal("3EB0XYZ", evt.Id);
     }
 }
