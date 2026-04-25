@@ -303,6 +303,35 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task WsClose_DisposesSession_AndUnregistersBridge_AndReturnsRunAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (ws, fakeProvider, conversationId) = await ConnectStreamAsync(cts.Token);
+
+        // Wait for the bridge to register and the voice session to be created so we know the
+        // bridge is fully running before we tear it down from the client side.
+        var session = await fakeProvider.WaitForSessionAsync(conversationId, cts.Token);
+        _ = await WaitForBridgeAsync(conversationId, cts.Token);
+
+        var registry = _factory.Services.GetRequiredService<TelnyxBridgeRegistry>();
+        Assert.True(registry.TryGet(conversationId, out _));
+
+        // Caller hangs up: client closes the WebSocket. The bridge's RunAsync.finally must
+        // dispose the voice session and unregister from the registry, returning cleanly.
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+
+        // Poll for teardown — registry entry gone AND session disposed. 2s window is plenty.
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        waitCts.CancelAfter(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(
+            () => !registry.TryGet(conversationId, out _) && session.DisposeCalled,
+            waitCts.Token);
+
+        Assert.False(registry.TryGet(conversationId, out _));
+        Assert.True(session.DisposeCalled);
+    }
+
     /// <summary>
     /// Polls the bridge registry until the bridge for the given conversation has registered itself.
     /// </summary>

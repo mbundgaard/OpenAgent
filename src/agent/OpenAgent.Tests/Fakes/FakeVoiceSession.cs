@@ -15,6 +15,7 @@ public sealed class FakeVoiceSession : IVoiceSession
     public List<byte[]> SentAudio { get; } = new();
     public bool CommitCalled;
     public bool CancelCalled;
+    public bool DisposeCalled;
     private readonly Channel<VoiceEvent> _events =
         System.Threading.Channels.Channel.CreateUnbounded<VoiceEvent>();
 
@@ -41,6 +42,7 @@ public sealed class FakeVoiceSession : IVoiceSession
 
     public ValueTask DisposeAsync()
     {
+        DisposeCalled = true;
         _events.Writer.TryComplete();
         return ValueTask.CompletedTask;
     }
