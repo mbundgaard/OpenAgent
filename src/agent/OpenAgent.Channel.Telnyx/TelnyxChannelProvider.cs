@@ -21,6 +21,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
     private readonly AgentConfig _agentConfig;
     private readonly AgentEnvironment _environment;
     private readonly TelnyxBridgeRegistry _bridgeRegistry;
+    private readonly IVoiceSessionManager _voiceSessionManager;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<TelnyxChannelProvider> _logger;
@@ -29,6 +30,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
     public TelnyxOptions Options => _options;
     public string ConnectionId => _connectionId;
     public TelnyxBridgeRegistry BridgeRegistry => _bridgeRegistry;
+    public IVoiceSessionManager VoiceSessionManager => _voiceSessionManager;
     public TelnyxSignatureVerifier SignatureVerifier { get; }
     public TelnyxCallControlClient CallControlClient { get; }
     public AgentConfig AgentConfig => _agentConfig;
@@ -46,6 +48,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         AgentConfig agentConfig,
         AgentEnvironment environment,
         TelnyxBridgeRegistry bridgeRegistry,
+        IVoiceSessionManager voiceSessionManager,
         IHttpClientFactory httpClientFactory,
         ILoggerFactory loggerFactory)
     {
@@ -57,6 +60,7 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         _agentConfig = agentConfig;
         _environment = environment;
         _bridgeRegistry = bridgeRegistry;
+        _voiceSessionManager = voiceSessionManager;
         _httpClientFactory = httpClientFactory;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<TelnyxChannelProvider>();

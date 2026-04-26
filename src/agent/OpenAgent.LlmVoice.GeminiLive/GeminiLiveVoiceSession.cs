@@ -105,6 +105,20 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
             yield return evt;
     }
 
+    /// <summary>
+    /// Gemini Live's <c>setup</c> is a one-shot bring-up message — there's no equivalent of
+    /// OpenAI Realtime's <c>session.update</c>. We can't change <c>system_instruction</c>
+    /// mid-session, so this is a no-op. A new system prompt only takes effect on the next
+    /// session.
+    /// </summary>
+    public Task RefreshSystemPromptAsync(CancellationToken ct = default)
+    {
+        _logger.LogDebug(
+            "RefreshSystemPromptAsync ignored for Gemini Live session {ConversationId} — protocol does not support mid-session prompt updates",
+            _conversation.Id);
+        return Task.CompletedTask;
+    }
+
     public async ValueTask DisposeAsync()
     {
         _reconnectTimer?.Dispose();

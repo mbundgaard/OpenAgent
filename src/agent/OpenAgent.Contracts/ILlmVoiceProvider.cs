@@ -37,4 +37,13 @@ public interface IVoiceSession : IAsyncDisposable
 
     /// <summary>Interrupts the current assistant response.</summary>
     Task CancelResponseAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Re-sends the session configuration with a freshly built system prompt. Realtime sessions
+    /// lock the system prompt at session start, so any later mutation that affects the prompt
+    /// (skill activation/deactivation, intention change, mention filter) won't reach the model
+    /// without an explicit refresh. No-op when the underlying protocol doesn't support mid-session
+    /// updates.
+    /// </summary>
+    Task RefreshSystemPromptAsync(CancellationToken ct = default);
 }

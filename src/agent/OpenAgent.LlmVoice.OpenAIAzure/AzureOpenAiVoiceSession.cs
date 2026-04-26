@@ -102,6 +102,22 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         }
     }
 
+    /// <summary>
+    /// Re-sends the session.update event with a freshly built system prompt. Called after the
+    /// agent mutates conversation state that affects the prompt (e.g. activate_skill) so the
+    /// model sees the change without requiring a new call.
+    /// </summary>
+    public async Task RefreshSystemPromptAsync(CancellationToken ct = default)
+    {
+        // Send only the session.update — skip the SessionReady channel write, which is a
+        // one-time client signal at session bring-up, not something we re-broadcast on refresh.
+        await SendEventAsync(new ClientEvent
+        {
+            Type = EventTypes.SessionUpdate,
+            Session = BuildSessionConfig()
+        }, ct);
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _receiveCts.CancelAsync();
@@ -134,6 +150,22 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     private async Task SendSessionUpdateAsync(CancellationToken ct)
     {
+        await SendEventAsync(new ClientEvent
+        {
+            Type = EventTypes.SessionUpdate,
+            Session = BuildSessionConfig()
+        }, ct);
+
+        // Advertise negotiated audio format to the client. OpenAI Realtime has fixed rates per codec.
+        await _channel.Writer.WriteAsync(new SessionReady(
+            InputSampleRate: _sampleRate,
+            OutputSampleRate: _sampleRate,
+            InputCodec: _codec,
+            OutputCodec: _codec), ct);
+    }
+
+    private RealtimeSessionConfig BuildSessionConfig()
+    {
         var tools = _agentLogic.Tools.Count > 0
             ? _agentLogic.Tools.Select(t => new RealtimeToolDefinition
             {
@@ -143,34 +175,18 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
-        var codec = _codec;
-
-        var sessionConfig = new RealtimeSessionConfig
+        return new RealtimeSessionConfig
         {
             Modalities = ["audio", "text"],
             Voice = _config.Voice ?? "alloy",
             Instructions = _agentLogic.GetSystemPrompt(_conversation.Id, _conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention),
-            InputAudioFormat = codec,
-            OutputAudioFormat = codec,
+            InputAudioFormat = _codec,
+            OutputAudioFormat = _codec,
             InputAudioTranscription = new InputAudioTranscriptionConfig { Model = "whisper-1" },
             TurnDetection = new TurnDetectionConfig { Type = "server_vad" },
             Tools = tools,
             ToolChoice = tools is not null ? "auto" : null
         };
-
-        await SendEventAsync(new ClientEvent
-        {
-            Type = EventTypes.SessionUpdate,
-            Session = sessionConfig
-        }, ct);
-
-        // Advertise negotiated audio format to the client. OpenAI Realtime has fixed rates per codec.
-        var rate = _sampleRate;
-        await _channel.Writer.WriteAsync(new SessionReady(
-            InputSampleRate: rate,
-            OutputSampleRate: rate,
-            InputCodec: codec,
-            OutputCodec: codec), ct);
     }
 
     private static int RateForCodec(string codec) => codec switch

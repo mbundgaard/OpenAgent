@@ -103,6 +103,7 @@ builder.Services.AddSingleton<IToolHandler>(sp =>
     new SkillToolHandler(
         sp.GetRequiredService<SkillCatalog>(),
         sp.GetRequiredService<IConversationStore>(),
+        sp.GetRequiredService<IVoiceSessionManager>(),
         sp.GetRequiredService<ILogger<SkillToolHandler>>()));
 
 var loggingConfig = new LoggingConfig();
@@ -230,6 +231,7 @@ builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
         sp.GetRequiredService<AgentConfig>(),
         sp.GetRequiredService<AgentEnvironment>(),
         sp.GetRequiredService<TelnyxBridgeRegistry>(),
+        sp.GetRequiredService<IVoiceSessionManager>(),
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<ConnectionManager>();

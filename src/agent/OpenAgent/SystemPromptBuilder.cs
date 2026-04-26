@@ -29,8 +29,7 @@ internal sealed class SystemPromptBuilder
         ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
         ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
         ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
-        ("VOICE.md",         [ConversationType.Voice]),
-        ("PHONE.md",         [ConversationType.Phone]),
+        ("VOICE.md",         [ConversationType.Voice, ConversationType.Phone]),
     ];
 
     public SystemPromptBuilder(AgentEnvironment environment, SkillCatalog skillCatalog, AgentConfig agentConfig, ILogger<SystemPromptBuilder> logger)

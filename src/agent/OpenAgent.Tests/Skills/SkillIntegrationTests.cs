@@ -34,7 +34,7 @@ public class SkillIntegrationTests : IDisposable
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "test", "test");
 
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var activate = handler.Tools.First(t => t.Definition.Name == "activate_skill");
         var deactivate = handler.Tools.First(t => t.Definition.Name == "deactivate_skill");
 
@@ -82,7 +82,7 @@ public class SkillIntegrationTests : IDisposable
         File.WriteAllText(Path.Combine(refsDir, "guide.md"), "# Guide\nDetailed reference content.");
 
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var resource = handler.Tools.First(t => t.Definition.Name == "activate_skill_resource");
 
         var result = await resource.ExecuteAsync("""{"skill_name": "my-skill", "path": "references/guide.md"}""", "conv1");

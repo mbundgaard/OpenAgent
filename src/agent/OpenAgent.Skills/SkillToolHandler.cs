@@ -12,12 +12,16 @@ public sealed class SkillToolHandler : IToolHandler
 {
     public IReadOnlyList<ITool> Tools { get; }
 
-    public SkillToolHandler(SkillCatalog catalog, IConversationStore store, ILogger<SkillToolHandler> logger)
+    public SkillToolHandler(
+        SkillCatalog catalog,
+        IConversationStore store,
+        IVoiceSessionManager voiceSessionManager,
+        ILogger<SkillToolHandler> logger)
     {
         Tools =
         [
-            new ActivateSkillTool(catalog, store, logger),
-            new DeactivateSkillTool(store),
+            new ActivateSkillTool(catalog, store, voiceSessionManager, logger),
+            new DeactivateSkillTool(store, voiceSessionManager, logger),
             new ListActiveSkillsTool(catalog, store),
             new ActivateSkillResourceTool(catalog),
             new ReloadSkillsTool(catalog, logger)
@@ -25,7 +29,7 @@ public sealed class SkillToolHandler : IToolHandler
     }
 }
 
-internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore store, ILogger logger) : ITool
+internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore store, IVoiceSessionManager voiceSessionManager, ILogger logger) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -42,7 +46,7 @@ internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore
         }
     };
 
-    public Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
+    public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
         var args = JsonDocument.Parse(arguments).RootElement;
         var name = args.GetProperty("name").GetString()!;
@@ -52,14 +56,14 @@ internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore
         if (!catalog.TryGetSkill(name, out _))
         {
             logger.LogWarning("Skill not found in catalog: {SkillName}", name);
-            return Task.FromResult(JsonSerializer.Serialize(new { error = $"Skill '{name}' not found" }));
+            return JsonSerializer.Serialize(new { error = $"Skill '{name}' not found" });
         }
 
         var conversation = store.Get(conversationId);
         if (conversation is null)
         {
             logger.LogWarning("Conversation not found: {ConversationId}", conversationId);
-            return Task.FromResult(JsonSerializer.Serialize(new { error = "Conversation not found" }));
+            return JsonSerializer.Serialize(new { error = "Conversation not found" });
         }
 
         const int maxActiveSkills = 5;
@@ -68,13 +72,13 @@ internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore
         if (conversation.ActiveSkills.Contains(name, StringComparer.OrdinalIgnoreCase))
         {
             logger.LogDebug("Skill already active: {SkillName} on {ConversationId}", name, conversationId);
-            return Task.FromResult(JsonSerializer.Serialize(new { status = "already_active", skill = name }));
+            return JsonSerializer.Serialize(new { status = "already_active", skill = name });
         }
 
         if (conversation.ActiveSkills.Count >= maxActiveSkills)
         {
             logger.LogWarning("Max active skills reached for {ConversationId}: {Count}/{Max}", conversationId, conversation.ActiveSkills.Count, maxActiveSkills);
-            return Task.FromResult(JsonSerializer.Serialize(new { error = $"Maximum {maxActiveSkills} active skills reached. Deactivate a skill first." }));
+            return JsonSerializer.Serialize(new { error = $"Maximum {maxActiveSkills} active skills reached. Deactivate a skill first." });
         }
 
         conversation.ActiveSkills.Add(name);
@@ -86,16 +90,45 @@ internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore
         logger.LogInformation("Skill activated: {SkillName} on {ConversationId}, persisted active skills: [{ActiveSkills}]",
             name, conversationId, string.Join(", ", persistedSkills));
 
-        return Task.FromResult(JsonSerializer.Serialize(new
+        // Voice/realtime sessions lock the system prompt at session start, so push a refresh
+        // when a session is live. No-op for text channels (where each turn rebuilds the prompt).
+        await VoiceSessionRefreshHelper.TryRefreshVoiceSessionAsync(voiceSessionManager, conversationId, "activate_skill", logger, ct);
+
+        return JsonSerializer.Serialize(new
         {
             status = "activated",
             skill = name,
-            message = $"Skill '{name}' activated. Its instructions will appear in the system prompt on the next turn."
-        }));
+            message = $"Skill '{name}' activated. Its instructions are now in the system prompt."
+        });
     }
 }
 
-internal sealed class DeactivateSkillTool(IConversationStore store) : ITool
+internal static class VoiceSessionRefreshHelper
+{
+    public static async Task TryRefreshVoiceSessionAsync(
+        IVoiceSessionManager manager,
+        string conversationId,
+        string reason,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        if (!manager.TryGetSession(conversationId, out var session) || session is null)
+            return;
+        try
+        {
+            await session.RefreshSystemPromptAsync(ct);
+            logger.LogDebug("Voice system prompt refreshed for {ConversationId} ({Reason})", conversationId, reason);
+        }
+        catch (Exception ex)
+        {
+            // Don't fail the tool call on a refresh hiccup — the next call will pick up the
+            // mutated state, and the original tool result is still meaningful.
+            logger.LogWarning(ex, "Voice system prompt refresh failed for {ConversationId} ({Reason})", conversationId, reason);
+        }
+    }
+}
+
+internal sealed class DeactivateSkillTool(IConversationStore store, IVoiceSessionManager voiceSessionManager, ILogger logger) : ITool
 {
     public AgentToolDefinition Definition { get; } = new()
     {
@@ -112,29 +145,31 @@ internal sealed class DeactivateSkillTool(IConversationStore store) : ITool
         }
     };
 
-    public Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
+    public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
         var args = JsonDocument.Parse(arguments).RootElement;
         var name = args.GetProperty("name").GetString()!;
 
         var conversation = store.Get(conversationId);
         if (conversation is null)
-            return Task.FromResult(JsonSerializer.Serialize(new { error = "Conversation not found" }));
+            return JsonSerializer.Serialize(new { error = "Conversation not found" });
 
         var match = conversation.ActiveSkills?.FirstOrDefault(s => string.Equals(s, name, StringComparison.OrdinalIgnoreCase));
         if (match is null)
-            return Task.FromResult(JsonSerializer.Serialize(new { status = "not_active", skill = name }));
+            return JsonSerializer.Serialize(new { status = "not_active", skill = name });
 
         conversation.ActiveSkills!.Remove(match);
 
         store.Update(conversation);
 
-        return Task.FromResult(JsonSerializer.Serialize(new
+        await VoiceSessionRefreshHelper.TryRefreshVoiceSessionAsync(voiceSessionManager, conversationId, "deactivate_skill", logger, ct);
+
+        return JsonSerializer.Serialize(new
         {
             status = "deactivated",
             skill = name,
-            message = $"Skill '{name}' deactivated. Its instructions will be removed from the system prompt on the next turn."
-        }));
+            message = $"Skill '{name}' deactivated. Its instructions are no longer in the system prompt."
+        });
     }
 }
 

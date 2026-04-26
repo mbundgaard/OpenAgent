@@ -44,6 +44,29 @@ public sealed class VoiceSessionManager : IVoiceSessionManager, IAsyncDisposable
         return session;
     }
 
+    public bool TryGetSession(string conversationId, out IVoiceSession? session)
+    {
+        if (_sessions.TryGetValue(conversationId, out var s))
+        {
+            session = s;
+            return true;
+        }
+        session = null;
+        return false;
+    }
+
+    public void RegisterSession(string conversationId, IVoiceSession session)
+    {
+        // Last-writer-wins: if a stale entry exists (e.g. previous bridge's dispose didn't unregister),
+        // overwrite it. The new session is the live one.
+        _sessions[conversationId] = session;
+    }
+
+    public void UnregisterSession(string conversationId)
+    {
+        _sessions.TryRemove(conversationId, out _);
+    }
+
     public async Task CloseSessionAsync(string conversationId)
     {
         if (!_sessions.TryRemove(conversationId, out var session))

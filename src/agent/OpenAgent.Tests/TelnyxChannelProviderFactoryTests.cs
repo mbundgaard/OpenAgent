@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent.Channel.Telnyx;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Connections;
+using OpenAgent.Tests.Fakes;
 using Xunit;
 
 namespace OpenAgent.Tests;
@@ -72,6 +73,7 @@ public class TelnyxChannelProviderFactoryTests
             agentConfig: null!,
             environment: new AgentEnvironment { DataPath = Path.GetTempPath() },
             bridgeRegistry: new TelnyxBridgeRegistry(),
+            voiceSessionManager: new FakeVoiceSessionManager(),
             httpClientFactory: new StubHttpClientFactory(),
             loggerFactory: NullLoggerFactory.Instance);
 }

@@ -29,7 +29,7 @@ public class SkillToolHandlerTests : IDisposable
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "test", "test");
 
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var tool = handler.Tools.First(t => t.Definition.Name == "activate_skill");
 
         var result = await tool.ExecuteAsync("""{"name": "code-review"}""", "conv1");
@@ -46,7 +46,7 @@ public class SkillToolHandlerTests : IDisposable
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "test", "test");
 
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var tool = handler.Tools.First(t => t.Definition.Name == "activate_skill");
 
         await tool.ExecuteAsync("""{"name": "code-review"}""", "conv1");
@@ -60,7 +60,7 @@ public class SkillToolHandlerTests : IDisposable
     {
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "test", "test");
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var tool = handler.Tools.First(t => t.Definition.Name == "activate_skill");
 
         var result = await tool.ExecuteAsync("""{"name": "nonexistent"}""", "conv1");
@@ -75,7 +75,7 @@ public class SkillToolHandlerTests : IDisposable
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "test", "test");
 
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var activate = handler.Tools.First(t => t.Definition.Name == "activate_skill");
         var deactivate = handler.Tools.First(t => t.Definition.Name == "deactivate_skill");
 
@@ -92,7 +92,7 @@ public class SkillToolHandlerTests : IDisposable
     {
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "test", "test");
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var deactivate = handler.Tools.First(t => t.Definition.Name == "deactivate_skill");
 
         var result = await deactivate.ExecuteAsync("""{"name": "unknown"}""", "conv1");
@@ -108,7 +108,7 @@ public class SkillToolHandlerTests : IDisposable
         _store.GetOrCreate("conv1", "test", ConversationType.Text, "test", "test");
 
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var activate = handler.Tools.First(t => t.Definition.Name == "activate_skill");
         var list = handler.Tools.First(t => t.Definition.Name == "list_active_skills");
 
@@ -131,7 +131,7 @@ public class SkillToolHandlerTests : IDisposable
         File.WriteAllText(Path.Combine(scriptsDir, "build.sh"), "#!/bin/bash\necho hello");
 
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var tool = handler.Tools.First(t => t.Definition.Name == "activate_skill_resource");
 
         var result = await tool.ExecuteAsync("""{"skill_name": "my-skill", "path": "scripts/build.sh"}""", "conv1");
@@ -144,7 +144,7 @@ public class SkillToolHandlerTests : IDisposable
     {
         CreateSkill("my-skill", "Does something.", "Body.");
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var tool = handler.Tools.First(t => t.Definition.Name == "activate_skill_resource");
 
         var result = await tool.ExecuteAsync("""{"skill_name": "my-skill", "path": "../../etc/passwd"}""", "conv1");
@@ -156,7 +156,7 @@ public class SkillToolHandlerTests : IDisposable
     public void ToolHandler_exposes_five_tools()
     {
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
 
         Assert.Equal(5, handler.Tools.Count);
         Assert.Contains(handler.Tools, t => t.Definition.Name == "activate_skill");
@@ -171,7 +171,7 @@ public class SkillToolHandlerTests : IDisposable
     {
         CreateSkill("first", "Original skill", "First body");
         var catalog = new SkillCatalog(_tempDir);
-        var handler = new SkillToolHandler(catalog, _store, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
         var reload = handler.Tools.Single(t => t.Definition.Name == "reload_skills");
 
         // New skill added after catalog was loaded

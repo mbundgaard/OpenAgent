@@ -103,6 +103,22 @@ internal sealed class GrokVoiceSession : IVoiceSession
             yield return evt;
     }
 
+    /// <summary>
+    /// Re-sends the session.update event with a freshly built system prompt. Called after the
+    /// agent mutates conversation state that affects the prompt (e.g. activate_skill) so the
+    /// model sees the change without requiring a new call.
+    /// </summary>
+    public async Task RefreshSystemPromptAsync(CancellationToken ct = default)
+    {
+        // Send only the session.update — the SessionReady channel write is a one-time bring-up
+        // signal, not something we re-broadcast on refresh.
+        await SendEventAsync(new GrokClientEvent
+        {
+            Type = EventTypes.SessionUpdate,
+            Session = BuildSessionConfig()
+        }, ct);
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _receiveCts.CancelAsync();
@@ -139,6 +155,22 @@ internal sealed class GrokVoiceSession : IVoiceSession
 
     private async Task SendSessionUpdateAsync(CancellationToken ct)
     {
+        await SendEventAsync(new GrokClientEvent
+        {
+            Type = EventTypes.SessionUpdate,
+            Session = BuildSessionConfig()
+        }, ct);
+
+        // Advertise the negotiated audio format so the client can configure capture/playback.
+        await _channel.Writer.WriteAsync(new SessionReady(
+            InputSampleRate: _sampleRate,
+            OutputSampleRate: _sampleRate,
+            InputCodec: _codec,
+            OutputCodec: _codec), ct);
+    }
+
+    private GrokSessionConfig BuildSessionConfig()
+    {
         var tools = _agentLogic.Tools.Count > 0
             ? _agentLogic.Tools.Select(t => new GrokToolDefinition
             {
@@ -148,34 +180,20 @@ internal sealed class GrokVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
-        var codec = _codec;
-        var rate = _sampleRate;
-
-        await SendEventAsync(new GrokClientEvent
+        return new GrokSessionConfig
         {
-            Type = EventTypes.SessionUpdate,
-            Session = new GrokSessionConfig
+            Modalities = ["audio", "text"],
+            Voice = _config.Voice ?? "rex",
+            Instructions = _agentLogic.GetSystemPrompt(_conversation.Id, _conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention),
+            Audio = new GrokAudioConfig
             {
-                Modalities = ["audio", "text"],
-                Voice = _config.Voice ?? "rex",
-                Instructions = _agentLogic.GetSystemPrompt(_conversation.Id, _conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention),
-                Audio = new GrokAudioConfig
-                {
-                    Input = new GrokAudioDirection { Format = new GrokAudioFormat { Type = CodecToWire(codec), Rate = rate } },
-                    Output = new GrokAudioDirection { Format = new GrokAudioFormat { Type = CodecToWire(codec), Rate = rate } }
-                },
-                TurnDetection = new GrokTurnDetectionConfig { Type = "server_vad" },
-                Tools = tools,
-                ToolChoice = tools is not null ? "auto" : null
-            }
-        }, ct);
-
-        // Advertise the negotiated audio format so the client can configure capture/playback.
-        await _channel.Writer.WriteAsync(new SessionReady(
-            InputSampleRate: rate,
-            OutputSampleRate: rate,
-            InputCodec: codec,
-            OutputCodec: codec), ct);
+                Input = new GrokAudioDirection { Format = new GrokAudioFormat { Type = CodecToWire(_codec), Rate = _sampleRate } },
+                Output = new GrokAudioDirection { Format = new GrokAudioFormat { Type = CodecToWire(_codec), Rate = _sampleRate } }
+            },
+            TurnDetection = new GrokTurnDetectionConfig { Type = "server_vad" },
+            Tools = tools,
+            ToolChoice = tools is not null ? "auto" : null
+        };
     }
 
     // Neutral codec → xAI wire value

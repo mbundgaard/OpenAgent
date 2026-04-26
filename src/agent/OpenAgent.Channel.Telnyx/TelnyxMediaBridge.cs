@@ -69,6 +69,11 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
                 new VoiceSessionOptions("g711_alaw", 8000),
                 _cts.Token);
 
+            // Register with the global voice session manager so skill tools (and anything else
+            // that consults IVoiceSessionManager) can find this call's session by conversation id
+            // — required for mid-call system-prompt refresh after activate_skill.
+            _provider.VoiceSessionManager.RegisterSession(_pending.ConversationId, _session);
+
             // First loop to finish wins — the other gets cancelled in the finally block.
             await Task.WhenAny(ReadLoopAsync(_cts.Token), WriteLoopAsync(_cts.Token));
         }
@@ -81,6 +86,7 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
         finally
         {
             await _cts.CancelAsync();
+            _provider.VoiceSessionManager.UnregisterSession(_pending.ConversationId);
             if (_session is not null)
                 await _session.DisposeAsync();
             _provider.BridgeRegistry.Unregister(_pending.ConversationId);

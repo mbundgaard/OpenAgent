@@ -24,7 +24,7 @@ public class SystemPromptBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_PhoneType_IncludesPhoneMd_AndCommonFiles_ButNotVoiceMd()
+    public void Build_PhoneType_IncludesVoiceMd_AndCommonFiles()
     {
         File.WriteAllText(Path.Combine(_tempDir, "AGENTS.md"), "AGENTS-content");
         File.WriteAllText(Path.Combine(_tempDir, "SOUL.md"), "SOUL-content");
@@ -33,7 +33,6 @@ public class SystemPromptBuilderTests : IDisposable
         File.WriteAllText(Path.Combine(_tempDir, "TOOLS.md"), "TOOLS-content");
         File.WriteAllText(Path.Combine(_tempDir, "MEMORY.md"), "MEMORY-content");
         File.WriteAllText(Path.Combine(_tempDir, "VOICE.md"), "VOICE-content");
-        File.WriteAllText(Path.Combine(_tempDir, "PHONE.md"), "PHONE-content");
 
         var builder = new SystemPromptBuilder(
             new AgentEnvironment { DataPath = _tempDir },
@@ -49,7 +48,6 @@ public class SystemPromptBuilderTests : IDisposable
         Assert.Contains("USER-content", prompt);
         Assert.Contains("TOOLS-content", prompt);
         Assert.Contains("MEMORY-content", prompt);
-        Assert.Contains("PHONE-content", prompt);
-        Assert.DoesNotContain("VOICE-content", prompt); // VOICE.md is for ConversationType.Voice only
+        Assert.Contains("VOICE-content", prompt); // VOICE.md now applies to both Voice and Phone
     }
 }

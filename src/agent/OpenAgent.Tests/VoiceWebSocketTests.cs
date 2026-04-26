@@ -159,6 +159,8 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
 
         public Task CancelResponseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+        public Task RefreshSystemPromptAsync(CancellationToken ct = default) => Task.CompletedTask;
+
         public IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync(CancellationToken ct = default)
             => _events.Reader.ReadAllAsync(ct);
 

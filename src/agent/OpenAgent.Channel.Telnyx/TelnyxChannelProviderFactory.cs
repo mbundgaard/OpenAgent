@@ -19,6 +19,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
     private readonly AgentConfig _agentConfig;
     private readonly AgentEnvironment _environment;
     private readonly TelnyxBridgeRegistry _bridgeRegistry;
+    private readonly IVoiceSessionManager _voiceSessionManager;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -49,6 +50,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
         AgentConfig agentConfig,
         AgentEnvironment environment,
         TelnyxBridgeRegistry bridgeRegistry,
+        IVoiceSessionManager voiceSessionManager,
         IHttpClientFactory httpClientFactory,
         ILoggerFactory loggerFactory)
     {
@@ -58,6 +60,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
         _agentConfig = agentConfig;
         _environment = environment;
         _bridgeRegistry = bridgeRegistry;
+        _voiceSessionManager = voiceSessionManager;
         _httpClientFactory = httpClientFactory;
         _loggerFactory = loggerFactory;
     }
@@ -75,6 +78,7 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
             _agentConfig,
             _environment,
             _bridgeRegistry,
+            _voiceSessionManager,
             _httpClientFactory,
             _loggerFactory);
     }
