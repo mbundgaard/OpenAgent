@@ -36,7 +36,7 @@ public sealed class TelnyxCallControlClient
             stream_url = streamUrl,
             stream_track = "inbound_track",
             stream_bidirectional_mode = "rtp",
-            stream_bidirectional_codec = "PCMU",
+            stream_bidirectional_codec = "PCMA",
             stream_bidirectional_sampling_rate = 8000,
             stream_bidirectional_target_legs = "self",
             client_state = clientState

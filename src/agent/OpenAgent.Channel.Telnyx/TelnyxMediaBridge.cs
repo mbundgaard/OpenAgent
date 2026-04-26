@@ -65,10 +65,12 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
                 ?? throw new InvalidOperationException(
                     $"Conversation {_pending.ConversationId} missing — cannot start voice session.");
 
-            // Telnyx delivers µ-law / 8 kHz on both directions.
+            // Telnyx delivers a-law / 8 kHz on both directions for European calls (PCMA is the
+            // default termination codec on +45 numbers). Pure byte-pipe: matches what the carrier
+            // sends inbound and what we asked Telnyx to use outbound (stream_bidirectional_codec).
             _session = await voiceProvider.StartSessionAsync(
                 conversation,
-                new VoiceSessionOptions("g711_ulaw", 8000),
+                new VoiceSessionOptions("g711_alaw", 8000),
                 _cts.Token);
 
             // First loop to finish wins — the other gets cancelled in the finally block.

@@ -38,7 +38,7 @@ public class TelnyxCallControlClientTests
         var doc = JsonDocument.Parse(body);
         Assert.Equal("wss://us/stream?call=call-123", doc.RootElement.GetProperty("stream_url").GetString());
         Assert.Equal("rtp", doc.RootElement.GetProperty("stream_bidirectional_mode").GetString());
-        Assert.Equal("PCMU", doc.RootElement.GetProperty("stream_bidirectional_codec").GetString());
+        Assert.Equal("PCMA", doc.RootElement.GetProperty("stream_bidirectional_codec").GetString());
         Assert.Equal(8000, doc.RootElement.GetProperty("stream_bidirectional_sampling_rate").GetInt32());
         Assert.Equal("self", doc.RootElement.GetProperty("stream_bidirectional_target_legs").GetString());
         Assert.Equal("inbound_track", doc.RootElement.GetProperty("stream_track").GetString());
