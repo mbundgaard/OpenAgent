@@ -412,13 +412,14 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         // persisted tool results are inlined as their original full content (not the summary).
         var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
 
-        // Build channel-message-id -> content lookup for inline reply-quote rendering.
-        // Keyed by ChannelMessageId so we can resolve ReplyToChannelMessageId at render time.
-        var channelMessageContent = new Dictionary<string, string?>();
+        // Build channel-message-id -> Message lookup for inline reply-quote rendering.
+        // Keyed by ChannelMessageId so we can resolve ReplyToChannelMessageId at render time;
+        // the formatter uses Role + CreatedAt as XML attributes on the quote block.
+        var channelMessageLookup = new Dictionary<string, Message>();
         foreach (var stored in storedMessages)
         {
             if (stored.ChannelMessageId is { } cmid)
-                channelMessageContent[cmid] = stored.Content;
+                channelMessageLookup[cmid] = stored;
         }
 
         for (var i = 0; i < storedMessages.Count; i++)
@@ -486,7 +487,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
                 content = msg.FullToolResult;
             }
             else if (msg.ReplyToChannelMessageId is { } replyId
-                     && channelMessageContent.TryGetValue(replyId, out var quoted))
+                     && channelMessageLookup.TryGetValue(replyId, out var quoted))
             {
                 content = ReplyQuoteFormatter.Format(msg.Content, quoted);
             }
