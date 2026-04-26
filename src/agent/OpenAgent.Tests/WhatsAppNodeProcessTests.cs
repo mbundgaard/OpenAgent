@@ -80,10 +80,11 @@ public class WhatsAppNodeProcessTests
     [Fact]
     public void FormatSendCommand_ProducesValidJson()
     {
-        var json = WhatsAppNodeProcess.FormatSendCommand("+45@s.whatsapp.net", "Hello");
+        var json = WhatsAppNodeProcess.FormatSendCommand("+45@s.whatsapp.net", "Hello", "corr1");
         Assert.Contains("\"type\":\"send\"", json);
         Assert.Contains("\"chatId\":\"+45@s.whatsapp.net\"", json);
         Assert.Contains("\"text\":\"Hello\"", json);
+        Assert.Contains("\"correlationId\":\"corr1\"", json);
     }
 
     [Fact]
@@ -106,5 +107,57 @@ public class WhatsAppNodeProcessTests
     {
         var json = WhatsAppNodeProcess.FormatShutdownCommand();
         Assert.Contains("\"type\":\"shutdown\"", json);
+    }
+
+    [Fact]
+    public void ParseLine_MessageEventWithReplyTo_ParsesReplyToField()
+    {
+        var json = "{\"type\":\"message\",\"id\":\"ABC\",\"chatId\":\"+45@s.whatsapp.net\",\"text\":\"got it\",\"replyTo\":\"XYZ\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Equal("ABC", evt.Id);
+        Assert.Equal("XYZ", evt.ReplyTo);
+    }
+
+    [Fact]
+    public void ParseLine_MessageEventWithoutReplyTo_HasNullReplyTo()
+    {
+        var json = "{\"type\":\"message\",\"id\":\"ABC\",\"chatId\":\"+45@s.whatsapp.net\",\"text\":\"hi\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Null(evt.ReplyTo);
+    }
+
+    [Fact]
+    public void ParseLine_SentEvent_ParsesStanzaId()
+    {
+        var json = "{\"type\":\"sent\",\"id\":\"3EB0ABCD1234\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Equal("sent", evt.Type);
+        Assert.Equal("3EB0ABCD1234", evt.Id);
+        Assert.Null(evt.Message);
+    }
+
+    [Fact]
+    public void ParseLine_SentEventWithError_ParsesMessage()
+    {
+        var json = "{\"type\":\"sent\",\"message\":\"connection lost\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Equal("sent", evt.Type);
+        Assert.Null(evt.Id);
+        Assert.Equal("connection lost", evt.Message);
+    }
+
+    [Fact]
+    public void ParseLine_SentEventWithCorrelationId_ParsesField()
+    {
+        var json = "{\"type\":\"sent\",\"correlationId\":\"abc123\",\"id\":\"3EB0XYZ\"}";
+        var evt = WhatsAppNodeProcess.ParseLine(json);
+        Assert.NotNull(evt);
+        Assert.Equal("sent", evt.Type);
+        Assert.Equal("abc123", evt.CorrelationId);
+        Assert.Equal("3EB0XYZ", evt.Id);
     }
 }

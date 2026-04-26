@@ -77,7 +77,7 @@ public class AgentLogicCompactAsyncTests
     // pulling in the real AgentLogic's SystemPromptBuilder / tool-handler dependencies.
     private sealed class TestAgentLogic(IConversationStore store) : IAgentLogic
     {
-        public string GetSystemPrompt(string source, ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null) => "";
+        public string GetSystemPrompt(string conversationId, string source, ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null) => "";
         public IReadOnlyList<AgentToolDefinition> Tools => [];
         public Task<string> ExecuteToolAsync(string conversationId, string name, string arguments, CancellationToken ct = default) => Task.FromResult("");
         public void AddMessage(string conversationId, Message message) => store.AddMessage(conversationId, message);

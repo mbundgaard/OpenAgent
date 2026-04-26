@@ -128,7 +128,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         agentLogic.AddMessage(conversationId, userMessage);
 
         // Build the system prompt blocks and initial message list
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills, conversation.Intention);
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Id, conversation.Source, conversation.Type, conversation.ActiveSkills, conversation.Intention);
         var systemBlocks = BuildSystemBlocks(systemPrompt);
         var messages = BuildMessages(conversation);
         var tools = BuildTools();
@@ -502,6 +502,16 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         // content (not the compact summary in Content).
         var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
 
+        // Build channel-message-id -> Message lookup for inline reply-quote rendering.
+        // Keyed by ChannelMessageId so we can resolve ReplyToChannelMessageId at render time;
+        // the formatter uses Role + CreatedAt as XML attributes on the quote block.
+        var channelMessageLookup = new Dictionary<string, Message>();
+        foreach (var stored in storedMessages)
+        {
+            if (stored.ChannelMessageId is { } cmid)
+                channelMessageLookup[cmid] = stored;
+        }
+
         for (var i = 0; i < storedMessages.Count; i++)
         {
             var msg = storedMessages[i];
@@ -570,8 +580,20 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
                 }
             }
 
-            // Regular user or assistant message
-            result.Add(new AnthropicMessage { Role = msg.Role, Content = msg.Content ?? "" });
+            // Regular user or assistant message. When ReplyToChannelMessageId resolves to
+            // a known earlier message, render an inline blockquote so the LLM can
+            // disambiguate which earlier message is being replied to.
+            string content;
+            if (msg.ReplyToChannelMessageId is { } replyId
+                && channelMessageLookup.TryGetValue(replyId, out var quoted))
+            {
+                content = ReplyQuoteFormatter.Format(msg.Content, quoted);
+            }
+            else
+            {
+                content = msg.Content ?? "";
+            }
+            result.Add(new AnthropicMessage { Role = msg.Role, Content = content });
         }
 
         foreach (var m in result)

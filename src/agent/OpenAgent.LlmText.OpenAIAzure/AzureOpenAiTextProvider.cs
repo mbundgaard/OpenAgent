@@ -391,7 +391,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         var chatMessages = new List<ChatMessage>();
 
         // System prompt
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Source, conversation.Type, conversation.ActiveSkills, conversation.Intention);
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Id, conversation.Source, conversation.Type, conversation.ActiveSkills, conversation.Intention);
         if (!string.IsNullOrEmpty(systemPrompt))
             chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
 
@@ -411,6 +411,17 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         // Reconstruct full message history including tool calls. Opt into blob loading so
         // persisted tool results are inlined as their original full content (not the summary).
         var storedMessages = agentLogic.GetMessages(conversation.Id, includeToolResultBlobs: true);
+
+        // Build channel-message-id -> Message lookup for inline reply-quote rendering.
+        // Keyed by ChannelMessageId so we can resolve ReplyToChannelMessageId at render time;
+        // the formatter uses Role + CreatedAt as XML attributes on the quote block.
+        var channelMessageLookup = new Dictionary<string, Message>();
+        foreach (var stored in storedMessages)
+        {
+            if (stored.ChannelMessageId is { } cmid)
+                channelMessageLookup[cmid] = stored;
+        }
+
         for (var i = 0; i < storedMessages.Count; i++)
         {
             var msg = storedMessages[i];
@@ -467,12 +478,23 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             }
 
             // Regular message (user, assistant text, or tool with id). For tool messages,
-            // prefer the full on-disk result loaded via ToolResultRef.
-            var content = msg.Role == "tool" && msg.FullToolResult is not null
-                ? msg.FullToolResult
-                : msg.ReplyToChannelMessageId is not null
-                    ? $"[Reply to Msg: {msg.ReplyToChannelMessageId}] {msg.Content}"
-                    : msg.Content;
+            // prefer the full on-disk result loaded via ToolResultRef. For user/assistant
+            // messages with a ReplyToChannelMessageId, render an inline blockquote of the
+            // replied-to content so the LLM can disambiguate.
+            string? content;
+            if (msg.Role == "tool" && msg.FullToolResult is not null)
+            {
+                content = msg.FullToolResult;
+            }
+            else if (msg.ReplyToChannelMessageId is { } replyId
+                     && channelMessageLookup.TryGetValue(replyId, out var quoted))
+            {
+                content = ReplyQuoteFormatter.Format(msg.Content, quoted);
+            }
+            else
+            {
+                content = msg.Content;
+            }
             var chatMsg = new ChatMessage { Role = msg.Role, Content = content, Name = ChannelMessageName(msg) };
             if (msg.ToolCallId is not null)
                 chatMsg.ToolCallId = msg.ToolCallId;

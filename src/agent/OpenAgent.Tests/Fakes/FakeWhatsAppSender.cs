@@ -7,8 +7,10 @@ namespace OpenAgent.Tests.Fakes;
 /// </summary>
 public class FakeWhatsAppSender : IWhatsAppSender
 {
+    private int _nextSendId;
+
     public List<string> ComposingCalls { get; } = [];
-    public List<(string ChatId, string Text)> TextCalls { get; } = [];
+    public List<(string ChatId, string Text, string StanzaId)> TextCalls { get; } = [];
 
     public Task SendComposingAsync(string chatId)
     {
@@ -16,9 +18,10 @@ public class FakeWhatsAppSender : IWhatsAppSender
         return Task.CompletedTask;
     }
 
-    public Task SendTextAsync(string chatId, string text)
+    public Task<string?> SendTextAsync(string chatId, string text)
     {
-        TextCalls.Add((chatId, text));
-        return Task.CompletedTask;
+        var stanzaId = $"FAKE-{++_nextSendId}";
+        TextCalls.Add((chatId, text, stanzaId));
+        return Task.FromResult<string?>(stanzaId);
     }
 }

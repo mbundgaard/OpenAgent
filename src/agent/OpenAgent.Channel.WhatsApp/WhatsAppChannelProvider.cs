@@ -207,7 +207,7 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
         if (_nodeProcess is null)
             throw new InvalidOperationException("WhatsApp bridge is not connected. Start the provider first.");
 
-        await _nodeProcess.WriteAsync(WhatsAppNodeProcess.FormatSendCommand(chatId, text));
+        await _nodeProcess.WriteAsync(WhatsAppNodeProcess.FormatSendCommand(chatId, text, Guid.NewGuid().ToString("N")));
     }
 
     /// <summary>
@@ -447,8 +447,8 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
         public Task SendComposingAsync(string chatId) =>
             _process.WriteAsync(WhatsAppNodeProcess.FormatComposingCommand(chatId));
 
-        /// <summary>Sends a text message to the specified chat.</summary>
-        public Task SendTextAsync(string chatId, string text) =>
-            _process.WriteAsync(WhatsAppNodeProcess.FormatSendCommand(chatId, text));
+        /// <summary>Sends a text message to the specified chat and returns the Baileys stanza ID.</summary>
+        public Task<string?> SendTextAsync(string chatId, string text) =>
+            _process.SendTextAndWaitAsync(chatId, text, CancellationToken.None);
     }
 }
