@@ -18,7 +18,7 @@ public class SetModelToolTests
     [Fact]
     public async Task UpdatesConversationProviderAndModel()
     {
-        _store.GetOrCreate("conv-1", "app", ConversationType.Text, "provider-a", "model-1");
+        _store.GetOrCreate("conv-1", "app", "provider-a", "model-1");
         var tool = new SetModelTool(_store, () => _providers);
 
         var result = await tool.ExecuteAsync(
@@ -38,7 +38,7 @@ public class SetModelToolTests
     [Fact]
     public async Task RejectsUnknownProvider()
     {
-        _store.GetOrCreate("conv-1", "app", ConversationType.Text, "provider-a", "model-1");
+        _store.GetOrCreate("conv-1", "app", "provider-a", "model-1");
         var tool = new SetModelTool(_store, () => _providers);
 
         var result = await tool.ExecuteAsync(
@@ -56,7 +56,7 @@ public class SetModelToolTests
     [Fact]
     public async Task RejectsUnknownModel()
     {
-        _store.GetOrCreate("conv-1", "app", ConversationType.Text, "provider-a", "model-1");
+        _store.GetOrCreate("conv-1", "app", "provider-a", "model-1");
         var tool = new SetModelTool(_store, () => _providers);
 
         var result = await tool.ExecuteAsync(
@@ -74,8 +74,8 @@ public class SetModelToolTests
     [Fact]
     public async Task DoesNotAffectOtherConversations()
     {
-        _store.GetOrCreate("conv-1", "app", ConversationType.Text, "provider-a", "model-1");
-        _store.GetOrCreate("conv-2", "app", ConversationType.Text, "provider-a", "model-1");
+        _store.GetOrCreate("conv-1", "app", "provider-a", "model-1");
+        _store.GetOrCreate("conv-2", "app", "provider-a", "model-1");
         var tool = new SetModelTool(_store, () => _providers);
 
         await tool.ExecuteAsync(

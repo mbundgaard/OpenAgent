@@ -39,8 +39,7 @@ public static class WebSocketTextEndpoints
             }
 
             // Create conversation if needed, then resolve provider per-message inside the loop
-            store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
-            store.UpdateType(conversationId, ConversationType.Text);
+            store.GetOrCreate(conversationId, "app", agentConfig.TextProvider, agentConfig.TextModel);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
             var registry = services.GetRequiredService<IWebSocketRegistry>();
@@ -90,9 +89,7 @@ public static class WebSocketTextEndpoints
                 continue;
 
             // Re-read conversation and resolve provider per message — picks up provider/model changes
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
-            store.UpdateType(conversationId, ConversationType.Text);
-            conversation.Type = ConversationType.Text;
+            var conversation = store.GetOrCreate(conversationId, "app", agentConfig.TextProvider, agentConfig.TextModel);
             var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
 
             var userMessage = new Message

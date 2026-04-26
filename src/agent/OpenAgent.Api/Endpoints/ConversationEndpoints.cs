@@ -22,7 +22,7 @@ public static class ConversationEndpoints
         group.MapPost("/", (IConversationStore store, AgentConfig agentConfig) =>
         {
             var conversationId = Guid.NewGuid().ToString();
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
+            var conversation = store.GetOrCreate(conversationId, "app", agentConfig.TextProvider, agentConfig.TextModel);
             return Results.Ok(new { id = conversation.Id });
         });
 
@@ -33,7 +33,6 @@ public static class ConversationEndpoints
             {
                 Id = c.Id,
                 Source = c.Source,
-                Type = c.Type,
                 Provider = c.Provider,
                 Model = c.Model,
                 CreatedAt = c.CreatedAt,
@@ -58,7 +57,6 @@ public static class ConversationEndpoints
             {
                 Id = conversation.Id,
                 Source = conversation.Source,
-                Type = conversation.Type,
                 Provider = conversation.Provider,
                 Model = conversation.Model,
                 CreatedAt = conversation.CreatedAt,
@@ -119,7 +117,6 @@ public static class ConversationEndpoints
             {
                 Id = conversation.Id,
                 Source = conversation.Source,
-                Type = conversation.Type,
                 Provider = conversation.Provider,
                 Model = conversation.Model,
                 CreatedAt = conversation.CreatedAt,

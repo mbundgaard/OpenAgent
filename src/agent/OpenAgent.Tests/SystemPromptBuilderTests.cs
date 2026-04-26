@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
-using OpenAgent.Models.Conversations;
 using OpenAgent.Skills;
 
 namespace OpenAgent.Tests;
@@ -24,7 +23,7 @@ public class SystemPromptBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_PhoneType_IncludesVoiceMd_AndCommonFiles()
+    public void Build_Voice_IncludesVoiceMd_AndCommonFiles()
     {
         File.WriteAllText(Path.Combine(_tempDir, "AGENTS.md"), "AGENTS-content");
         File.WriteAllText(Path.Combine(_tempDir, "SOUL.md"), "SOUL-content");
@@ -40,7 +39,7 @@ public class SystemPromptBuilderTests : IDisposable
             new AgentConfig(),
             NullLogger<SystemPromptBuilder>.Instance);
 
-        var prompt = builder.Build("test-conversation-id", ConversationType.Phone);
+        var prompt = builder.Build("test-conversation-id", voice: true);
 
         Assert.Contains("AGENTS-content", prompt);
         Assert.Contains("SOUL-content", prompt);
@@ -48,6 +47,24 @@ public class SystemPromptBuilderTests : IDisposable
         Assert.Contains("USER-content", prompt);
         Assert.Contains("TOOLS-content", prompt);
         Assert.Contains("MEMORY-content", prompt);
-        Assert.Contains("VOICE-content", prompt); // VOICE.md now applies to both Voice and Phone
+        Assert.Contains("VOICE-content", prompt);
+    }
+
+    [Fact]
+    public void Build_Text_OmitsVoiceMd()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "AGENTS.md"), "AGENTS-content");
+        File.WriteAllText(Path.Combine(_tempDir, "VOICE.md"), "VOICE-content");
+
+        var builder = new SystemPromptBuilder(
+            new AgentEnvironment { DataPath = _tempDir },
+            new SkillCatalog(Path.Combine(_tempDir, "skills"), NullLogger<SkillCatalog>.Instance),
+            new AgentConfig(),
+            NullLogger<SystemPromptBuilder>.Instance);
+
+        var prompt = builder.Build("test-conversation-id", voice: false);
+
+        Assert.Contains("AGENTS-content", prompt);
+        Assert.DoesNotContain("VOICE-content", prompt);
     }
 }

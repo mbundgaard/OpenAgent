@@ -17,9 +17,9 @@ internal sealed class AgentLogic(
     // Flatten all tools from all handlers into a single list
     private readonly IReadOnlyList<ITool> _allTools = toolHandlers.SelectMany(h => h.Tools).ToList();
 
-    public string GetSystemPrompt(string conversationId, string source, ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null)
+    public string GetSystemPrompt(string conversationId, string source, bool voice, IReadOnlyList<string>? activeSkills = null, string? intention = null)
         // TODO: incorporate source to support channel-specific prompt variants (e.g., app vs telegram).
-        => promptBuilder.Build(conversationId, type, activeSkills, intention);
+        => promptBuilder.Build(conversationId, voice, activeSkills, intention);
 
     public IReadOnlyList<AgentToolDefinition> Tools =>
         _allTools.Select(t => t.Definition).ToList();

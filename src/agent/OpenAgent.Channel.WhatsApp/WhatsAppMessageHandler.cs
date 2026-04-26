@@ -94,7 +94,7 @@ public sealed class WhatsAppMessageHandler
         var model = _agentConfig.TextModel;
         var conversation = _store.FindOrCreateChannelConversation(
             "whatsapp", _connectionId, chatId,
-            "whatsapp", ConversationType.Text, providerKey, model);
+            "whatsapp", providerKey, model);
 
         // Mention filter — drop message silently if no mention matches
         if (!MentionMatcher.ShouldAccept(conversation, message.Text))

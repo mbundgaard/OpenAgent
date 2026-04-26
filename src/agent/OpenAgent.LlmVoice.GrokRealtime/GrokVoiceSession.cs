@@ -180,11 +180,16 @@ internal sealed class GrokVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
+        // Re-fetch the conversation from the store so mid-session mutations (activate_skill,
+        // set_intention, etc.) are reflected on refresh. The captured _conversation reference
+        // is a snapshot from session start — stale by the time tools mutate state via the store.
+        var live = _agentLogic.GetConversation(_conversation.Id) ?? _conversation;
+
         return new GrokSessionConfig
         {
             Modalities = ["audio", "text"],
             Voice = _config.Voice ?? "rex",
-            Instructions = _agentLogic.GetSystemPrompt(_conversation.Id, _conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention),
+            Instructions = _agentLogic.GetSystemPrompt(live.Id, live.Source, voice: true, live.ActiveSkills, live.Intention),
             Audio = new GrokAudioConfig
             {
                 Input = new GrokAudioDirection { Format = new GrokAudioFormat { Type = CodecToWire(_codec), Rate = _sampleRate } },

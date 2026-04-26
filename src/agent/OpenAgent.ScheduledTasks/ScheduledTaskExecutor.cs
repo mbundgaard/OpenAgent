@@ -62,7 +62,6 @@ internal sealed class ScheduledTaskExecutor(
         var conversation = conversationStore.GetOrCreate(
             task.ConversationId,
             "scheduledtask",
-            ConversationType.Text,
             agentConfig.TextProvider,
             agentConfig.TextModel);
 

@@ -20,7 +20,7 @@ public sealed class InMemoryConversationStore : IConversationStore
     public IReadOnlyList<ProviderConfigField> ConfigFields => [];
     public void Configure(JsonElement configuration) { }
 
-    public Conversation GetOrCreate(string conversationId, string source, ConversationType type, string provider, string model)
+    public Conversation GetOrCreate(string conversationId, string source, string provider, string model)
     {
         if (_conversations.TryGetValue(conversationId, out var existing))
             return existing;
@@ -29,7 +29,6 @@ public sealed class InMemoryConversationStore : IConversationStore
         {
             Id = conversationId,
             Source = source,
-            Type = type,
             Provider = provider,
             Model = model
         };
@@ -50,7 +49,6 @@ public sealed class InMemoryConversationStore : IConversationStore
         string connectionId,
         string channelChatId,
         string source,
-        ConversationType type,
         string provider,
         string model)
     {
@@ -62,7 +60,6 @@ public sealed class InMemoryConversationStore : IConversationStore
         {
             Id = Guid.NewGuid().ToString(),
             Source = source,
-            Type = type,
             Provider = provider,
             Model = model,
             ChannelType = channelType,
@@ -82,12 +79,6 @@ public sealed class InMemoryConversationStore : IConversationStore
 
     public void Update(Conversation conversation) =>
         _conversations[conversation.Id] = conversation;
-
-    public void UpdateType(string conversationId, ConversationType type)
-    {
-        if (_conversations.TryGetValue(conversationId, out var conv) && conv.Type != type)
-            conv.Type = type;
-    }
 
     public void UpdateDisplayName(string conversationId, string? displayName)
     {

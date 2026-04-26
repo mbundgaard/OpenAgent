@@ -36,9 +36,7 @@ public static class ChatEndpoints
             IServiceProvider services,
             CancellationToken ct) =>
         {
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Text, agentConfig.TextProvider, agentConfig.TextModel);
-            store.UpdateType(conversationId, ConversationType.Text);
-            conversation.Type = ConversationType.Text;
+            var conversation = store.GetOrCreate(conversationId, "app", agentConfig.TextProvider, agentConfig.TextModel);
 
             // Drop messages that don't mention any required name
             if (!MentionMatcher.ShouldAccept(conversation, request.Content ?? string.Empty))

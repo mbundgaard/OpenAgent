@@ -3,7 +3,6 @@ import { apiFetch } from '../../auth/api';
 export interface ConversationSummary {
   id: string;
   source: string;
-  type: string;
   provider: string;
   model: string;
   created_at: string;

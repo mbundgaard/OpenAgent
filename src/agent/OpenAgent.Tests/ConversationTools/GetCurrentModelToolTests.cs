@@ -11,7 +11,7 @@ public class GetCurrentModelToolTests
     public async Task ReturnsConversationProviderAndModel()
     {
         var store = new InMemoryConversationStore();
-        store.GetOrCreate("conv-1", "app", ConversationType.Text, "anthropic-subscription", "claude-sonnet-4-6");
+        store.GetOrCreate("conv-1", "app", "anthropic-subscription", "claude-sonnet-4-6");
         var tool = new GetCurrentModelTool(store);
 
         var result = await tool.ExecuteAsync("{}", "conv-1");

@@ -10,7 +10,7 @@ public class MentionFilterToolTests
     private readonly InMemoryConversationStore _store = new();
 
     private void Seed(string conversationId) =>
-        _store.GetOrCreate(conversationId, "app", ConversationType.Text, "p", "m");
+        _store.GetOrCreate(conversationId, "app", "p", "m");
 
     [Fact]
     public async Task Set_ReplacesListAndPersistsNormalization()

@@ -154,7 +154,6 @@ public class WhatsAppMessageHandlerTests
         var conversation = store.FindChannelConversation("whatsapp", ConnectionId, AllowedDmChatId);
         Assert.NotNull(conversation);
         Assert.Equal("whatsapp", conversation.Source);
-        Assert.Equal(Models.Conversations.ConversationType.Text, conversation.Type);
         Assert.Equal("whatsapp", conversation.ChannelType);
         Assert.Equal(ConnectionId, conversation.ConnectionId);
         Assert.Equal(AllowedDmChatId, conversation.ChannelChatId);
@@ -193,7 +192,7 @@ public class WhatsAppMessageHandlerTests
         var sender = new FakeWhatsAppSender();
 
         var conv = store.FindOrCreateChannelConversation("whatsapp", ConnectionId, AllowedDmChatId,
-            "whatsapp", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+            "whatsapp", "azure-openai-text", "gpt-5.2-chat");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 
@@ -213,7 +212,7 @@ public class WhatsAppMessageHandlerTests
         var sender = new FakeWhatsAppSender();
 
         var conv = store.FindOrCreateChannelConversation("whatsapp", ConnectionId, AllowedDmChatId,
-            "whatsapp", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+            "whatsapp", "azure-openai-text", "gpt-5.2-chat");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 

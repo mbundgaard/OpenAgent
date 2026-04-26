@@ -106,7 +106,7 @@ public sealed class TelegramMessageHandler
         var model = _agentConfig.TextModel;
         var conversation = _store.FindOrCreateChannelConversation(
             "telegram", _connectionId, chatId.ToString(),
-            "telegram", ConversationType.Text, providerKey, model);
+            "telegram", providerKey, model);
 
         // Refresh display name from latest Telegram metadata (catches renames).
         // Only write if changed — we already have the current value in memory.
@@ -206,7 +206,7 @@ public sealed class TelegramMessageHandler
         var model = _agentConfig.TextModel;
         var created = _store.FindOrCreateChannelConversation(
             "telegram", _connectionId, chatId.ToString(),
-            "telegram", ConversationType.Text, providerKey, model);
+            "telegram", providerKey, model);
         var groupDisplayName = BuildGroupDisplayName(groupMsg);
         if (groupDisplayName != created.DisplayName)
             _store.UpdateDisplayName(created.Id, groupDisplayName);

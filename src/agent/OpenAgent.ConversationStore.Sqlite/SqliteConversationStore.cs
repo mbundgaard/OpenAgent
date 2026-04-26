@@ -131,7 +131,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         _logger.LogInformation("SQLite conversation store initialized at {ConnectionString}", _connectionString);
     }
 
-    public Conversation GetOrCreate(string conversationId, string source, ConversationType type, string provider, string model)
+    public Conversation GetOrCreate(string conversationId, string source, string provider, string model)
     {
         // Try to get existing first
         var existing = Get(conversationId);
@@ -143,7 +143,6 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         {
             Id = conversationId,
             Source = source,
-            Type = type,
             Provider = provider,
             Model = model,
             CreatedAt = DateTimeOffset.UtcNow
@@ -151,13 +150,14 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
         using var connection = Open();
         using var cmd = connection.CreateCommand();
+        // Type column is legacy — kept in the schema for back-compat with existing rows but
+        // no longer read or written. Insert 0 to satisfy the NOT NULL constraint on old DBs.
         cmd.CommandText = """
             INSERT OR IGNORE INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, MentionFilter)
-            VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId, @mentionFilter)
+            VALUES (@id, @source, 0, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId, @mentionFilter)
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
         cmd.Parameters.AddWithValue("@source", conversation.Source);
-        cmd.Parameters.AddWithValue("@type", (int)conversation.Type);
         cmd.Parameters.AddWithValue("@createdAt", conversation.CreatedAt.ToString("O"));
         cmd.Parameters.AddWithValue("@voiceSessionId", (object?)conversation.VoiceSessionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@voiceSessionOpen", conversation.VoiceSessionOpen ? 1 : 0);
@@ -185,7 +185,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations
+            SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations
             WHERE ChannelType = @channelType AND ConnectionId = @connectionId AND ChannelChatId = @channelChatId
             LIMIT 1
             """;
@@ -202,7 +202,6 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         string connectionId,
         string channelChatId,
         string source,
-        ConversationType type,
         string provider,
         string model)
     {
@@ -216,7 +215,6 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         {
             Id = Guid.NewGuid().ToString(),
             Source = source,
-            Type = type,
             Provider = provider,
             Model = model,
             ChannelType = channelType,
@@ -228,13 +226,13 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using (var connection = Open())
         using (var cmd = connection.CreateCommand())
         {
+            // Type column is legacy — see GetOrCreate.
             cmd.CommandText = """
                 INSERT INTO Conversations (Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, Provider, Model, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, MentionFilter)
-                VALUES (@id, @source, @type, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId, @mentionFilter)
+                VALUES (@id, @source, 0, @createdAt, @voiceSessionId, @voiceSessionOpen, @provider, @model, @activeSkills, @channelType, @connectionId, @channelChatId, @mentionFilter)
                 """;
             cmd.Parameters.AddWithValue("@id", conversation.Id);
             cmd.Parameters.AddWithValue("@source", conversation.Source);
-            cmd.Parameters.AddWithValue("@type", (int)conversation.Type);
             cmd.Parameters.AddWithValue("@createdAt", conversation.CreatedAt.ToString("O"));
             cmd.Parameters.AddWithValue("@voiceSessionId", DBNull.Value);
             cmd.Parameters.AddWithValue("@voiceSessionOpen", 0);
@@ -258,7 +256,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations ORDER BY COALESCE(LastActivity, CreatedAt) DESC";
+        cmd.CommandText = "SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations ORDER BY COALESCE(LastActivity, CreatedAt) DESC";
 
         using var reader = cmd.ExecuteReader();
         var list = new List<Conversation>();
@@ -272,7 +270,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, Type, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations WHERE Id = @id";
+        cmd.CommandText = "SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, Provider, Model, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -285,7 +283,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             UPDATE Conversations
-            SET Source = @source, Type = @type, VoiceSessionId = @voiceSessionId,
+            SET Source = @source, VoiceSessionId = @voiceSessionId,
                 VoiceSessionOpen = @voiceSessionOpen, LastPromptTokens = @lastPromptTokens,
                 Context = @context, CompactedUpToRowId = @compactedUpToRowId,
                 CompactionRunning = @compactionRunning, Provider = @provider, Model = @model,
@@ -298,7 +296,6 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
         cmd.Parameters.AddWithValue("@source", conversation.Source);
-        cmd.Parameters.AddWithValue("@type", (int)conversation.Type);
         cmd.Parameters.AddWithValue("@voiceSessionId", (object?)conversation.VoiceSessionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@voiceSessionOpen", conversation.VoiceSessionOpen ? 1 : 0);
         cmd.Parameters.AddWithValue("@lastPromptTokens", (object?)conversation.LastPromptTokens ?? DBNull.Value);
@@ -327,16 +324,6 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.ExecuteNonQuery();
 
         TryStartCompaction(conversation);
-    }
-
-    public void UpdateType(string conversationId, ConversationType type)
-    {
-        using var connection = Open();
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "UPDATE Conversations SET Type = @type WHERE Id = @id AND Type != @type";
-        cmd.Parameters.AddWithValue("@id", conversationId);
-        cmd.Parameters.AddWithValue("@type", (int)type);
-        cmd.ExecuteNonQuery();
     }
 
     public bool Delete(string conversationId)
@@ -818,28 +805,27 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         {
             Id = reader.GetString(0),
             Source = reader.GetString(1),
-            Type = (ConversationType)reader.GetInt32(2),
-            CreatedAt = DateTimeOffset.Parse(reader.GetString(3)),
-            VoiceSessionId = reader.IsDBNull(4) ? null : reader.GetString(4),
-            VoiceSessionOpen = reader.GetInt32(5) != 0,
-            LastPromptTokens = reader.IsDBNull(6) ? null : reader.GetInt32(6),
-            Context = reader.IsDBNull(7) ? null : reader.GetString(7),
-            CompactedUpToRowId = reader.IsDBNull(8) ? null : reader.GetInt64(8),
-            CompactionRunning = !reader.IsDBNull(9) && reader.GetInt32(9) != 0,
-            Provider = reader.GetString(10),
-            Model = reader.GetString(11),
-            TotalPromptTokens = reader.GetInt64(12),
-            TotalCompletionTokens = reader.GetInt64(13),
-            TurnCount = reader.GetInt32(14),
-            LastActivity = reader.IsDBNull(15) ? null : DateTimeOffset.Parse(reader.GetString(15)),
-            ActiveSkills = reader.IsDBNull(16) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(16)),
-            ChannelType = reader.IsDBNull(17) ? null : reader.GetString(17),
-            ConnectionId = reader.IsDBNull(18) ? null : reader.GetString(18),
-            ChannelChatId = reader.IsDBNull(19) ? null : reader.GetString(19),
-            DisplayName = reader.IsDBNull(20) ? null : reader.GetString(20),
-            Intention = reader.IsDBNull(21) ? null : reader.GetString(21),
-            ContextWindowTokens = reader.IsDBNull(22) ? null : reader.GetInt32(22),
-            MentionFilter = reader.IsDBNull(23) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(23))
+            CreatedAt = DateTimeOffset.Parse(reader.GetString(2)),
+            VoiceSessionId = reader.IsDBNull(3) ? null : reader.GetString(3),
+            VoiceSessionOpen = reader.GetInt32(4) != 0,
+            LastPromptTokens = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+            Context = reader.IsDBNull(6) ? null : reader.GetString(6),
+            CompactedUpToRowId = reader.IsDBNull(7) ? null : reader.GetInt64(7),
+            CompactionRunning = !reader.IsDBNull(8) && reader.GetInt32(8) != 0,
+            Provider = reader.GetString(9),
+            Model = reader.GetString(10),
+            TotalPromptTokens = reader.GetInt64(11),
+            TotalCompletionTokens = reader.GetInt64(12),
+            TurnCount = reader.GetInt32(13),
+            LastActivity = reader.IsDBNull(14) ? null : DateTimeOffset.Parse(reader.GetString(14)),
+            ActiveSkills = reader.IsDBNull(15) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(15)),
+            ChannelType = reader.IsDBNull(16) ? null : reader.GetString(16),
+            ConnectionId = reader.IsDBNull(17) ? null : reader.GetString(17),
+            ChannelChatId = reader.IsDBNull(18) ? null : reader.GetString(18),
+            DisplayName = reader.IsDBNull(19) ? null : reader.GetString(19),
+            Intention = reader.IsDBNull(20) ? null : reader.GetString(20),
+            ContextWindowTokens = reader.IsDBNull(21) ? null : reader.GetInt32(21),
+            MentionFilter = reader.IsDBNull(22) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(22))
         };
     }
 

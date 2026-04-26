@@ -8,7 +8,6 @@ public class MentionMatcherTests
     {
         Id = "c1",
         Source = "test",
-        Type = ConversationType.Text,
         Provider = "p",
         Model = "m",
         MentionFilter = mentionFilter

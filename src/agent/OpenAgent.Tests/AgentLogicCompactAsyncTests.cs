@@ -58,13 +58,12 @@ public class AgentLogicCompactAsyncTests
         public void Configure(JsonElement configuration) { }
 
         // Everything else throws — these tests don't exercise them.
-        public Conversation GetOrCreate(string conversationId, string source, ConversationType type, string provider, string model) => throw new NotImplementedException();
+        public Conversation GetOrCreate(string conversationId, string source, string provider, string model) => throw new NotImplementedException();
         public Conversation? FindChannelConversation(string channelType, string connectionId, string channelChatId) => throw new NotImplementedException();
-        public Conversation FindOrCreateChannelConversation(string channelType, string connectionId, string channelChatId, string source, ConversationType type, string provider, string model) => throw new NotImplementedException();
+        public Conversation FindOrCreateChannelConversation(string channelType, string connectionId, string channelChatId, string source, string provider, string model) => throw new NotImplementedException();
         public IReadOnlyList<Conversation> GetAll() => throw new NotImplementedException();
         public Conversation? Get(string conversationId) => throw new NotImplementedException();
         public void Update(Conversation conversation) => throw new NotImplementedException();
-        public void UpdateType(string conversationId, ConversationType type) => throw new NotImplementedException();
         public void UpdateDisplayName(string conversationId, string? displayName) => throw new NotImplementedException();
         public bool Delete(string conversationId) => throw new NotImplementedException();
         public void AddMessage(string conversationId, Message message) => throw new NotImplementedException();
@@ -77,7 +76,7 @@ public class AgentLogicCompactAsyncTests
     // pulling in the real AgentLogic's SystemPromptBuilder / tool-handler dependencies.
     private sealed class TestAgentLogic(IConversationStore store) : IAgentLogic
     {
-        public string GetSystemPrompt(string conversationId, string source, ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null) => "";
+        public string GetSystemPrompt(string conversationId, string source, bool voice, IReadOnlyList<string>? activeSkills = null, string? intention = null) => "";
         public IReadOnlyList<AgentToolDefinition> Tools => [];
         public Task<string> ExecuteToolAsync(string conversationId, string name, string arguments, CancellationToken ct = default) => Task.FromResult("");
         public void AddMessage(string conversationId, Message message) => store.AddMessage(conversationId, message);

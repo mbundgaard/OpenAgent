@@ -175,11 +175,16 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
+        // Re-fetch the conversation from the store so mid-session mutations (activate_skill,
+        // set_intention, etc.) are reflected on refresh. The captured _conversation reference
+        // is a snapshot from session start — stale by the time tools mutate state via the store.
+        var live = _agentLogic.GetConversation(_conversation.Id) ?? _conversation;
+
         return new RealtimeSessionConfig
         {
             Modalities = ["audio", "text"],
             Voice = _config.Voice ?? "alloy",
-            Instructions = _agentLogic.GetSystemPrompt(_conversation.Id, _conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention),
+            Instructions = _agentLogic.GetSystemPrompt(live.Id, live.Source, voice: true, live.ActiveSkills, live.Intention),
             InputAudioFormat = _codec,
             OutputAudioFormat = _codec,
             InputAudioTranscription = new InputAudioTranscriptionConfig { Model = "whisper-1" },

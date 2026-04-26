@@ -169,7 +169,11 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
 
     private async Task SendSetupAsync(CancellationToken ct)
     {
-        var systemPrompt = _agentLogic.GetSystemPrompt(_conversation.Id, _conversation.Source, _conversation.Type, _conversation.ActiveSkills, _conversation.Intention);
+        // Re-fetch the conversation from the store so mid-session mutations (activate_skill,
+        // set_intention, etc.) are reflected on reconnect. The captured _conversation reference
+        // is a snapshot from session start — stale by the time tools mutate state via the store.
+        var live = _agentLogic.GetConversation(_conversation.Id) ?? _conversation;
+        var systemPrompt = _agentLogic.GetSystemPrompt(live.Id, live.Source, voice: true, live.ActiveSkills, live.Intention);
 
         IReadOnlyList<GeminiToolSet>? tools = null;
         if (_agentLogic.Tools.Count > 0)

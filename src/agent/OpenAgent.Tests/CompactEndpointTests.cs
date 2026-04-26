@@ -55,7 +55,7 @@ public class CompactEndpointTests : IClassFixture<WebApplicationFactory<Program>
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+        store.GetOrCreate(conversationId, "app", "azure-openai-text", "gpt-5.2-chat");
 
         var client = CreateAuthenticatedClient();
         var response = await client.PostAsJsonAsync($"/api/conversations/{conversationId}/compact", new { });
@@ -70,7 +70,7 @@ public class CompactEndpointTests : IClassFixture<WebApplicationFactory<Program>
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+        store.GetOrCreate(conversationId, "app", "azure-openai-text", "gpt-5.2-chat");
 
         // Seed enough messages to cross the KeepRecentTokens budget. IDs include the
         // conversationId so reruns don't collide on the global Messages.Id primary key.

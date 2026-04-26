@@ -27,7 +27,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessages_populates_RowId()
     {
-        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+        _store.GetOrCreate("conv1", "test", "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message
         {
@@ -48,7 +48,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessages_excludes_compacted_messages()
     {
-        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+        var conv = _store.GetOrCreate("conv1", "test", "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message { Id = "msg1", ConversationId = "conv1", Role = "user", Content = "old message" });
         _store.AddMessage("conv1", new Message { Id = "msg2", ConversationId = "conv1", Role = "assistant", Content = "old reply" });
@@ -78,7 +78,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessagesByIds_returns_compacted_messages()
     {
-        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+        var conv = _store.GetOrCreate("conv1", "test", "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message { Id = "msg1", ConversationId = "conv1", Role = "user", Content = "old" });
         _store.AddMessage("conv1", new Message { Id = "msg2", ConversationId = "conv1", Role = "assistant", Content = "old reply" });
@@ -101,7 +101,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessages_returns_all_when_no_compaction()
     {
-        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+        _store.GetOrCreate("conv1", "test", "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message { Id = "msg1", ConversationId = "conv1", Role = "user", Content = "hello" });
         _store.AddMessage("conv1", new Message { Id = "msg2", ConversationId = "conv1", Role = "assistant", Content = "hi" });
@@ -126,7 +126,7 @@ public class SqliteConversationStoreTests : IDisposable
         var env = new AgentEnvironment { DataPath = _dbDir };
         using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
 
-        var conv = store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+        var conv = store.GetOrCreate("conv1", "test", "test-provider", "test-model");
 
         for (var i = 1; i <= 6; i++)
         {
@@ -161,7 +161,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void AddMessage_persists_and_reads_back_Modality()
     {
-        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
+        _store.GetOrCreate("conv1", "test", "test-provider", "test-model");
 
         _store.AddMessage("conv1", new Message
         {
@@ -182,43 +182,9 @@ public class SqliteConversationStoreTests : IDisposable
     }
 
     [Fact]
-    public void UpdateType_changes_existing_conversation_type()
-    {
-        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
-
-        _store.UpdateType("conv1", ConversationType.Voice);
-
-        var conv = _store.Get("conv1");
-        Assert.NotNull(conv);
-        Assert.Equal(ConversationType.Voice, conv.Type);
-    }
-
-    [Fact]
-    public void UpdateType_is_noop_when_type_already_matches()
-    {
-        _store.GetOrCreate("conv1", "test", ConversationType.Text, "test-provider", "test-model");
-
-        // Calling with the same type should not throw and should not change anything
-        _store.UpdateType("conv1", ConversationType.Text);
-
-        var conv = _store.Get("conv1");
-        Assert.NotNull(conv);
-        Assert.Equal(ConversationType.Text, conv.Type);
-    }
-
-    [Fact]
-    public void UpdateType_does_nothing_when_conversation_does_not_exist()
-    {
-        // Should not throw even if the conversation does not exist
-        _store.UpdateType("does-not-exist", ConversationType.Voice);
-
-        Assert.Null(_store.Get("does-not-exist"));
-    }
-
-    [Fact]
     public void Delete_removes_conversation_blob_directory()
     {
-        _store.GetOrCreate("conv2", "test", ConversationType.Text, "p", "m");
+        _store.GetOrCreate("conv2", "test", "p", "m");
         _store.AddMessage("conv2", new Message
         {
             Id = "tm1", ConversationId = "conv2", Role = "tool",
@@ -237,7 +203,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessages_with_blobs_populates_FullToolResult()
     {
-        _store.GetOrCreate("conv3", "test", ConversationType.Text, "p", "m");
+        _store.GetOrCreate("conv3", "test", "p", "m");
         _store.AddMessage("conv3", new Message
         {
             Id = "tm1", ConversationId = "conv3", Role = "tool",
@@ -259,7 +225,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void GetMessages_with_blobs_tolerates_missing_file()
     {
-        _store.GetOrCreate("conv4", "test", ConversationType.Text, "p", "m");
+        _store.GetOrCreate("conv4", "test", "p", "m");
         _store.AddMessage("conv4", new Message
         {
             Id = "tm1", ConversationId = "conv4", Role = "tool",
@@ -280,7 +246,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void AddMessage_persists_full_tool_result_to_disk_and_sets_ref()
     {
-        _store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");
+        _store.GetOrCreate("conv1", "test", "p", "m");
 
         var toolMsg = new Message
         {
@@ -319,7 +285,7 @@ public class SqliteConversationStoreTests : IDisposable
         var env = new AgentEnvironment { DataPath = _dbDir };
         using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
 
-        var conv = store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");
+        var conv = store.GetOrCreate("conv1", "test", "p", "m");
         conv.ContextWindowTokens = 100; // tiny per-conv window → trigger = 50
         store.Update(conv);
 
@@ -347,7 +313,7 @@ public class SqliteConversationStoreTests : IDisposable
     [Fact]
     public void ContextWindowTokens_persists_and_round_trips()
     {
-        var conv = _store.GetOrCreate("conv1", "test", ConversationType.Text, "p", "m");
+        var conv = _store.GetOrCreate("conv1", "test", "p", "m");
         conv.ContextWindowTokens = 200_000;
         _store.Update(conv);
 
@@ -365,7 +331,7 @@ public class SqliteConversationStoreTests : IDisposable
         var config = new CompactionConfig { KeepRecentTokens = 1, MaxContextTokens = 100, CompactionTriggerPercent = 50 };
         using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
 
-        store.GetOrCreate("conv-cancel", "test", ConversationType.Text, "p", "m");
+        store.GetOrCreate("conv-cancel", "test", "p", "m");
         for (var i = 0; i < 4; i++)
         {
             store.AddMessage("conv-cancel", new Message
@@ -423,7 +389,7 @@ public class SqliteConversationStoreTests : IDisposable
             var config = new CompactionConfig { KeepRecentTokens = 1, MaxContextTokens = 100, CompactionTriggerPercent = 50 };
             var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
 
-            var conv = store.GetOrCreate("conv-dispose", "test", ConversationType.Text, "p", "m");
+            var conv = store.GetOrCreate("conv-dispose", "test", "p", "m");
             for (var i = 0; i < 4; i++)
             {
                 store.AddMessage("conv-dispose", new Message
@@ -470,7 +436,7 @@ public class SqliteConversationStoreTests : IDisposable
     public void MentionFilter_RoundTripsThroughUpdateAndGet()
     {
         var conversationId = Guid.NewGuid().ToString();
-        var conv = _store.GetOrCreate(conversationId, "app", ConversationType.Text, "p", "m");
+        var conv = _store.GetOrCreate(conversationId, "app", "p", "m");
 
         conv.MentionFilter = ["Dex", "fox"];
         _store.Update(conv);

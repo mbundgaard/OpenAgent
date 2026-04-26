@@ -320,7 +320,6 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
             connectionId: TestConnectionId,
             channelChatId: "+4520000000",
             source: "telnyx",
-            type: ConversationType.Phone,
             provider: "azure-openai-voice",
             model: "test-model");
 

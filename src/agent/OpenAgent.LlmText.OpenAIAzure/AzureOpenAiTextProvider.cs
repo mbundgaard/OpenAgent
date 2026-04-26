@@ -391,7 +391,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         var chatMessages = new List<ChatMessage>();
 
         // System prompt
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Id, conversation.Source, conversation.Type, conversation.ActiveSkills, conversation.Intention);
+        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Id, conversation.Source, voice: false, conversation.ActiveSkills, conversation.Intention);
         if (!string.IsNullOrEmpty(systemPrompt))
             chatMessages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
 

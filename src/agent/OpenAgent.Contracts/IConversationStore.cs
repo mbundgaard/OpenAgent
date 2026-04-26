@@ -8,7 +8,7 @@ namespace OpenAgent.Contracts;
 public interface IConversationStore : IConfigurable
 {
     /// <summary>Returns the existing conversation or creates a new one stamped with provider and model.</summary>
-    Conversation GetOrCreate(string conversationId, string source, ConversationType type, string provider, string model);
+    Conversation GetOrCreate(string conversationId, string source, string provider, string model);
 
     /// <summary>
     /// Looks up a conversation bound to a specific external chat, or returns null if not found.
@@ -26,7 +26,6 @@ public interface IConversationStore : IConfigurable
         string connectionId,
         string channelChatId,
         string source,
-        ConversationType type,
         string provider,
         string model);
 
@@ -38,9 +37,6 @@ public interface IConversationStore : IConfigurable
 
     /// <summary>Persists changes to an existing conversation.</summary>
     void Update(Conversation conversation);
-
-    /// <summary>Updates the conversation's Type. No-op if the conversation does not exist or already has this type.</summary>
-    void UpdateType(string conversationId, ConversationType type);
 
     /// <summary>
     /// Updates the conversation's human-readable display name. No-op if the value is unchanged.

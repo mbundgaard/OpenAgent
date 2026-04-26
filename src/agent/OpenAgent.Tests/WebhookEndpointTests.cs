@@ -38,7 +38,7 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
         // Pre-create a conversation so we're sure 400 is about the body, not the conversation
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+        store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model");
 
         var client = _factory.CreateClient();
         var response = await client.PostAsync(
@@ -71,7 +71,7 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+        store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model");
 
         var client = _factory.CreateClient();
         var response = await client.PostAsync(
@@ -98,7 +98,7 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        var conv = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+        var conv = store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 

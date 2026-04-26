@@ -19,7 +19,6 @@ public class AzureOpenAiVoiceProviderOptionsTests
         {
             Id = "c1",
             Source = "test",
-            Type = ConversationType.Voice,
             Provider = "azure-openai-voice",
             Model = "gpt-realtime"
         };
@@ -55,7 +54,6 @@ public class AzureOpenAiVoiceProviderOptionsTests
         {
             Id = "c1",
             Source = "t",
-            Type = ConversationType.Voice,
             Provider = "azure-openai-voice",
             Model = "gpt-realtime"
         };

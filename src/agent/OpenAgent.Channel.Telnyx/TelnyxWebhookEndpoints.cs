@@ -114,7 +114,6 @@ public static class TelnyxWebhookEndpoints
             connectionId: provider.ConnectionId,
             channelChatId: from,
             source: "telnyx",
-            type: ConversationType.Phone,
             provider: provider.AgentConfig.VoiceProvider,
             model: provider.AgentConfig.VoiceModel);
 

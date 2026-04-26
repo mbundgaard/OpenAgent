@@ -13,10 +13,6 @@ public sealed class ConversationListItemResponse
     [JsonPropertyName("source")]
     public required string Source { get; init; }
 
-    [JsonPropertyName("type")]
-    [JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
-    public required ConversationType Type { get; init; }
-
     [JsonPropertyName("provider")]
     public required string Provider { get; init; }
 
@@ -65,10 +61,6 @@ public sealed class ConversationDetailResponse
 
     [JsonPropertyName("source")]
     public required string Source { get; init; }
-
-    [JsonPropertyName("type")]
-    [JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
-    public required ConversationType Type { get; init; }
 
     [JsonPropertyName("provider")]
     public required string Provider { get; init; }

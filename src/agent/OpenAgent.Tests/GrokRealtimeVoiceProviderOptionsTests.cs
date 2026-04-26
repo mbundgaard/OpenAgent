@@ -19,7 +19,6 @@ public class GrokRealtimeVoiceProviderOptionsTests
         {
             Id = "c1",
             Source = "test",
-            Type = ConversationType.Voice,
             Provider = "grok-realtime-voice",
             Model = "grok-3-realtime"
         };
@@ -54,7 +53,6 @@ public class GrokRealtimeVoiceProviderOptionsTests
         {
             Id = "c1",
             Source = "t",
-            Type = ConversationType.Voice,
             Provider = "grok-realtime-voice",
             Model = "grok-3-realtime"
         };

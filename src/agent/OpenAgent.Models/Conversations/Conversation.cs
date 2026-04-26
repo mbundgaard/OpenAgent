@@ -2,13 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace OpenAgent.Models.Conversations;
 
-public enum ConversationType
-{
-    Text,
-    Voice,
-    Phone,
-}
-
 /// <summary>
 /// Represents a single user conversation, including its voice session state.
 /// </summary>
@@ -18,9 +11,6 @@ public sealed class Conversation
     public required string Id { get; init; }
     [JsonPropertyName("source")]
     public required string Source { get; set; }
-    [JsonPropertyName("type")]
-    [JsonConverter(typeof(JsonStringEnumConverter<ConversationType>))]
-    public required ConversationType Type { get; set; }
 
     /// <summary>Provider key used for this conversation (e.g. "azure-openai-text").</summary>
     [JsonPropertyName("provider")]

@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
-using OpenAgent.Models.Conversations;
 using OpenAgent.Skills;
 using System.Linq;
 
@@ -20,16 +19,16 @@ internal sealed class SystemPromptBuilder
     private readonly AgentConfig _agentConfig;
     private readonly Dictionary<string, string> _files = new();
 
-    // Prompt files and which conversation types include them
-    private static readonly (string FilePath, ConversationType[] Types)[] FileMap =
+    // Prompt files. VoiceOnly = true means the file is included only for voice sessions.
+    private static readonly (string FilePath, bool VoiceOnly)[] FileMap =
     [
-        ("AGENTS.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
-        ("SOUL.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
-        ("IDENTITY.md",      [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
-        ("USER.md",          [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
-        ("TOOLS.md",         [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
-        ("MEMORY.md",        [ConversationType.Text, ConversationType.Voice, ConversationType.Phone]),
-        ("VOICE.md",         [ConversationType.Voice, ConversationType.Phone]),
+        ("AGENTS.md",   false),
+        ("SOUL.md",     false),
+        ("IDENTITY.md", false),
+        ("USER.md",     false),
+        ("TOOLS.md",    false),
+        ("MEMORY.md",   false),
+        ("VOICE.md",    true),
     ];
 
     public SystemPromptBuilder(AgentEnvironment environment, SkillCatalog skillCatalog, AgentConfig agentConfig, ILogger<SystemPromptBuilder> logger)
@@ -53,16 +52,17 @@ internal sealed class SystemPromptBuilder
     public string DataPath => _dataPath;
 
     /// <summary>
-    /// Builds the system prompt for the given conversation type by concatenating
-    /// the relevant files in order, separated by blank lines.
+    /// Builds the system prompt for the given conversation by concatenating the relevant
+    /// files in order, separated by blank lines. <paramref name="voice"/> selects whether
+    /// voice-only files (e.g. VOICE.md) are included.
     /// </summary>
-    public string Build(string conversationId, ConversationType type, IReadOnlyList<string>? activeSkills = null, string? intention = null)
+    public string Build(string conversationId, bool voice, IReadOnlyList<string>? activeSkills = null, string? intention = null)
     {
         var sections = new List<string>();
 
-        foreach (var (filePath, types) in FileMap)
+        foreach (var (filePath, voiceOnly) in FileMap)
         {
-            if (!types.Contains(type))
+            if (voiceOnly && !voice)
                 continue;
 
             if (_files.TryGetValue(filePath, out var content))

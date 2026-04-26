@@ -79,33 +79,11 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task SendMessage_FlipsVoiceConversationToText()
-    {
-        var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversationId = Guid.NewGuid().ToString();
-        // Pre-create as Voice
-        store.GetOrCreate(conversationId, "app", ConversationType.Voice, "azure-openai-text", "test-model");
-
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
-
-        var response = await client.PostAsJsonAsync(
-            $"/api/conversations/{conversationId}/messages",
-            new { Content = "hello" });
-
-        response.EnsureSuccessStatusCode();
-
-        var conv = store.Get(conversationId);
-        Assert.NotNull(conv);
-        Assert.Equal(ConversationType.Text, conv.Type);
-    }
-
-    [Fact]
     public async Task SendMessage_NoMentionMatch_DropsAndReturnsEmptyEvents()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        var conv = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+        var conv = store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 
@@ -127,7 +105,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        var conv = store.GetOrCreate(conversationId, "app", ConversationType.Text, "azure-openai-text", "test-model");
+        var conv = store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 

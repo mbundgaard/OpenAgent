@@ -81,7 +81,6 @@ public class TelegramMessageHandlerTests
         var conversation = store.FindChannelConversation("telegram", ConnectionId, ChatId.ToString());
         Assert.NotNull(conversation);
         Assert.Equal("telegram", conversation.Source);
-        Assert.Equal(Models.Conversations.ConversationType.Text, conversation.Type);
         Assert.Equal("telegram", conversation.ChannelType);
         Assert.Equal(ConnectionId, conversation.ConnectionId);
         Assert.Equal(ChatId.ToString(), conversation.ChannelChatId);
@@ -294,7 +293,7 @@ public class TelegramMessageHandlerTests
 
         // Pre-create conversation with MentionFilter=[Dex]
         var conv = store.FindOrCreateChannelConversation("telegram", ConnectionId, ChatId.ToString(),
-            "telegram", Models.Conversations.ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+            "telegram", "azure-openai-text", "gpt-5.2-chat");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 
@@ -316,7 +315,7 @@ public class TelegramMessageHandlerTests
         var sender = new FakeTelegramSender();
 
         var conv = store.FindOrCreateChannelConversation("telegram", ConnectionId, ChatId.ToString(),
-            "telegram", Models.Conversations.ConversationType.Text, "azure-openai-text", "gpt-5.2-chat");
+            "telegram", "azure-openai-text", "gpt-5.2-chat");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 

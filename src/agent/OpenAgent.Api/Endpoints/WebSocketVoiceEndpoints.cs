@@ -36,9 +36,7 @@ public static class WebSocketVoiceEndpoints
                 return;
             }
 
-            var conversation = store.GetOrCreate(conversationId, "app", ConversationType.Voice, agentConfig.VoiceProvider, agentConfig.VoiceModel);
-            store.UpdateType(conversationId, ConversationType.Voice);
-            conversation.Type = ConversationType.Voice;
+            var conversation = store.GetOrCreate(conversationId, "app", agentConfig.VoiceProvider, agentConfig.VoiceModel);
 
             var ws = await context.WebSockets.AcceptWebSocketAsync();
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
