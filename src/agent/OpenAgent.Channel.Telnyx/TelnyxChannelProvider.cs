@@ -7,9 +7,9 @@ namespace OpenAgent.Channel.Telnyx;
 
 /// <summary>
 /// Owns the runtime state for one Telnyx connection: the Call Control client, the signature
-/// verifier, the allow-list, the procedural thinking clip, and the pending-bridge dictionary.
-/// Active bridges are tracked in the global <see cref="TelnyxBridgeRegistry"/> instead so the
-/// EndCallTool (an app-singleton) can find them without going through this provider.
+/// verifier, the allow-list, and the pending-bridge dictionary. Active bridges are tracked in
+/// the global <see cref="TelnyxBridgeRegistry"/> instead so the EndCallTool (an app-singleton)
+/// can find them without going through this provider.
 /// </summary>
 public sealed class TelnyxChannelProvider : IChannelProvider
 {
@@ -31,7 +31,6 @@ public sealed class TelnyxChannelProvider : IChannelProvider
     public TelnyxBridgeRegistry BridgeRegistry => _bridgeRegistry;
     public TelnyxSignatureVerifier SignatureVerifier { get; }
     public TelnyxCallControlClient CallControlClient { get; }
-    public byte[] ThinkingClip { get; private set; } = [];
     public AgentConfig AgentConfig => _agentConfig;
     public AgentEnvironment Environment => _environment;
     public IConversationStore ConversationStore => _store;
@@ -70,9 +69,9 @@ public sealed class TelnyxChannelProvider : IChannelProvider
     }
 
     /// <summary>
-    /// Validates required fields, generates and persists a webhook id on first start, and
-    /// loads the thinking clip into memory. No network listening happens here — Telnyx delivers
-    /// webhooks directly to the public endpoints registered by the host.
+    /// Validates required fields and generates and persists a webhook id on first start. No
+    /// network listening happens here — Telnyx delivers webhooks directly to the public
+    /// endpoints registered by the host.
     /// </summary>
     public Task StartAsync(CancellationToken ct)
     {
@@ -98,8 +97,6 @@ public sealed class TelnyxChannelProvider : IChannelProvider
             }
         }
 
-        ThinkingClip = LoadThinkingClip();
-
         _logger.LogInformation(
             "Telnyx [{ConnectionId}] started: phone={Phone}, webhookId={WebhookId}, allow={Allow}",
             _connectionId, _options.PhoneNumber, _options.WebhookId, _options.AllowedNumbers.Count);
@@ -116,28 +113,6 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         var ok = _pending.TryRemove(callControlId, out var p);
         pending = p;
         return ok;
-    }
-
-    private byte[] LoadThinkingClip()
-    {
-        if (string.IsNullOrWhiteSpace(_options.ThinkingClipPath))
-            return ThinkingClipFactory.Generate();
-
-        var fullPath = Path.Combine(_environment.DataPath, _options.ThinkingClipPath);
-        if (!File.Exists(fullPath))
-        {
-            _logger.LogWarning("Telnyx ThinkingClipPath {Path} missing — falling back to procedural default", fullPath);
-            return ThinkingClipFactory.Generate();
-        }
-
-        var bytes = File.ReadAllBytes(fullPath);
-        // µ-law 8 kHz, 20 ms = 160 bytes per frame; require multiple of frame size for clean looping.
-        if (bytes.Length % 160 != 0)
-        {
-            _logger.LogWarning("Telnyx ThinkingClipPath {Path} is not a multiple of 160 bytes — falling back to procedural default", fullPath);
-            return ThinkingClipFactory.Generate();
-        }
-        return bytes;
     }
 }
 

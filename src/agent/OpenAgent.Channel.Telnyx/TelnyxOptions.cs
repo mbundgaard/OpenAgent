@@ -24,9 +24,6 @@ public sealed class TelnyxOptions
     /// <summary>E.164 numbers allowed to call. Empty list = allow all.</summary>
     public List<string> AllowedNumbers { get; set; } = [];
 
-    /// <summary>Optional path under dataPath to a custom µ-law 8 kHz mono thinking clip. Falls back to the procedural default.</summary>
-    public string? ThinkingClipPath { get; set; }
-
     /// <summary>Auto-generated 12-hex GUID identifying this connection's webhook URLs. Populated on first start; persisted to connections.json.</summary>
     public string? WebhookId { get; set; }
 }

@@ -186,59 +186,6 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
     }
 
     [Fact]
-    public async Task VoiceToolCallStarted_StartsPump_FramesFlow()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var (ws, fakeProvider, conversationId) = await ConnectStreamAsync(cts.Token);
-
-        var session = await fakeProvider.WaitForSessionAsync(conversationId, cts.Token);
-
-        // VoiceToolCallStarted must kick off the periodic 20ms pump pushing µ-law slices of the
-        // procedural thinking clip out as Telnyx media frames so the caller hears something while
-        // a tool is running.
-        session.Emit(new VoiceToolCallStarted("web_fetch", "call-1"));
-
-        var msg = await ReceiveTextMessageAsync(ws, cts.Token);
-        using var doc = JsonDocument.Parse(msg);
-        Assert.Equal("media", doc.RootElement.GetProperty("event").GetString());
-        var payload = doc.RootElement.GetProperty("media").GetProperty("payload").GetString();
-        Assert.False(string.IsNullOrEmpty(payload));
-
-        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
-    }
-
-    [Fact]
-    public async Task VoiceToolCallCompleted_StopsPump_AndSendsClear()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var (ws, fakeProvider, conversationId) = await ConnectStreamAsync(cts.Token);
-
-        var session = await fakeProvider.WaitForSessionAsync(conversationId, cts.Token);
-
-        session.Emit(new VoiceToolCallStarted("web_fetch", "call-1"));
-        // Give the pump enough time to emit at least one media frame before completion.
-        await Task.Delay(100, cts.Token);
-        session.Emit(new VoiceToolCallCompleted("call-1", "ok"));
-
-        // Drain frames until we see the clear frame the bridge sends after the pump stops.
-        var sawClear = false;
-        while (!cts.IsCancellationRequested)
-        {
-            var msg = await ReceiveTextMessageAsync(ws, cts.Token);
-            using var doc = JsonDocument.Parse(msg);
-            if (doc.RootElement.GetProperty("event").GetString() == "clear")
-            {
-                sawClear = true;
-                break;
-            }
-        }
-
-        Assert.True(sawClear, "Expected a clear frame after VoiceToolCallCompleted");
-
-        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
-    }
-
-    [Fact]
     public async Task PendingHangup_AfterAudioDelta_HangsUpOnAudioDone()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));

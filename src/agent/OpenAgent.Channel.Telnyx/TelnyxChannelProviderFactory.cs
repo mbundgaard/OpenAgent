@@ -37,7 +37,6 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
         new() { Key = "callControlAppId", Label = "Call Control Connection ID",                                  Type = "String", Required = true },
         new() { Key = "webhookPublicKey", Label = "Webhook Public Key (PEM, leave empty for dev)",               Type = "Secret" },
         new() { Key = "allowedNumbers",   Label = "Allowed Caller Numbers (comma-separated, empty = allow all)", Type = "String" },
-        new() { Key = "thinkingClipPath", Label = "Custom Thinking Clip Path (relative to dataPath, optional)",  Type = "String" },
     ];
 
     /// <summary>Telnyx has no post-creation setup step — the user just enters API credentials.</summary>
@@ -92,7 +91,6 @@ public sealed class TelnyxChannelProviderFactory : IChannelProviderFactory
         if (config.TryGetProperty("baseUrl", out p) && p.ValueKind == JsonValueKind.String) opts.BaseUrl = p.GetString();
         if (config.TryGetProperty("callControlAppId", out p) && p.ValueKind == JsonValueKind.String) opts.CallControlAppId = p.GetString();
         if (config.TryGetProperty("webhookPublicKey", out p) && p.ValueKind == JsonValueKind.String) opts.WebhookPublicKey = p.GetString();
-        if (config.TryGetProperty("thinkingClipPath", out p) && p.ValueKind == JsonValueKind.String) opts.ThinkingClipPath = p.GetString();
         if (config.TryGetProperty("webhookId", out p) && p.ValueKind == JsonValueKind.String) opts.WebhookId = p.GetString();
         if (config.TryGetProperty("allowedNumbers", out p))
         {

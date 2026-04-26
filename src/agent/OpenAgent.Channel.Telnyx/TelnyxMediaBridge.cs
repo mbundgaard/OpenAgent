@@ -10,11 +10,11 @@ namespace OpenAgent.Channel.Telnyx;
 
 /// <summary>
 /// Per-call bridge between the Telnyx Media Streaming WebSocket and an
-/// <see cref="IVoiceSession"/>. Decodes inbound µ-law frames into the session, encodes outbound
+/// <see cref="IVoiceSession"/>. Decodes inbound a-law frames into the session, encodes outbound
 /// <see cref="AudioDelta"/> events back as Telnyx media frames, and registers itself in the
 /// <see cref="TelnyxBridgeRegistry"/> for the lifetime of the call. Owns barge-in (clear +
-/// CancelResponseAsync on SpeechStarted), the thinking-clip pump during tool calls, and the
-/// agent-initiated hangup state machine (SetPendingHangup with 500ms early-exit + 5s hard cap).
+/// CancelResponseAsync on SpeechStarted) and the agent-initiated hangup state machine
+/// (SetPendingHangup with 500ms early-exit + 5s hard cap).
 /// </summary>
 public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
 {
@@ -24,10 +24,6 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
     private readonly ILogger<TelnyxMediaBridge> _logger;
     private readonly CancellationTokenSource _cts;
     private IVoiceSession? _session;
-    // Thinking-clip pump state. _activeToolCalls is ref-counted so nested tool calls (e.g.
-    // web_fetch invoking extract_text) keep the pump running until the LAST completion.
-    private CancellationTokenSource? _pumpCts;
-    private int _activeToolCalls;
     // Agent-initiated hangup state (Task 21). EndCallTool calls SetPendingHangup; the bridge
     // waits for the farewell audio to complete before invoking Telnyx HangupAsync, with a 500ms
     // early-exit when no audio flows and a 5s hard fallback if AudioDone never arrives.
@@ -160,9 +156,9 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
 
     /// <summary>
     /// Pumps voice events from the session out to the Telnyx WebSocket. Forwards
-    /// <see cref="AudioDelta"/> as media frames, runs the barge-in flush on SpeechStarted, the
-    /// thinking-clip pump on tool start/complete, and the agent-initiated hangup completion on
-    /// <see cref="AudioDone"/> when <see cref="SetPendingHangup"/> has been called.
+    /// <see cref="AudioDelta"/> as media frames, runs the barge-in flush on SpeechStarted, and
+    /// the agent-initiated hangup completion on <see cref="AudioDone"/> when
+    /// <see cref="SetPendingHangup"/> has been called.
     /// </summary>
     private async Task WriteLoopAsync(CancellationToken ct)
     {
@@ -192,16 +188,6 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
                         await SendTextAsync(TelnyxMediaFrame.ComposeClear(), ct);
                         await _session!.CancelResponseAsync(ct);
                         break;
-                    case VoiceToolCallStarted:
-                        // Tool execution can take seconds — start pumping the procedural µ-law
-                        // thinking clip so the caller hears something instead of dead air.
-                        StartPump(ct);
-                        break;
-                    case VoiceToolCallCompleted:
-                        // Last completion stops the pump and flushes any residual buffered audio
-                        // at Telnyx with a clear frame; nested calls keep the pump alive.
-                        await StopPumpAsync(ct);
-                        break;
                 }
             }
         }
@@ -210,61 +196,6 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
         {
             _logger.LogWarning(ex, "Telnyx WebSocket send failed for conversation {ConversationId}",
                 _pending.ConversationId);
-        }
-    }
-
-    /// <summary>
-    /// Starts the thinking-clip pump on the first <see cref="VoiceToolCallStarted"/>. Nested
-    /// tool calls increment the ref counter without restarting the timer.
-    /// </summary>
-    private void StartPump(CancellationToken ct)
-    {
-        // Ref-count: only the first VoiceToolCallStarted starts the timer; subsequent ones are nested calls.
-        if (Interlocked.Increment(ref _activeToolCalls) > 1) return;
-        _pumpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _ = Task.Run(() => PumpAsync(_pumpCts.Token));
-    }
-
-    /// <summary>
-    /// Decrements the ref counter on <see cref="VoiceToolCallCompleted"/>; the LAST completion
-    /// cancels the pump and emits a clear frame to flush any buffered audio at Telnyx.
-    /// </summary>
-    private async Task StopPumpAsync(CancellationToken ct)
-    {
-        // Only stop on the last completion — earlier ones leave the pump running for nested calls.
-        if (Interlocked.Decrement(ref _activeToolCalls) > 0) return;
-        if (_pumpCts is { } cts) await cts.CancelAsync();
-        if (_ws.State == WebSocketState.Open)
-            await SendTextAsync(TelnyxMediaFrame.ComposeClear(), ct);
-    }
-
-    /// <summary>
-    /// Drift-free 20ms loop that streams 160-byte µ-law slices of the procedural thinking clip
-    /// out as Telnyx media frames, wrapping back to the start when the clip ends. Cancelled by
-    /// <see cref="StopPumpAsync"/> when the last tool call completes.
-    /// </summary>
-    private async Task PumpAsync(CancellationToken ct)
-    {
-        var clip = _provider.ThinkingClip;
-        var pos = 0;
-        const int frameSize = 160; // 20ms at 8kHz µ-law
-        var period = TimeSpan.FromMilliseconds(20);
-
-        using var timer = new PeriodicTimer(period);
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                if (_ws.State != WebSocketState.Open) break;
-                var slice = clip.AsMemory(pos, Math.Min(frameSize, clip.Length - pos));
-                await SendTextAsync(TelnyxMediaFrame.ComposeMedia(slice.Span), ct);
-                pos = (pos + frameSize) % clip.Length;
-            }
-        }
-        catch (OperationCanceledException) { /* expected on tool completion */ }
-        catch (WebSocketException ex)
-        {
-            _logger.LogWarning(ex, "Telnyx thinking pump WS send failed");
         }
     }
 
