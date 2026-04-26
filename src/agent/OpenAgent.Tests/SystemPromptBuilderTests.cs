@@ -41,7 +41,7 @@ public class SystemPromptBuilderTests : IDisposable
             new AgentConfig(),
             NullLogger<SystemPromptBuilder>.Instance);
 
-        var prompt = builder.Build(ConversationType.Phone);
+        var prompt = builder.Build("test-conversation-id", ConversationType.Phone);
 
         Assert.Contains("AGENTS-content", prompt);
         Assert.Contains("SOUL-content", prompt);
