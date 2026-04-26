@@ -501,14 +501,10 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             chatMessages.Add(chatMsg);
         }
 
-        // Log the full context being sent to the LLM. Content is logged untruncated so the
-        // structured field captures the literal payload — useful for verifying transformations
-        // like reply-quote rendering. Tool results are bounded by ToolResultRef blob handling
-        // upstream; everything else is bounded by typical conversation message size.
-        logger.LogDebug("LLM request: {MessageCount} messages, conversation={ConversationId}, model={Model}",
-            chatMessages.Count, conversation.Id, conversation.Model);
+        // Log the full context being sent to the LLM
         foreach (var cm in chatMessages)
-            logger.LogDebug("LLM context [{Role}] {Name}: {Content}", cm.Role, cm.Name ?? "-", cm.Content);
+            logger.LogDebug("LLM context [{Role}] {Name}: {Content}", cm.Role, cm.Name ?? "-",
+                cm.Content?.Length > 200 ? cm.Content[..200] + "..." : cm.Content);
 
         return chatMessages;
     }

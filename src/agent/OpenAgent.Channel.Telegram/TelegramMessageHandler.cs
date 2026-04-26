@@ -84,17 +84,6 @@ public sealed class TelegramMessageHandler
 
         _logger?.LogDebug("Handler received message from user {UserId} in chat {ChatId}", userId, chatId);
 
-        // Surface inbound Telegram fields relevant to reply-quote rendering. Logged at Debug
-        // so we can verify ReplyToMessage is populated when the user threads a reply.
-        _logger?.LogDebug(
-            "Inbound Telegram message: messageId={MessageId}, chatId={ChatId}, userId={UserId}, text={Text}, replyToMessageId={ReplyToMessageId}, replyToText={ReplyToText}",
-            message.MessageId,
-            chatId,
-            userId,
-            userText,
-            message.ReplyToMessage?.MessageId,
-            message.ReplyToMessage?.Text);
-
         // Conversation gating — check if conversation exists or if new ones are allowed
         var existing = _store.FindChannelConversation("telegram", _connectionId, chatId.ToString());
         if (existing is null)
