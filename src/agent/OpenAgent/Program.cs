@@ -2,6 +2,7 @@ using System.IO.Compression;
 using OpenAgent;
 using OpenAgent.Api.Endpoints;
 using OpenAgent.Channel.Telegram;
+using OpenAgent.Channel.Telnyx;
 using OpenAgent.Channel.WhatsApp;
 using OpenAgent.Compaction;
 using OpenAgent.ConfigStore.File;
@@ -125,6 +126,8 @@ builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
 builder.Services.AddSingleton<IToolHandler, WebFetchToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ExpandToolHandler>();
+builder.Services.AddSingleton<EndCallTool>();
+builder.Services.AddSingleton<IToolHandler, TelnyxToolHandler>();
 builder.Services.AddSingleton<IToolHandler>(sp =>
     new ConversationToolHandler(
         sp.GetRequiredService<IConversationStore>(),
@@ -217,6 +220,18 @@ builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
         sp.GetRequiredService<AgentConfig>(),
         sp.GetRequiredService<AgentEnvironment>(),
         sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddHttpClient(); // first IHttpClientFactory consumer in this codebase
+builder.Services.AddSingleton<TelnyxBridgeRegistry>();
+builder.Services.AddSingleton<IChannelProviderFactory>(sp =>
+    new TelnyxChannelProviderFactory(
+        sp.GetRequiredService<IConversationStore>(),
+        sp.GetRequiredService<IConnectionStore>(),
+        sp.GetRequiredService<Func<string, ILlmVoiceProvider>>(),
+        sp.GetRequiredService<AgentConfig>(),
+        sp.GetRequiredService<AgentEnvironment>(),
+        sp.GetRequiredService<TelnyxBridgeRegistry>(),
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<ConnectionManager>();
 builder.Services.AddSingleton<IConnectionManager>(sp => sp.GetRequiredService<ConnectionManager>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionManager>());
@@ -270,6 +285,8 @@ app.MapConnectionEndpoints();
 app.MapFileExplorerEndpoints();
 app.MapLogEndpoints();
 app.MapTelegramWebhookEndpoints();
+app.MapTelnyxWebhookEndpoints();
+app.MapTelnyxStreamingEndpoint();
 app.MapWebhookEndpoints();
 app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();

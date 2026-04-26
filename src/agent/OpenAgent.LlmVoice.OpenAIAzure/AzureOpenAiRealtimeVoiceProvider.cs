@@ -4,6 +4,7 @@ using OpenAgent.Contracts;
 using OpenAgent.LlmVoice.OpenAIAzure.Models;
 using OpenAgent.Models.Providers;
 using OpenAgent.Models.Conversations;
+using OpenAgent.Models.Voice;
 
 namespace OpenAgent.LlmVoice.OpenAIAzure;
 
@@ -26,9 +27,7 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
         new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true },
         new() { Key = "apiVersion", Label = "API Version", Type = "String", DefaultValue = "2025-04-01-preview" },
         new() { Key = "voice", Label = "Voice", Type = "Enum", DefaultValue = "alloy",
-            Options = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"] },
-        new() { Key = "codec", Label = "Codec", Type = "Enum", DefaultValue = "pcm16",
-            Options = ["pcm16", "g711_ulaw", "g711_alaw"] }
+            Options = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"] }
     ];
 
     public IReadOnlyList<string> Models => _config?.Models ?? [];
@@ -54,14 +53,17 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
             _config.Models.Length, _config.Endpoint);
     }
 
-    public async Task<IVoiceSession> StartSessionAsync(Conversation conversation, CancellationToken ct = default)
+    public async Task<IVoiceSession> StartSessionAsync(
+        Conversation conversation,
+        VoiceSessionOptions? options = null,
+        CancellationToken ct = default)
     {
         if (_config is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
         logger.LogDebug("Starting voice session for conversation {ConversationId} with model {Model}",
             conversation.Id, conversation.Model);
-        var session = new AzureOpenAiVoiceSession(_config, conversation, agentLogic, logger);
+        var session = new AzureOpenAiVoiceSession(_config, conversation, agentLogic, options, logger);
         await session.ConnectAsync(ct);
         logger.LogInformation("Voice session {SessionId} started for conversation {ConversationId}",
             session.SessionId, conversation.Id);

@@ -25,4 +25,16 @@ public sealed record TranscriptDelta(string Text, TranscriptSource Source) : Voi
 public sealed record TranscriptDone(string Text, TranscriptSource Source) : VoiceEvent;
 public sealed record SessionError(string Message) : VoiceEvent;
 
+/// <summary>
+/// Emitted when the session is about to execute a tool call. Endpoints translate this
+/// into a "thinking_started" cue so callers can play a placeholder while the tool runs.
+/// </summary>
+public sealed record VoiceToolCallStarted(string Name, string CallId) : VoiceEvent;
+
+/// <summary>
+/// Emitted once a tool call has completed (success or error). Endpoints translate this
+/// into a "thinking_stopped" cue.
+/// </summary>
+public sealed record VoiceToolCallCompleted(string CallId, string Result) : VoiceEvent;
+
 public enum TranscriptSource { User, Assistant }

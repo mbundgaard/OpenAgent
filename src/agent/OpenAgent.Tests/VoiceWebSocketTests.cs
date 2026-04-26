@@ -118,7 +118,10 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
         public IReadOnlyList<ProviderConfigField> ConfigFields => [];
         public void Configure(JsonElement configuration) { }
 
-        public Task<IVoiceSession> StartSessionAsync(Conversation conversation, CancellationToken ct = default)
+        public Task<IVoiceSession> StartSessionAsync(
+            Conversation conversation,
+            VoiceSessionOptions? options = null,
+            CancellationToken ct = default)
         {
             var session = new FakeVoiceSession();
             _sessions[conversation.Id] = session;

@@ -23,6 +23,8 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
     private readonly Conversation _conversation;
     private readonly IAgentLogic _agentLogic;
     private readonly ILogger _logger;
+    private readonly string _codec;
+    private readonly int _sampleRate;
     private readonly ClientWebSocket _ws = new();
     private readonly Channel<VoiceEvent> _channel = Channel.CreateUnbounded<VoiceEvent>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
@@ -32,12 +34,26 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     public string SessionId { get; private set; } = string.Empty;
 
-    internal AzureOpenAiVoiceSession(AzureRealtimeConfig config, Conversation conversation, IAgentLogic agentLogic, ILogger logger)
+    internal AzureOpenAiVoiceSession(
+        AzureRealtimeConfig config,
+        Conversation conversation,
+        IAgentLogic agentLogic,
+        VoiceSessionOptions? options,
+        ILogger logger)
     {
         _config = config;
         _conversation = conversation;
         _agentLogic = agentLogic;
         _logger = logger;
+
+        var requested = options ?? new VoiceSessionOptions("pcm16", 24000);
+        var expectedRate = RateForCodec(requested.Codec);
+        if (requested.SampleRate != expectedRate)
+            throw new ArgumentException(
+                $"Azure Realtime supports {requested.Codec} only at {expectedRate} Hz, got {requested.SampleRate}.",
+                nameof(options));
+        _codec = requested.Codec;
+        _sampleRate = requested.SampleRate;
     }
 
     internal async Task ConnectAsync(CancellationToken ct)
@@ -127,7 +143,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             }).ToList()
             : null;
 
-        var codec = string.IsNullOrWhiteSpace(_config.Codec) ? "pcm16" : _config.Codec!;
+        var codec = _codec;
 
         var sessionConfig = new RealtimeSessionConfig
         {
@@ -149,7 +165,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         }, ct);
 
         // Advertise negotiated audio format to the client. OpenAI Realtime has fixed rates per codec.
-        var rate = RateForCodec(codec);
+        var rate = _sampleRate;
         await _channel.Writer.WriteAsync(new SessionReady(
             InputSampleRate: rate,
             OutputSampleRate: rate,
@@ -261,10 +277,14 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
             _ = Task.Run(async () =>
             {
+                // Emit thinking-cue before the tool runs so the endpoint can push a placeholder.
+                await _channel.Writer.WriteAsync(new VoiceToolCallStarted(name, callId), ct);
+                string? completionResult = null;
                 try
                 {
                     _logger.LogDebug("Executing voice tool {ToolName} for conversation {ConversationId}", name, conversationId);
                     var result = await _agentLogic.ExecuteToolAsync(conversationId, name, arguments, ct);
+                    completionResult = result;
 
                     // Persist tool result summary
                     _agentLogic.AddMessage(conversationId, new Message
@@ -283,6 +303,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                 {
                     _logger.LogError(ex, "Voice tool {ToolName} failed for conversation {ConversationId}", name, conversationId);
                     var errorResult = JsonSerializer.Serialize(new { error = ex.Message });
+                    completionResult = errorResult;
 
                     // Persist error summary
                     _agentLogic.AddMessage(conversationId, new Message
@@ -296,6 +317,12 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                     });
 
                     await SendToolResultAndContinueAsync(callId, errorResult, ct);
+                }
+                finally
+                {
+                    // Always emit the completed cue — even on cancellation — so the browser/Telnyx pump
+                    // never gets stuck on thinking_started. TryWrite is safe during channel completion.
+                    _channel.Writer.TryWrite(new VoiceToolCallCompleted(callId, completionResult ?? "cancelled"));
                 }
             }, ct);
             return;

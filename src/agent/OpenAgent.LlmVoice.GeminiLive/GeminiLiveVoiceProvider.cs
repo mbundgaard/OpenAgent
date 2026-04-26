@@ -4,6 +4,7 @@ using OpenAgent.Contracts;
 using OpenAgent.LlmVoice.GeminiLive.Models;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
+using OpenAgent.Models.Voice;
 
 namespace OpenAgent.LlmVoice.GeminiLive;
 
@@ -60,10 +61,19 @@ public sealed class GeminiLiveVoiceProvider(IAgentLogic agentLogic, ILogger<Gemi
             _config.Models.Length, _config.ReconnectAfterMinutes);
     }
 
-    public async Task<IVoiceSession> StartSessionAsync(Conversation conversation, CancellationToken ct = default)
+    public async Task<IVoiceSession> StartSessionAsync(
+        Conversation conversation,
+        VoiceSessionOptions? options = null,
+        CancellationToken ct = default)
     {
         if (_config is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
+
+        // Gemini hardcodes its audio formats — reject any options that don't match.
+        if (options is not null && (options.Codec != "pcm16" || options.SampleRate != 16000))
+            throw new ArgumentException(
+                "Gemini Live only supports pcm16 16000 Hz input today. Use Azure or Grok for other formats.",
+                nameof(options));
 
         logger.LogDebug("Starting Gemini Live session for conversation {ConversationId} with model {Model}",
             conversation.Id, conversation.Model);

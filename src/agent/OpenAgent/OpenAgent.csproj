@@ -61,6 +61,7 @@
     <ProjectReference Include="..\OpenAgent.MemoryIndex\OpenAgent.MemoryIndex.csproj" />
     <ProjectReference Include="..\OpenAgent.Embedding.OnnxMultilingualE5\OpenAgent.Embedding.OnnxMultilingualE5.csproj" />
     <ProjectReference Include="..\OpenAgent.Embedding.OnnxBge\OpenAgent.Embedding.OnnxBge.csproj" />
+    <ProjectReference Include="..\OpenAgent.Channel.Telnyx\OpenAgent.Channel.Telnyx.csproj" />
   </ItemGroup>
 
   <ItemGroup>
