@@ -596,9 +596,16 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
             result.Add(new AnthropicMessage { Role = msg.Role, Content = content });
         }
 
+        // Log the full context being sent to the LLM. Content is logged untruncated so the
+        // structured field captures the literal payload — useful for verifying transformations
+        // like reply-quote rendering. Tool results are bounded by ToolResultRef blob handling
+        // upstream; tool_use / tool_result blocks render as "[blocks]" because their nested
+        // shape doesn't string-format usefully.
+        logger.LogDebug("LLM request: {MessageCount} messages, conversation={ConversationId}, model={Model}",
+            result.Count, conversation.Id, conversation.Model);
         foreach (var m in result)
             logger.LogDebug("LLM context [{Role}]: {Content}", m.Role,
-                m.Content is string s ? (s.Length > 200 ? s[..200] + "..." : s) : "[blocks]");
+                m.Content is string s ? s : "[blocks]");
 
         return result;
     }
