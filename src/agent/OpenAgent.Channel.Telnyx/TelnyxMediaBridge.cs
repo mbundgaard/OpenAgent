@@ -99,7 +99,7 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
             // this just signals "the call connected, please greet them".
             var caller = conversation.DisplayName ?? "unknown";
             await _session.AddUserMessageAsync(
-                $"[Phone call connected. Caller: {caller}. Please greet them and introduce yourself.]",
+                $"[Phone call connected. Caller: {caller}. Greet them — be brief and natural, like answering the phone for someone you know.]",
                 _cts.Token);
             await _session.RequestResponseAsync(_cts.Token);
 
