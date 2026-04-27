@@ -119,6 +119,21 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
         return Task.CompletedTask;
     }
 
+    public async Task SendUserMessageAsync(string text, CancellationToken ct = default)
+    {
+        // Push a single user-role turn with turn_complete=true, which both delivers the text and
+        // implicitly triggers a model response (Gemini Live has no separate response.create).
+        // Not persisted to conversation history — the bridge owns that decision.
+        await SendMessageAsync(new GeminiClientMessage
+        {
+            ClientContent = new GeminiClientContent
+            {
+                Turns = [new { role = "user", parts = new[] { new { text } } }],
+                TurnComplete = true
+            }
+        }, ct);
+    }
+
     public async ValueTask DisposeAsync()
     {
         _reconnectTimer?.Dispose();

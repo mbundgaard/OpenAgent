@@ -44,6 +44,13 @@ public sealed class FakeVoiceSession : IVoiceSession
         return Task.CompletedTask;
     }
 
+    public List<string> InjectedUserMessages { get; } = new();
+    public Task SendUserMessageAsync(string text, CancellationToken ct = default)
+    {
+        InjectedUserMessages.Add(text);
+        return Task.CompletedTask;
+    }
+
     public IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync(CancellationToken ct = default) =>
         _events.Reader.ReadAllAsync(ct);
 

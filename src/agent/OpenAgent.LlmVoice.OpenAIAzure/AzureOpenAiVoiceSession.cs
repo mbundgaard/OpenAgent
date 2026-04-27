@@ -194,6 +194,25 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         };
     }
 
+    public async Task SendUserMessageAsync(string text, CancellationToken ct = default)
+    {
+        // Inject a user-role message item, then trigger a response. Used to kick the model into
+        // speaking first (e.g. greet on phone call connect). The text is delivered to the realtime
+        // socket only — callers that want it in conversation history must persist separately.
+        await SendEventAsync(new ClientEvent
+        {
+            Type = EventTypes.ConversationItemCreate,
+            Item = new
+            {
+                type = "message",
+                role = "user",
+                content = new[] { new { type = "input_text", text } }
+            }
+        }, ct);
+
+        await SendEventAsync(new ClientEvent { Type = EventTypes.ResponseCreate }, ct);
+    }
+
     private static int RateForCodec(string codec) => codec switch
     {
         "g711_ulaw" or "g711_alaw" => 8000,

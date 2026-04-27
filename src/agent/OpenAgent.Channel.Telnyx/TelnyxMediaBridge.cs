@@ -74,6 +74,15 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
             // — required for mid-call system-prompt refresh after activate_skill.
             _provider.VoiceSessionManager.RegisterSession(_pending.ConversationId, _session);
 
+            // Kick the model to speak first. The synthetic prompt is realtime-only — it goes to
+            // the live session but is NOT persisted to conversation history (it's a one-shot
+            // trigger, not a real turn). The model has its name/identity from the system prompt;
+            // this just signals "the call connected, please greet them".
+            var caller = conversation.DisplayName ?? "unknown";
+            await _session.SendUserMessageAsync(
+                $"[Phone call connected. Caller: {caller}. Please greet them and introduce yourself.]",
+                _cts.Token);
+
             // First loop to finish wins — the other gets cancelled in the finally block.
             await Task.WhenAny(ReadLoopAsync(_cts.Token), WriteLoopAsync(_cts.Token));
         }
