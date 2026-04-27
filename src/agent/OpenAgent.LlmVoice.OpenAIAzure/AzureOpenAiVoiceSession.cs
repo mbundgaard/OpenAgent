@@ -31,6 +31,10 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _receiveCts = new();
     private Task _receiveTask = Task.CompletedTask;
+    // Watchdog: tracks the most recent ResponseAudioDelta wallclock so we can detect when the
+    // realtime API goes silent after we send a tool result. Compared against the timestamp at
+    // which we sent the tool result + response.create — if no audio arrives within 15s, we warn.
+    private DateTimeOffset _audioLastReceivedAt;
 
     public string SessionId { get; private set; } = string.Empty;
 
@@ -228,7 +232,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         _ => 24000
     };
 
-    private async Task SendToolResultAndContinueAsync(string callId, string result, CancellationToken ct)
+    private async Task SendToolResultAndContinueAsync(string toolName, string callId, string result, CancellationToken ct)
     {
         await SendEventAsync(new ClientEvent
         {
@@ -242,6 +246,27 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         }, ct);
 
         await SendEventAsync(new ClientEvent { Type = EventTypes.ResponseCreate }, ct);
+
+        // Stall watchdog: capture the moment we asked for a response, then check 15 seconds later
+        // whether any audio came back. If _audioLastReceivedAt is still earlier than sentAt, the
+        // realtime API has gone silent on us — log a warning so we can see it happening live.
+        // Fire-and-forget so the receive loop isn't blocked.
+        var sentAt = DateTimeOffset.UtcNow;
+        var conversationId = _conversation.Id;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15), ct);
+                if (_audioLastReceivedAt < sentAt)
+                {
+                    _logger.LogWarning(
+                        "Realtime stalled: no audio response 15s after sending tool result for {ToolName} (call {CallId}, conversation {ConversationId})",
+                        toolName, callId, conversationId);
+                }
+            }
+            catch (OperationCanceledException) { /* session torn down before watchdog fired */ }
+        }, ct);
     }
 
     private async Task SendEventAsync(ClientEvent evt, CancellationToken ct)
@@ -303,6 +328,16 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
 
     private async Task HandleEnvelopeAsync(RealtimeEnvelope envelope, CancellationToken ct)
     {
+        // One log line per realtime envelope, regardless of whether we route it. Lets us see
+        // exactly what Azure OpenAI is (and isn't) sending when something goes wrong mid-call.
+        _logger.LogDebug("Realtime event {EventType} for conversation {ConversationId}",
+            envelope.Type, _conversation.Id);
+
+        // Watchdog timestamp: any audio delta from the model resets the clock so the stall
+        // detector after tool results can tell "no audio came back" from "audio is flowing".
+        if (envelope.Type == EventTypes.ResponseAudioDelta)
+            _audioLastReceivedAt = DateTimeOffset.UtcNow;
+
         if (envelope.Type == EventTypes.FunctionCallArgumentsDone)
         {
             var name = envelope.Name ?? "";
@@ -346,7 +381,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                         Modality = MessageModality.Voice
                     });
 
-                    await SendToolResultAndContinueAsync(callId, result, ct);
+                    await SendToolResultAndContinueAsync(name, callId, result, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -365,7 +400,7 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                         Modality = MessageModality.Voice
                     });
 
-                    await SendToolResultAndContinueAsync(callId, errorResult, ct);
+                    await SendToolResultAndContinueAsync(name, callId, errorResult, ct);
                 }
                 finally
                 {

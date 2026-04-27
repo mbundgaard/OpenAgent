@@ -88,10 +88,15 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
             //      via BuildSessionConfig — nothing to do here.
             //   2. Live post-cut messages are sent as ONE synthetic user item containing a
             //      transcript blob. AddUserMessageAsync alone does not trigger a response.
-            var transcript = BuildHistoryTranscript(
+            var (seedCount, transcript) = BuildHistoryTranscript(
                 _provider.ConversationStore.GetMessages(_pending.ConversationId));
             if (transcript is not null)
+            {
+                _logger.LogInformation(
+                    "Seeding voice session with {MessageCount} prior messages ({CharCount} chars) for conversation {ConversationId}",
+                    seedCount, transcript.Length, _pending.ConversationId);
                 await _session.AddUserMessageAsync(transcript, _cts.Token);
+            }
 
             // Kick the model to speak first. The synthetic prompt is realtime-only — it goes to
             // the live session but is NOT persisted to conversation history (it's a one-shot
@@ -129,7 +134,7 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
     /// cleanly, and the realtime model doesn't need them to follow the gist of recent turns.
     /// Returns null when there's nothing to seed.
     /// </summary>
-    private static string? BuildHistoryTranscript(IReadOnlyList<Message> messages)
+    private static (int MessageCount, string? Transcript) BuildHistoryTranscript(IReadOnlyList<Message> messages)
     {
         var lines = new List<string>(messages.Count);
         foreach (var m in messages)
@@ -140,8 +145,8 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
             lines.Add($"{m.Role}: {m.Content!.Trim()}");
         }
 
-        if (lines.Count == 0) return null;
-        return "<conversation_history>\n" + string.Join("\n", lines) + "\n</conversation_history>";
+        if (lines.Count == 0) return (0, null);
+        return (lines.Count, "<conversation_history>\n" + string.Join("\n", lines) + "\n</conversation_history>");
     }
 
     /// <summary>
