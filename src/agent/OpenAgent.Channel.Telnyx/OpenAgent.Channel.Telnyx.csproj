@@ -11,6 +11,10 @@
     <PackageReference Include="BouncyCastle.Cryptography" />
   </ItemGroup>
   <ItemGroup>
+    <!-- 8 kHz mono A-law thinking sound clip, streamed during tool execution. -->
+    <EmbeddedResource Include="thinking-clip.al" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\OpenAgent.Contracts\OpenAgent.Contracts.csproj" />
     <ProjectReference Include="..\OpenAgent.Models\OpenAgent.Models.csproj" />
   </ItemGroup>

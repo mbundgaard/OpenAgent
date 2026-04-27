@@ -31,6 +31,13 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
     private bool _pendingHangup;
     private bool _audioObservedSinceFlag;
     private CancellationTokenSource? _hangupTimerCts;
+    // Thinking-sound pump state. Active count is incremented on VoiceToolCallStarted and
+    // decremented on VoiceToolCallCompleted; the pump runs while the count is non-zero so
+    // overlapping tool calls don't cut the audio short. WriteLoopAsync owns these — no lock
+    // needed, all mutation is on the same task.
+    private int _activeToolCalls;
+    private CancellationTokenSource? _pumpCts;
+    private Task? _pumpTask;
 
     public TelnyxMediaBridge(
         TelnyxChannelProvider provider,
@@ -235,8 +242,24 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
                     case SpeechStarted:
                         // Barge-in: flush any buffered TTS at Telnyx and cancel the LLM response so
                         // the model stops generating into a user that's already talking over it.
+                        // Also stop the thinking pump (a barge-in implicitly aborts any in-flight tool work).
+                        StopPump();
+                        _activeToolCalls = 0;
                         await SendTextAsync(TelnyxMediaFrame.ComposeClear(), ct);
                         await _session!.CancelResponseAsync(ct);
+                        break;
+                    case VoiceToolCallStarted:
+                        // Start the thinking-sound pump on the first concurrent tool call so the
+                        // caller hears something while the tool runs (HTTP, shell, etc. can take
+                        // seconds). Subsequent overlapping calls just bump the counter.
+                        if (_activeToolCalls++ == 0)
+                            StartPump();
+                        break;
+                    case VoiceToolCallCompleted:
+                        // Last tool finishes → pump stops. Guarded so spurious Completed events
+                        // (e.g. from a cancelled tool) can't drive the counter below zero.
+                        if (_activeToolCalls > 0 && --_activeToolCalls == 0)
+                            StopPump();
                         break;
                 }
             }
@@ -316,9 +339,101 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
     private Task SendTextAsync(string json, CancellationToken ct) =>
         _ws.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, ct);
 
-    public ValueTask DisposeAsync()
+    /// <summary>
+    /// Starts the thinking-sound pump on a background task. Idempotent — re-entrant calls while
+    /// a pump is already running are no-ops. Caller must have already incremented the active-tool
+    /// counter; the pump itself doesn't track that.
+    /// </summary>
+    private void StartPump()
     {
+        if (_pumpTask is not null && !_pumpTask.IsCompleted) return;
+        _pumpCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _pumpTask = PumpAsync(_pumpCts.Token);
+    }
+
+    /// <summary>
+    /// Cancels the running pump (if any) without waiting for it to finish — the pump task
+    /// exits on its next yield. We deliberately don't await here to avoid blocking the
+    /// WriteLoop while audio events are queued behind us.
+    /// </summary>
+    private void StopPump()
+    {
+        try { _pumpCts?.Cancel(); }
+        catch { /* CTS may already be disposed */ }
+    }
+
+    /// <summary>
+    /// Streams the embedded thinking clip in a 20ms-frame loop until cancelled. 8 kHz mono A-law
+    /// means 160 bytes per 20ms frame; we wrap from the start of the clip when we hit the end so
+    /// the sound continues for as long as the tool takes. Errors during send are swallowed — the
+    /// pump is best-effort and must not take the call down on its own.
+    /// </summary>
+    private async Task PumpAsync(CancellationToken ct)
+    {
+        const int frameBytes = 160;            // 20ms @ 8 kHz mono A-law
+        var frameInterval = TimeSpan.FromMilliseconds(20);
+        var clip = ThinkingClip.Bytes;
+
+        var offset = 0;
+        var buffer = new byte[frameBytes];
+        var nextSendAt = DateTimeOffset.UtcNow;
+
+        try
+        {
+            while (!ct.IsCancellationRequested && _ws.State == WebSocketState.Open)
+            {
+                // Copy the next frame, wrapping at clip end. Two-segment copy when the
+                // remaining tail is shorter than a full frame.
+                var remaining = clip.Length - offset;
+                if (remaining >= frameBytes)
+                {
+                    Array.Copy(clip, offset, buffer, 0, frameBytes);
+                    offset += frameBytes;
+                }
+                else
+                {
+                    Array.Copy(clip, offset, buffer, 0, remaining);
+                    Array.Copy(clip, 0, buffer, remaining, frameBytes - remaining);
+                    offset = frameBytes - remaining;
+                }
+                if (offset >= clip.Length) offset = 0;
+
+                try { await SendTextAsync(TelnyxMediaFrame.ComposeMedia(buffer), ct); }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Thinking pump send failed; pump exiting");
+                    return;
+                }
+
+                // Pace at 50 Hz — sleep for whatever's left until the next 20ms tick.
+                nextSendAt += frameInterval;
+                var sleep = nextSendAt - DateTimeOffset.UtcNow;
+                if (sleep > TimeSpan.Zero)
+                {
+                    try { await Task.Delay(sleep, ct); }
+                    catch (OperationCanceledException) { return; }
+                }
+                else
+                {
+                    // We're behind schedule (probably the send blocked) — reset baseline so we
+                    // don't burn CPU catching up.
+                    nextSendAt = DateTimeOffset.UtcNow;
+                }
+            }
+        }
+        catch (OperationCanceledException) { /* expected on stop */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopPump();
+        if (_pumpTask is not null)
+        {
+            try { await _pumpTask; }
+            catch { /* pump exits on its own; we just want it gone before dispose */ }
+        }
+        _pumpCts?.Dispose();
         _cts.Dispose();
-        return ValueTask.CompletedTask;
     }
 }
