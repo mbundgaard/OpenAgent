@@ -179,12 +179,19 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         // set_intention, etc.) are reflected on refresh. The captured _conversation reference
         // is a snapshot from session start — stale by the time tools mutate state via the store.
         var live = _agentLogic.GetConversation(_conversation.Id) ?? _conversation;
+        var instructions = _agentLogic.GetSystemPrompt(live.Id, live.Source, voice: true, live.ActiveSkills, live.Intention);
+        // Realtime sessions don't replay conversation history on connect, so the compaction
+        // summary (which holds long-term context for older turns) goes into the system prompt
+        // rather than as a separate user item. Live post-cut messages are seeded separately
+        // by the caller via AddUserMessageAsync.
+        if (!string.IsNullOrWhiteSpace(live.Context))
+            instructions += "\n\n<summary>\n" + live.Context.Trim() + "\n</summary>";
 
         return new RealtimeSessionConfig
         {
             Modalities = ["audio", "text"],
             Voice = _config.Voice ?? "alloy",
-            Instructions = _agentLogic.GetSystemPrompt(live.Id, live.Source, voice: true, live.ActiveSkills, live.Intention),
+            Instructions = instructions,
             InputAudioFormat = _codec,
             OutputAudioFormat = _codec,
             InputAudioTranscription = new InputAudioTranscriptionConfig { Model = "whisper-1" },
@@ -194,11 +201,10 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         };
     }
 
-    public async Task SendUserMessageAsync(string text, CancellationToken ct = default)
+    public async Task AddUserMessageAsync(string text, CancellationToken ct = default)
     {
-        // Inject a user-role message item, then trigger a response. Used to kick the model into
-        // speaking first (e.g. greet on phone call connect). The text is delivered to the realtime
-        // socket only — callers that want it in conversation history must persist separately.
+        // Adds a user-role message to the realtime conversation buffer. No response trigger —
+        // callers that want a reply must call RequestResponseAsync after.
         await SendEventAsync(new ClientEvent
         {
             Type = EventTypes.ConversationItemCreate,
@@ -209,7 +215,10 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
                 content = new[] { new { type = "input_text", text } }
             }
         }, ct);
+    }
 
+    public async Task RequestResponseAsync(CancellationToken ct = default)
+    {
         await SendEventAsync(new ClientEvent { Type = EventTypes.ResponseCreate }, ct);
     }
 

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
 
 namespace OpenAgent.Channel.Telnyx;
@@ -74,14 +75,26 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
             // — required for mid-call system-prompt refresh after activate_skill.
             _provider.VoiceSessionManager.RegisterSession(_pending.ConversationId, _session);
 
+            // Seed the realtime session with prior conversation context. Realtime APIs don't
+            // replay history on connect — we have to send it explicitly. Two pieces:
+            //   1. The compaction summary (long-term context) is already in the system prompt
+            //      via BuildSessionConfig — nothing to do here.
+            //   2. Live post-cut messages are sent as ONE synthetic user item containing a
+            //      transcript blob. AddUserMessageAsync alone does not trigger a response.
+            var transcript = BuildHistoryTranscript(
+                _provider.ConversationStore.GetMessages(_pending.ConversationId));
+            if (transcript is not null)
+                await _session.AddUserMessageAsync(transcript, _cts.Token);
+
             // Kick the model to speak first. The synthetic prompt is realtime-only — it goes to
             // the live session but is NOT persisted to conversation history (it's a one-shot
             // trigger, not a real turn). The model has its name/identity from the system prompt;
             // this just signals "the call connected, please greet them".
             var caller = conversation.DisplayName ?? "unknown";
-            await _session.SendUserMessageAsync(
+            await _session.AddUserMessageAsync(
                 $"[Phone call connected. Caller: {caller}. Please greet them and introduce yourself.]",
                 _cts.Token);
+            await _session.RequestResponseAsync(_cts.Token);
 
             // First loop to finish wins — the other gets cancelled in the finally block.
             await Task.WhenAny(ReadLoopAsync(_cts.Token), WriteLoopAsync(_cts.Token));
@@ -100,6 +113,28 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
                 await _session.DisposeAsync();
             _provider.BridgeRegistry.Unregister(_pending.ConversationId);
         }
+    }
+
+    /// <summary>
+    /// Renders post-cut user/assistant text turns as a single transcript blob, wrapped in
+    /// <c>&lt;conversation_history&gt;</c> tags. Skips tool-call/result messages and any messages
+    /// without text content — those don't survive the cross-modal text-to-voice translation
+    /// cleanly, and the realtime model doesn't need them to follow the gist of recent turns.
+    /// Returns null when there's nothing to seed.
+    /// </summary>
+    private static string? BuildHistoryTranscript(IReadOnlyList<Message> messages)
+    {
+        var lines = new List<string>(messages.Count);
+        foreach (var m in messages)
+        {
+            if (m.Role == "tool") continue;
+            if (string.IsNullOrWhiteSpace(m.Content)) continue;
+            if (m.Role != "user" && m.Role != "assistant") continue;
+            lines.Add($"{m.Role}: {m.Content!.Trim()}");
+        }
+
+        if (lines.Count == 0) return null;
+        return "<conversation_history>\n" + string.Join("\n", lines) + "\n</conversation_history>";
     }
 
     /// <summary>

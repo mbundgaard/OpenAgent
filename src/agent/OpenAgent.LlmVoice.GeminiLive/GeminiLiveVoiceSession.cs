@@ -119,16 +119,31 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
         return Task.CompletedTask;
     }
 
-    public async Task SendUserMessageAsync(string text, CancellationToken ct = default)
+    public async Task AddUserMessageAsync(string text, CancellationToken ct = default)
     {
-        // Push a single user-role turn with turn_complete=true, which both delivers the text and
-        // implicitly triggers a model response (Gemini Live has no separate response.create).
-        // Not persisted to conversation history — the bridge owns that decision.
+        // Push a user-role turn with turn_complete=false so the model treats it as accumulated
+        // input and waits for more before responding. The next turn_complete=true (from real
+        // user audio or from RequestResponseAsync) commits the conversation and triggers a reply.
         await SendMessageAsync(new GeminiClientMessage
         {
             ClientContent = new GeminiClientContent
             {
                 Turns = [new { role = "user", parts = new[] { new { text } } }],
+                TurnComplete = false
+            }
+        }, ct);
+    }
+
+    public async Task RequestResponseAsync(CancellationToken ct = default)
+    {
+        // Empty turns + turn_complete=true commits whatever was previously added via
+        // AddUserMessageAsync and asks the model to respond. Gemini Live has no separate
+        // response.create event — turn_complete is the trigger.
+        await SendMessageAsync(new GeminiClientMessage
+        {
+            ClientContent = new GeminiClientContent
+            {
+                Turns = [],
                 TurnComplete = true
             }
         }, ct);
@@ -189,6 +204,12 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
         // is a snapshot from session start — stale by the time tools mutate state via the store.
         var live = _agentLogic.GetConversation(_conversation.Id) ?? _conversation;
         var systemPrompt = _agentLogic.GetSystemPrompt(live.Id, live.Source, voice: true, live.ActiveSkills, live.Intention);
+        // Realtime sessions don't replay conversation history on connect, so the compaction
+        // summary (which holds long-term context for older turns) goes into the system prompt
+        // rather than as a separate user item. Live post-cut messages are seeded separately
+        // by the caller via AddUserMessageAsync.
+        if (!string.IsNullOrWhiteSpace(live.Context))
+            systemPrompt += "\n\n<summary>\n" + live.Context.Trim() + "\n</summary>";
 
         IReadOnlyList<GeminiToolSet>? tools = null;
         if (_agentLogic.Tools.Count > 0)

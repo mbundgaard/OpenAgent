@@ -45,9 +45,17 @@ public sealed class FakeVoiceSession : IVoiceSession
     }
 
     public List<string> InjectedUserMessages { get; } = new();
-    public Task SendUserMessageAsync(string text, CancellationToken ct = default)
+    public int RequestResponseCount;
+
+    public Task AddUserMessageAsync(string text, CancellationToken ct = default)
     {
         InjectedUserMessages.Add(text);
+        return Task.CompletedTask;
+    }
+
+    public Task RequestResponseAsync(CancellationToken ct = default)
+    {
+        RequestResponseCount++;
         return Task.CompletedTask;
     }
 

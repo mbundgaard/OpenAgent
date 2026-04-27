@@ -48,10 +48,17 @@ public interface IVoiceSession : IAsyncDisposable
     Task RefreshSystemPromptAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Pushes a synthetic user-role message into the live session and triggers a response.
-    /// Used by callers (e.g. the Telnyx bridge on call connect) to make the model speak first
-    /// based on a runtime breadcrumb. The message is NOT persisted to conversation history —
-    /// it's a one-shot trigger for this session only.
+    /// Adds a synthetic user-role message to the live session WITHOUT triggering a response.
+    /// Used to seed the realtime context (e.g. replaying conversation history on connect, or
+    /// injecting an event breadcrumb). Pair with <see cref="RequestResponseAsync"/> when you
+    /// want the model to actually speak.
     /// </summary>
-    Task SendUserMessageAsync(string text, CancellationToken ct = default);
+    Task AddUserMessageAsync(string text, CancellationToken ct = default);
+
+    /// <summary>
+    /// Asks the model to produce a response now, based on whatever is currently in the realtime
+    /// session's conversation buffer. No new user input is implied — call
+    /// <see cref="AddUserMessageAsync"/> first if you want the model to react to something.
+    /// </summary>
+    Task RequestResponseAsync(CancellationToken ct = default);
 }
