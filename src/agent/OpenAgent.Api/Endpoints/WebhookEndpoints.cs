@@ -53,7 +53,7 @@ public static class WebhookEndpoints
                 Modality = MessageModality.Text
             };
 
-            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
+            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.TextProvider);
             var logger = loggerFactory.CreateLogger("WebhookEndpoints");
 
             // Fire-and-forget — intentionally use CancellationToken.None so the completion

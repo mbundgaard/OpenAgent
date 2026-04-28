@@ -28,9 +28,9 @@ public sealed class VoiceSessionManager : IVoiceSessionManager, IAsyncDisposable
             ?? throw new InvalidOperationException($"Conversation '{conversationId}' not found.");
 
         // Resolve provider from conversation; fall back to current AgentConfig if not set
-        var providerKey = string.IsNullOrEmpty(conversation.Provider)
+        var providerKey = string.IsNullOrEmpty(conversation.VoiceProvider)
             ? _agentConfig.VoiceProvider
-            : conversation.Provider;
+            : conversation.VoiceProvider;
 
         var provider = _providerFactory(providerKey);
         var session = await provider.StartSessionAsync(conversation, ct: ct);

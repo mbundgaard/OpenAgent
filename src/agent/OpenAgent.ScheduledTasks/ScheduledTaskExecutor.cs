@@ -63,7 +63,9 @@ internal sealed class ScheduledTaskExecutor(
             task.ConversationId,
             "scheduledtask",
             agentConfig.TextProvider,
-            agentConfig.TextModel);
+            agentConfig.TextModel,
+            agentConfig.VoiceProvider,
+            agentConfig.VoiceModel);
 
         // Build the user message
         var userMessage = new Message
@@ -75,7 +77,7 @@ internal sealed class ScheduledTaskExecutor(
         };
 
         // Resolve the text provider and run completion
-        var provider = textProviderResolver(conversation.Provider);
+        var provider = textProviderResolver(conversation.TextProvider);
         var responseBuilder = new StringBuilder();
 
         await foreach (var evt in provider.CompleteAsync(conversation, userMessage, ct))

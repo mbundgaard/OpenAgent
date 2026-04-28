@@ -8,47 +8,48 @@ namespace OpenAgent.Tests.ConversationTools;
 public class GetAvailableModelsToolTests
 {
     [Fact]
-    public async Task ReturnsModelsGroupedByProvider()
+    public async Task ReturnsTextAndVoiceGrouped()
     {
-        var providers = new ILlmTextProvider[]
+        var configurables = new IConfigurable[]
         {
             new FakeModelProvider("provider-a", ["model-1", "model-2"]),
-            new FakeModelProvider("provider-b", ["model-3"])
+            new FakeModelProvider("provider-b", ["model-3"]),
+            new FakeVoiceModelProvider("voice-a", ["voice-1"])
         };
-        var tool = new GetAvailableModelsTool(() => providers);
+        var tool = new GetAvailableModelsTool(() => configurables);
 
         var result = await tool.ExecuteAsync("{}", "conv-1");
         var doc = JsonDocument.Parse(result);
         var root = doc.RootElement;
 
-        Assert.Equal(2, root.GetArrayLength());
+        var text = root.GetProperty("text");
+        Assert.Equal(2, text.GetArrayLength());
+        Assert.Equal("provider-a", text[0].GetProperty("provider").GetString());
+        Assert.Equal(2, text[0].GetProperty("models").GetArrayLength());
+        Assert.Equal("provider-b", text[1].GetProperty("provider").GetString());
 
-        var first = root[0];
-        Assert.Equal("provider-a", first.GetProperty("provider").GetString());
-        var models = first.GetProperty("models");
-        Assert.Equal(2, models.GetArrayLength());
-        Assert.Equal("model-1", models[0].GetString());
-        Assert.Equal("model-2", models[1].GetString());
-
-        var second = root[1];
-        Assert.Equal("provider-b", second.GetProperty("provider").GetString());
-        Assert.Equal(1, second.GetProperty("models").GetArrayLength());
+        var voice = root.GetProperty("voice");
+        Assert.Equal(1, voice.GetArrayLength());
+        Assert.Equal("voice-a", voice[0].GetProperty("provider").GetString());
+        Assert.Equal("voice-1", voice[0].GetProperty("models")[0].GetString());
     }
 
     [Fact]
     public async Task ExcludesProvidersWithNoModels()
     {
-        var providers = new ILlmTextProvider[]
+        var configurables = new IConfigurable[]
         {
             new FakeModelProvider("configured", ["model-1"]),
             new FakeModelProvider("unconfigured", [])
         };
-        var tool = new GetAvailableModelsTool(() => providers);
+        var tool = new GetAvailableModelsTool(() => configurables);
 
         var result = await tool.ExecuteAsync("{}", "conv-1");
         var doc = JsonDocument.Parse(result);
 
-        Assert.Equal(1, doc.RootElement.GetArrayLength());
-        Assert.Equal("configured", doc.RootElement[0].GetProperty("provider").GetString());
+        var text = doc.RootElement.GetProperty("text");
+        Assert.Equal(1, text.GetArrayLength());
+        Assert.Equal("configured", text[0].GetProperty("provider").GetString());
+        Assert.Equal(0, doc.RootElement.GetProperty("voice").GetArrayLength());
     }
 }

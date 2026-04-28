@@ -13,11 +13,17 @@ public sealed class ConversationListItemResponse
     [JsonPropertyName("source")]
     public required string Source { get; init; }
 
-    [JsonPropertyName("provider")]
-    public required string Provider { get; init; }
+    [JsonPropertyName("text_provider")]
+    public required string TextProvider { get; init; }
 
-    [JsonPropertyName("model")]
-    public required string Model { get; init; }
+    [JsonPropertyName("text_model")]
+    public required string TextModel { get; init; }
+
+    [JsonPropertyName("voice_provider")]
+    public required string VoiceProvider { get; init; }
+
+    [JsonPropertyName("voice_model")]
+    public required string VoiceModel { get; init; }
 
     [JsonPropertyName("created_at")]
     public required DateTimeOffset CreatedAt { get; init; }
@@ -62,11 +68,17 @@ public sealed class ConversationDetailResponse
     [JsonPropertyName("source")]
     public required string Source { get; init; }
 
-    [JsonPropertyName("provider")]
-    public required string Provider { get; init; }
+    [JsonPropertyName("text_provider")]
+    public required string TextProvider { get; init; }
 
-    [JsonPropertyName("model")]
-    public required string Model { get; init; }
+    [JsonPropertyName("text_model")]
+    public required string TextModel { get; init; }
+
+    [JsonPropertyName("voice_provider")]
+    public required string VoiceProvider { get; init; }
+
+    [JsonPropertyName("voice_model")]
+    public required string VoiceModel { get; init; }
 
     [JsonPropertyName("created_at")]
     public required DateTimeOffset CreatedAt { get; init; }
@@ -131,11 +143,17 @@ public sealed class UpdateConversationRequest
     [JsonPropertyName("source")]
     public string? Source { get; init; }
 
-    [JsonPropertyName("provider")]
-    public string? Provider { get; init; }
+    [JsonPropertyName("text_provider")]
+    public string? TextProvider { get; init; }
 
-    [JsonPropertyName("model")]
-    public string? Model { get; init; }
+    [JsonPropertyName("text_model")]
+    public string? TextModel { get; init; }
+
+    [JsonPropertyName("voice_provider")]
+    public string? VoiceProvider { get; init; }
+
+    [JsonPropertyName("voice_model")]
+    public string? VoiceModel { get; init; }
 
     [JsonPropertyName("channel_chat_id")]
     public string? ChannelChatId { get; init; }

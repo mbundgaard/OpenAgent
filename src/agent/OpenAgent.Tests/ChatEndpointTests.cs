@@ -83,7 +83,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        var conv = store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model");
+        var conv = store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model", "azure-openai-text", "test-model");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 
@@ -105,7 +105,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
-        var conv = store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model");
+        var conv = store.GetOrCreate(conversationId, "app", "azure-openai-text", "test-model", "azure-openai-text", "test-model");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 

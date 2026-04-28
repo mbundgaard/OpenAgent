@@ -293,7 +293,7 @@ public class TelegramMessageHandlerTests
 
         // Pre-create conversation with MentionFilter=[Dex]
         var conv = store.FindOrCreateChannelConversation("telegram", ConnectionId, ChatId.ToString(),
-            "telegram", "azure-openai-text", "gpt-5.2-chat");
+            "telegram", "azure-openai-text", "gpt-5.2-chat", "azure-openai-voice", "gpt-realtime");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 
@@ -315,7 +315,7 @@ public class TelegramMessageHandlerTests
         var sender = new FakeTelegramSender();
 
         var conv = store.FindOrCreateChannelConversation("telegram", ConnectionId, ChatId.ToString(),
-            "telegram", "azure-openai-text", "gpt-5.2-chat");
+            "telegram", "azure-openai-text", "gpt-5.2-chat", "azure-openai-voice", "gpt-realtime");
         conv.MentionFilter = ["Dex"];
         store.Update(conv);
 

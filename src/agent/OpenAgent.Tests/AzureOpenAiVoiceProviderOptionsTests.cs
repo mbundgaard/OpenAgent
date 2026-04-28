@@ -19,8 +19,8 @@ public class AzureOpenAiVoiceProviderOptionsTests
         {
             Id = "c1",
             Source = "test",
-            Provider = "azure-openai-voice",
-            Model = "gpt-realtime"
+            TextProvider = "azure-openai-voice", VoiceProvider = "azure-openai-voice",
+            TextModel = "gpt-realtime", VoiceModel = "gpt-realtime"
         };
 
         var options = new VoiceSessionOptions("g711_ulaw", 8000);
@@ -47,15 +47,14 @@ public class AzureOpenAiVoiceProviderOptionsTests
         var config = new AzureRealtimeConfig
         {
             ApiKey = "k",
-            Endpoint = "https://x",
-            Models = ["gpt-realtime"]
+            Endpoint = "https://x"
         };
         var conversation = new Conversation
         {
             Id = "c1",
             Source = "t",
-            Provider = "azure-openai-voice",
-            Model = "gpt-realtime"
+            TextProvider = "azure-openai-voice", VoiceProvider = "azure-openai-voice",
+            TextModel = "gpt-realtime", VoiceModel = "gpt-realtime"
         };
         var bad = new VoiceSessionOptions("g711_ulaw", 16000); // wrong rate for codec
 

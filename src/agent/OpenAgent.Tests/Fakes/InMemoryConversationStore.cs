@@ -20,7 +20,13 @@ public sealed class InMemoryConversationStore : IConversationStore
     public IReadOnlyList<ProviderConfigField> ConfigFields => [];
     public void Configure(JsonElement configuration) { }
 
-    public Conversation GetOrCreate(string conversationId, string source, string provider, string model)
+    public Conversation GetOrCreate(
+        string conversationId,
+        string source,
+        string textProvider,
+        string textModel,
+        string voiceProvider,
+        string voiceModel)
     {
         if (_conversations.TryGetValue(conversationId, out var existing))
             return existing;
@@ -29,8 +35,10 @@ public sealed class InMemoryConversationStore : IConversationStore
         {
             Id = conversationId,
             Source = source,
-            Provider = provider,
-            Model = model
+            TextProvider = textProvider,
+            TextModel = textModel,
+            VoiceProvider = voiceProvider,
+            VoiceModel = voiceModel
         };
 
         _conversations[conversationId] = conversation;
@@ -49,8 +57,10 @@ public sealed class InMemoryConversationStore : IConversationStore
         string connectionId,
         string channelChatId,
         string source,
-        string provider,
-        string model)
+        string textProvider,
+        string textModel,
+        string voiceProvider,
+        string voiceModel)
     {
         var existing = FindChannelConversation(channelType, connectionId, channelChatId);
         if (existing is not null)
@@ -60,8 +70,10 @@ public sealed class InMemoryConversationStore : IConversationStore
         {
             Id = Guid.NewGuid().ToString(),
             Source = source,
-            Provider = provider,
-            Model = model,
+            TextProvider = textProvider,
+            TextModel = textModel,
+            VoiceProvider = voiceProvider,
+            VoiceModel = voiceModel,
             ChannelType = channelType,
             ConnectionId = connectionId,
             ChannelChatId = channelChatId

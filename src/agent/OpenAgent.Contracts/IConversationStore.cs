@@ -7,8 +7,18 @@ namespace OpenAgent.Contracts;
 /// </summary>
 public interface IConversationStore : IConfigurable
 {
-    /// <summary>Returns the existing conversation or creates a new one stamped with provider and model.</summary>
-    Conversation GetOrCreate(string conversationId, string source, string provider, string model);
+    /// <summary>
+    /// Returns the existing conversation or creates a new one stamped with text and voice
+    /// provider/model pairs. New conversations carry both pairs so the same conversation can
+    /// later be invoked in either modality without a separate setup step.
+    /// </summary>
+    Conversation GetOrCreate(
+        string conversationId,
+        string source,
+        string textProvider,
+        string textModel,
+        string voiceProvider,
+        string voiceModel);
 
     /// <summary>
     /// Looks up a conversation bound to a specific external chat, or returns null if not found.
@@ -26,8 +36,10 @@ public interface IConversationStore : IConfigurable
         string connectionId,
         string channelChatId,
         string source,
-        string provider,
-        string model);
+        string textProvider,
+        string textModel,
+        string voiceProvider,
+        string voiceModel);
 
     /// <summary>Returns all conversations.</summary>
     IReadOnlyList<Conversation> GetAll();

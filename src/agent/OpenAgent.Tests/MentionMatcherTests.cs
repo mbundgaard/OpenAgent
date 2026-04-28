@@ -8,8 +8,8 @@ public class MentionMatcherTests
     {
         Id = "c1",
         Source = "test",
-        Provider = "p",
-        Model = "m",
+        TextProvider = "p", VoiceProvider = "p",
+        TextModel = "m", VoiceModel = "m",
         MentionFilter = mentionFilter
     };
 

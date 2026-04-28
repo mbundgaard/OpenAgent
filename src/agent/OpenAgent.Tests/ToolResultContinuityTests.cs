@@ -14,7 +14,7 @@ public class ToolResultContinuityTests
     public void Full_tool_result_survives_across_turns_via_store()
     {
         var store = new InMemoryConversationStore();
-        store.GetOrCreate("conv1", "test", "p", "m");
+        store.GetOrCreate("conv1", "test", "p", "m", "p", "m");
 
         // Turn 1: tool result persisted with full content
         const string fullResult = "Line 1\nLine 2\nLine 3\n(this is the full tool output)";
@@ -45,7 +45,7 @@ public class ToolResultContinuityTests
     public void GetMessagesByIds_with_blobs_returns_full_content()
     {
         var store = new InMemoryConversationStore();
-        store.GetOrCreate("conv1", "test", "p", "m");
+        store.GetOrCreate("conv1", "test", "p", "m", "p", "m");
 
         const string fullResult = "complete tool payload";
         store.AddMessage("conv1", new Message

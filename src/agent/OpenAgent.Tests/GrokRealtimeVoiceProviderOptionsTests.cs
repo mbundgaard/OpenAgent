@@ -19,8 +19,8 @@ public class GrokRealtimeVoiceProviderOptionsTests
         {
             Id = "c1",
             Source = "test",
-            Provider = "grok-realtime-voice",
-            Model = "grok-3-realtime"
+            TextProvider = "grok-realtime-voice", VoiceProvider = "grok-realtime-voice",
+            TextModel = "grok-3-realtime", VoiceModel = "grok-3-realtime"
         };
 
         var options = new VoiceSessionOptions("g711_ulaw", 8000);
@@ -53,8 +53,8 @@ public class GrokRealtimeVoiceProviderOptionsTests
         {
             Id = "c1",
             Source = "t",
-            Provider = "grok-realtime-voice",
-            Model = "grok-3-realtime"
+            TextProvider = "grok-realtime-voice", VoiceProvider = "grok-realtime-voice",
+            TextModel = "grok-3-realtime", VoiceModel = "grok-3-realtime"
         };
         var bad = new VoiceSessionOptions("g711_ulaw", 16000); // wrong rate for codec
 

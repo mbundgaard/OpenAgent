@@ -22,7 +22,11 @@ public static class ConversationEndpoints
         group.MapPost("/", (IConversationStore store, AgentConfig agentConfig) =>
         {
             var conversationId = Guid.NewGuid().ToString();
-            var conversation = store.GetOrCreate(conversationId, "app", agentConfig.TextProvider, agentConfig.TextModel);
+            var conversation = store.GetOrCreate(
+                conversationId,
+                "app",
+                agentConfig.TextProvider, agentConfig.TextModel,
+                agentConfig.VoiceProvider, agentConfig.VoiceModel);
             return Results.Ok(new { id = conversation.Id });
         });
 
@@ -33,8 +37,10 @@ public static class ConversationEndpoints
             {
                 Id = c.Id,
                 Source = c.Source,
-                Provider = c.Provider,
-                Model = c.Model,
+                TextProvider = c.TextProvider,
+                TextModel = c.TextModel,
+                VoiceProvider = c.VoiceProvider,
+                VoiceModel = c.VoiceModel,
                 CreatedAt = c.CreatedAt,
                 TotalPromptTokens = c.TotalPromptTokens,
                 TotalCompletionTokens = c.TotalCompletionTokens,
@@ -57,8 +63,10 @@ public static class ConversationEndpoints
             {
                 Id = conversation.Id,
                 Source = conversation.Source,
-                Provider = conversation.Provider,
-                Model = conversation.Model,
+                TextProvider = conversation.TextProvider,
+                TextModel = conversation.TextModel,
+                VoiceProvider = conversation.VoiceProvider,
+                VoiceModel = conversation.VoiceModel,
                 CreatedAt = conversation.CreatedAt,
                 TotalPromptTokens = conversation.TotalPromptTokens,
                 TotalCompletionTokens = conversation.TotalCompletionTokens,
@@ -98,10 +106,14 @@ public static class ConversationEndpoints
 
             if (request.Source is not null)
                 conversation.Source = request.Source;
-            if (request.Provider is not null)
-                conversation.Provider = request.Provider;
-            if (request.Model is not null)
-                conversation.Model = request.Model;
+            if (request.TextProvider is not null)
+                conversation.TextProvider = request.TextProvider;
+            if (request.TextModel is not null)
+                conversation.TextModel = request.TextModel;
+            if (request.VoiceProvider is not null)
+                conversation.VoiceProvider = request.VoiceProvider;
+            if (request.VoiceModel is not null)
+                conversation.VoiceModel = request.VoiceModel;
             if (request.ChannelChatId is not null)
                 conversation.ChannelChatId = request.ChannelChatId;
             // Empty string explicitly clears the intention; null leaves it unchanged.
@@ -117,8 +129,10 @@ public static class ConversationEndpoints
             {
                 Id = conversation.Id,
                 Source = conversation.Source,
-                Provider = conversation.Provider,
-                Model = conversation.Model,
+                TextProvider = conversation.TextProvider,
+                TextModel = conversation.TextModel,
+                VoiceProvider = conversation.VoiceProvider,
+                VoiceModel = conversation.VoiceModel,
                 CreatedAt = conversation.CreatedAt,
                 TotalPromptTokens = conversation.TotalPromptTokens,
                 TotalCompletionTokens = conversation.TotalCompletionTokens,

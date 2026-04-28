@@ -102,11 +102,11 @@ public sealed class TelegramMessageHandler
         }
 
         // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
-        var providerKey = _agentConfig.TextProvider;
-        var model = _agentConfig.TextModel;
         var conversation = _store.FindOrCreateChannelConversation(
             "telegram", _connectionId, chatId.ToString(),
-            "telegram", providerKey, model);
+            "telegram",
+            _agentConfig.TextProvider, _agentConfig.TextModel,
+            _agentConfig.VoiceProvider, _agentConfig.VoiceModel);
 
         // Refresh display name from latest Telegram metadata (catches renames).
         // Only write if changed — we already have the current value in memory.
@@ -137,7 +137,7 @@ public sealed class TelegramMessageHandler
         _logger?.LogInformation("Message from user {UserId} in chat {ChatId}: {Text}", userId, chatId, userText);
 
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
-        var textProvider = _textProviderResolver(conversation.Provider);
+        var textProvider = _textProviderResolver(conversation.TextProvider);
 
         // Build user message with Telegram message ID and optional reply-to reference
         var userMessage = new Models.Conversations.Message
@@ -202,11 +202,11 @@ public sealed class TelegramMessageHandler
         }
 
         // Create the conversation and lock new conversations
-        var providerKey = _agentConfig.TextProvider;
-        var model = _agentConfig.TextModel;
         var created = _store.FindOrCreateChannelConversation(
             "telegram", _connectionId, chatId.ToString(),
-            "telegram", providerKey, model);
+            "telegram",
+            _agentConfig.TextProvider, _agentConfig.TextModel,
+            _agentConfig.VoiceProvider, _agentConfig.VoiceModel);
         var groupDisplayName = BuildGroupDisplayName(groupMsg);
         if (groupDisplayName != created.DisplayName)
             _store.UpdateDisplayName(created.Id, groupDisplayName);

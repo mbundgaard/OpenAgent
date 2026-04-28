@@ -123,7 +123,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         // rather than relying on a global constant.
         if (conversation.ContextWindowTokens is null)
         {
-            var window = GetContextWindow(conversation.Model);
+            var window = GetContextWindow(conversation.TextModel);
             if (window is not null)
                 conversation.ContextWindowTokens = window;
         }
@@ -136,7 +136,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         var systemBlocks = BuildSystemBlocks(systemPrompt);
         var messages = BuildMessages(conversation);
         var tools = BuildTools();
-        var useThinking = conversation.Model.Contains("4-6", StringComparison.OrdinalIgnoreCase);
+        var useThinking = conversation.TextModel.Contains("4-6", StringComparison.OrdinalIgnoreCase);
 
         // Completion loop (handles tool call rounds, up to 10)
         const int maxToolRounds = 10;
@@ -149,7 +149,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
             {
                 var request = new AnthropicMessagesRequest
                 {
-                    Model = conversation.Model,
+                    Model = conversation.TextModel,
                     MaxTokens = _config.MaxTokens,
                     System = systemBlocks,
                     Messages = messages,

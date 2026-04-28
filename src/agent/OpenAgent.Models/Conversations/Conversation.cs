@@ -12,13 +12,21 @@ public sealed class Conversation
     [JsonPropertyName("source")]
     public required string Source { get; set; }
 
-    /// <summary>Provider key used for this conversation (e.g. "azure-openai-text").</summary>
-    [JsonPropertyName("provider")]
-    public required string Provider { get; set; }
+    /// <summary>Text-LLM provider key used for this conversation (e.g. "azure-openai-text").</summary>
+    [JsonPropertyName("text_provider")]
+    public required string TextProvider { get; set; }
 
-    /// <summary>Model/deployment used for this conversation (e.g. "gpt-5.2-chat").</summary>
-    [JsonPropertyName("model")]
-    public required string Model { get; set; }
+    /// <summary>Text-LLM model/deployment used for this conversation (e.g. "gpt-5.2-chat").</summary>
+    [JsonPropertyName("text_model")]
+    public required string TextModel { get; set; }
+
+    /// <summary>Voice-LLM provider key used for this conversation (e.g. "azure-openai-voice").</summary>
+    [JsonPropertyName("voice_provider")]
+    public required string VoiceProvider { get; set; }
+
+    /// <summary>Voice-LLM model/deployment used for this conversation (e.g. "gpt-realtime").</summary>
+    [JsonPropertyName("voice_model")]
+    public required string VoiceModel { get; set; }
 
     [JsonPropertyName("created_at")]
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;

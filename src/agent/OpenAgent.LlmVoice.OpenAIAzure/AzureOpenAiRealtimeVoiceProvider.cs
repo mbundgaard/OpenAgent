@@ -20,17 +20,20 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
 
     public string Key => ProviderKey;
 
+    // Hardcoded deployment-name list — these are the Azure deployments this user maintains.
+    // Update here when a new deployment is added (and redeploy the agent).
+    private static readonly string[] DefaultModels = ["gpt-realtime"];
+
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
         new() { Key = "apiKey", Label = "API Key", Type = "Secret", Required = true },
         new() { Key = "endpoint", Label = "Endpoint", Type = "String", Required = true },
-        new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true },
         new() { Key = "apiVersion", Label = "API Version", Type = "String", DefaultValue = "2025-04-01-preview" },
         new() { Key = "voice", Label = "Voice", Type = "Enum", DefaultValue = "alloy",
             Options = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"] }
     ];
 
-    public IReadOnlyList<string> Models => _config?.Models ?? [];
+    public IReadOnlyList<string> Models => DefaultModels;
 
     public void Configure(JsonElement configuration)
     {
@@ -43,14 +46,8 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
         if (string.IsNullOrWhiteSpace(_config.Endpoint))
             throw new InvalidOperationException("endpoint is required.");
 
-        // Parse models from comma-separated string if provided as a single string
-        if (configuration.TryGetProperty("models", out var modelsProp) && modelsProp.ValueKind == JsonValueKind.String)
-        {
-            _config.Models = modelsProp.GetString()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        }
-
         logger.LogInformation("Voice provider configured with {ModelCount} models at {Endpoint}",
-            _config.Models.Length, _config.Endpoint);
+            DefaultModels.Length, _config.Endpoint);
     }
 
     public async Task<IVoiceSession> StartSessionAsync(
@@ -62,7 +59,7 @@ public sealed class AzureOpenAiRealtimeVoiceProvider(IAgentLogic agentLogic, ILo
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
         logger.LogDebug("Starting voice session for conversation {ConversationId} with model {Model}",
-            conversation.Id, conversation.Model);
+            conversation.Id, conversation.VoiceModel);
         var session = new AzureOpenAiVoiceSession(_config, conversation, agentLogic, options, logger);
         await session.ConnectAsync(ct);
         logger.LogInformation("Voice session {SessionId} started for conversation {ConversationId}",

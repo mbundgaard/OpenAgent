@@ -330,7 +330,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
 
         if (conversation.ContextWindowTokens is null)
         {
-            var window = GetContextWindow(conversation.Model);
+            var window = GetContextWindow(conversation.TextModel);
             if (window is not null)
                 conversation.ContextWindowTokens = window;
         }
@@ -347,7 +347,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
         {
             var requestBody = new
             {
-                model = conversation.Model,
+                model = conversation.TextModel,
                 store = false,
                 stream = true,
                 instructions = agentLogic.GetSystemPrompt(conversation.Id, conversation.Source, voice: false, conversation.ActiveSkills, conversation.Intention),

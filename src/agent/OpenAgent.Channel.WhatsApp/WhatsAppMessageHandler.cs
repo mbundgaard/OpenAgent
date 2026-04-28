@@ -90,11 +90,11 @@ public sealed class WhatsAppMessageHandler
         }
 
         // Get or create conversation — new conversations use agent config, existing ones keep their provider/model
-        var providerKey = _agentConfig.TextProvider;
-        var model = _agentConfig.TextModel;
         var conversation = _store.FindOrCreateChannelConversation(
             "whatsapp", _connectionId, chatId,
-            "whatsapp", providerKey, model);
+            "whatsapp",
+            _agentConfig.TextProvider, _agentConfig.TextModel,
+            _agentConfig.VoiceProvider, _agentConfig.VoiceModel);
 
         // Mention filter — drop message silently if no mention matches
         if (!MentionMatcher.ShouldAccept(conversation, message.Text))
@@ -116,7 +116,7 @@ public sealed class WhatsAppMessageHandler
         _logger?.LogInformation("Message from chat {ChatId}: {Text}", chatId, message.Text);
 
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
-        var textProvider = _textProviderResolver(conversation.Provider);
+        var textProvider = _textProviderResolver(conversation.TextProvider);
 
         // For group messages, prefix user text with sender name
         var userText = message.Text;

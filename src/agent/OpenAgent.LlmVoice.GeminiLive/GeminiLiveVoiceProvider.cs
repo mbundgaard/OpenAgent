@@ -76,7 +76,7 @@ public sealed class GeminiLiveVoiceProvider(IAgentLogic agentLogic, ILogger<Gemi
                 nameof(options));
 
         logger.LogDebug("Starting Gemini Live session for conversation {ConversationId} with model {Model}",
-            conversation.Id, conversation.Model);
+            conversation.Id, conversation.VoiceModel);
 
         var session = new GeminiLiveVoiceSession(_config, conversation, agentLogic, logger);
         await session.ConnectAsync(ct);

@@ -31,7 +31,7 @@ public class SkillIntegrationTests : IDisposable
     public async Task Full_lifecycle_activate_appears_in_prompt_deactivate_removed()
     {
         CreateSkill("git-workflow", "Manage git branches and PRs.", "# Git Workflow\n\n1. Create branch\n2. Make changes\n3. Open PR");
-        _store.GetOrCreate("conv1", "test", "test", "test");
+        _store.GetOrCreate("conv1", "test", "test", "test", "test", "test");
 
         var catalog = new SkillCatalog(_tempDir);
         var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);

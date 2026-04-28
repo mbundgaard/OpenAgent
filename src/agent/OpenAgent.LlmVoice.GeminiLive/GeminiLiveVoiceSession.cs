@@ -232,7 +232,7 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
         {
             Setup = new GeminiSetup
             {
-                Model = _conversation.Model,
+                Model = _conversation.VoiceModel,
                 GenerationConfig = new GeminiGenerationConfig
                 {
                     ResponseModalities = ["AUDIO"],

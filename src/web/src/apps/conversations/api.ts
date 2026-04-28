@@ -3,8 +3,10 @@ import { apiFetch } from '../../auth/api';
 export interface ConversationSummary {
   id: string;
   source: string;
-  provider: string;
-  model: string;
+  text_provider: string;
+  text_model: string;
+  voice_provider: string;
+  voice_model: string;
   created_at: string;
   total_prompt_tokens: number;
   total_completion_tokens: number;
@@ -61,8 +63,10 @@ export async function getMessages(conversationId: string): Promise<ConversationM
 
 export async function updateConversation(conversationId: string, data: {
   source?: string;
-  provider?: string;
-  model?: string;
+  text_provider?: string;
+  text_model?: string;
+  voice_provider?: string;
+  voice_model?: string;
   intention?: string;
 }): Promise<ConversationDetail> {
   const res = await apiFetch(`/api/conversations/${conversationId}`, {

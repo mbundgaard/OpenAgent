@@ -7,8 +7,6 @@ public sealed class AzureRealtimeConfig
 {
     public string ApiKey { get; set; } = "";
     public string Endpoint { get; set; } = "";
-    [System.Text.Json.Serialization.JsonIgnore]
-    public string[] Models { get; set; } = [];
     public string ApiVersion { get; set; } = "2025-04-01-preview";
     public string? Voice { get; set; }
 }

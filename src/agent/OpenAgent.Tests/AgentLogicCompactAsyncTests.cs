@@ -58,9 +58,9 @@ public class AgentLogicCompactAsyncTests
         public void Configure(JsonElement configuration) { }
 
         // Everything else throws — these tests don't exercise them.
-        public Conversation GetOrCreate(string conversationId, string source, string provider, string model) => throw new NotImplementedException();
+        public Conversation GetOrCreate(string conversationId, string source, string textProvider, string textModel, string voiceProvider, string voiceModel) => throw new NotImplementedException();
         public Conversation? FindChannelConversation(string channelType, string connectionId, string channelChatId) => throw new NotImplementedException();
-        public Conversation FindOrCreateChannelConversation(string channelType, string connectionId, string channelChatId, string source, string provider, string model) => throw new NotImplementedException();
+        public Conversation FindOrCreateChannelConversation(string channelType, string connectionId, string channelChatId, string source, string textProvider, string textModel, string voiceProvider, string voiceModel) => throw new NotImplementedException();
         public IReadOnlyList<Conversation> GetAll() => throw new NotImplementedException();
         public Conversation? Get(string conversationId) => throw new NotImplementedException();
         public void Update(Conversation conversation) => throw new NotImplementedException();

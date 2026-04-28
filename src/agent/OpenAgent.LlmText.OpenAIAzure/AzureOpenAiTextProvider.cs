@@ -19,15 +19,18 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
     public string Key => ProviderKey;
 
+    // Hardcoded deployment-name list — these are the Azure deployments this user maintains.
+    // Update here when a new deployment is added (and redeploy the agent).
+    private static readonly string[] DefaultModels = ["gpt-5.2-chat"];
+
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
         new() { Key = "apiKey", Label = "API Key", Type = "Secret", Required = true },
         new() { Key = "endpoint", Label = "Endpoint", Type = "String", Required = true },
-        new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true },
         new() { Key = "apiVersion", Label = "API Version", Type = "String", DefaultValue = "2025-04-01-preview" }
     ];
 
-    public IReadOnlyList<string> Models => _config?.Models ?? [];
+    public IReadOnlyList<string> Models => DefaultModels;
 
     public void Configure(JsonElement configuration)
     {
@@ -40,12 +43,6 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         if (string.IsNullOrWhiteSpace(_config.Endpoint))
             throw new InvalidOperationException("endpoint is required.");
 
-        // Parse models from comma-separated string if provided as a single string
-        if (configuration.TryGetProperty("models", out var modelsProp) && modelsProp.ValueKind == JsonValueKind.String)
-        {
-            _config.Models = modelsProp.GetString()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        }
-
         var baseUri = _config.Endpoint.TrimEnd('/');
         _httpClient?.Dispose();
         _httpClient = new HttpClient
@@ -55,7 +52,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         _httpClient.DefaultRequestHeaders.Add("api-key", _config.ApiKey);
 
         logger.LogInformation("Text provider configured with {ModelCount} models at {Endpoint}",
-            _config.Models.Length, _config.Endpoint);
+            DefaultModels.Length, _config.Endpoint);
     }
 
     public void Dispose() => _httpClient?.Dispose();
@@ -99,7 +96,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
         // rather than relying on a global constant.
         if (conversation.ContextWindowTokens is null)
         {
-            var window = GetContextWindow(conversation.Model);
+            var window = GetContextWindow(conversation.TextModel);
             if (window is not null)
                 conversation.ContextWindowTokens = window;
         }
@@ -117,7 +114,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
             StreamOptions = new StreamOptions { IncludeUsage = true }
         };
 
-        var url = $"openai/deployments/{conversation.Model}/chat/completions?api-version={_config.ApiVersion}";
+        var url = $"openai/deployments/{conversation.TextModel}/chat/completions?api-version={_config.ApiVersion}";
 
         // Completion loop (handles tool calls across streaming rounds)
         const int maxToolRounds = 10;

@@ -36,13 +36,15 @@ public static class ChatEndpoints
             IServiceProvider services,
             CancellationToken ct) =>
         {
-            var conversation = store.GetOrCreate(conversationId, "app", agentConfig.TextProvider, agentConfig.TextModel);
+            var conversation = store.GetOrCreate(conversationId, "app",
+                agentConfig.TextProvider, agentConfig.TextModel,
+                agentConfig.VoiceProvider, agentConfig.VoiceModel);
 
             // Drop messages that don't mention any required name
             if (!MentionMatcher.ShouldAccept(conversation, request.Content ?? string.Empty))
                 return Results.Json(Array.Empty<object>(), JsonOptions);
 
-            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.Provider);
+            var textProvider = services.GetRequiredKeyedService<ILlmTextProvider>(conversation.TextProvider);
 
             var userMessage = new Message
             {

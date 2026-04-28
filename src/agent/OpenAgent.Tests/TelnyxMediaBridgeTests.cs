@@ -320,12 +320,14 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
             connectionId: TestConnectionId,
             channelChatId: "+4520000000",
             source: "telnyx",
-            provider: "azure-openai-voice",
-            model: "test-model");
+            textProvider: "azure-openai-text",
+            textModel: "test-model",
+            voiceProvider: "azure-openai-voice",
+            voiceModel: "test-model");
 
         // Pre-register the pending bridge so the streaming endpoint can dequeue it.
         var pendingCts = new CancellationTokenSource();
-        var pending = new PendingBridge(callControlId, conversation.Id, conversation.Provider, pendingCts);
+        var pending = new PendingBridge(callControlId, conversation.Id, conversation.VoiceProvider, pendingCts);
         Assert.True(telnyxProvider.TryRegisterPending(callControlId, pending));
 
         var wsClient = _factory.Server.CreateWebSocketClient();

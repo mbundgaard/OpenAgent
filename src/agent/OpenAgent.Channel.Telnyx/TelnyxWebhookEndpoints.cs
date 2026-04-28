@@ -121,8 +121,10 @@ public static class TelnyxWebhookEndpoints
             connectionId: provider.ConnectionId,
             channelChatId: from,
             source: "telnyx",
-            provider: provider.AgentConfig.VoiceProvider,
-            model: provider.AgentConfig.VoiceModel);
+            textProvider: provider.AgentConfig.TextProvider,
+            textModel: provider.AgentConfig.TextModel,
+            voiceProvider: provider.AgentConfig.VoiceProvider,
+            voiceModel: provider.AgentConfig.VoiceModel);
 
         if (!string.Equals(conv.DisplayName, from, StringComparison.Ordinal))
             provider.ConversationStore.UpdateDisplayName(conv.Id, from);
@@ -132,7 +134,7 @@ public static class TelnyxWebhookEndpoints
 
         // Register pending bridge BEFORE issuing streaming_start so the WS endpoint can pick it up
         var cts = new CancellationTokenSource();
-        var pending = new PendingBridge(callControlId, conv.Id, conv.Provider, cts);
+        var pending = new PendingBridge(callControlId, conv.Id, conv.VoiceProvider, cts);
         if (!provider.TryRegisterPending(callControlId, pending))
             return Results.Ok(); // duplicate event, ignore
 

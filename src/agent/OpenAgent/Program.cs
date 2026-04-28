@@ -133,11 +133,14 @@ builder.Services.AddSingleton<IToolHandler, TelnyxToolHandler>();
 builder.Services.AddSingleton<IToolHandler>(sp =>
     new ConversationToolHandler(
         sp.GetRequiredService<IConversationStore>(),
-        () => new ILlmTextProvider[]
+        () => new IConfigurable[]
         {
             sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey),
             sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey),
-            sp.GetRequiredKeyedService<ILlmTextProvider>(OpenAiSubscriptionTextProvider.ProviderKey)
+            sp.GetRequiredKeyedService<ILlmTextProvider>(OpenAiSubscriptionTextProvider.ProviderKey),
+            sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey),
+            sp.GetRequiredKeyedService<ILlmVoiceProvider>(GrokRealtimeVoiceProvider.ProviderKey),
+            sp.GetRequiredKeyedService<ILlmVoiceProvider>(GeminiLiveVoiceProvider.ProviderKey)
         }));
 
 builder.Services.AddScheduledTasks(environment.DataPath);

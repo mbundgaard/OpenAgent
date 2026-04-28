@@ -28,10 +28,13 @@ export function ConversationsApp() {
   // Editing state
   const [editing, setEditing] = useState(false);
   const [editSource, setEditSource] = useState('');
-  const [editProvider, setEditProvider] = useState('');
-  const [editModel, setEditModel] = useState('');
+  const [editTextProvider, setEditTextProvider] = useState('');
+  const [editTextModel, setEditTextModel] = useState('');
+  const [editVoiceProvider, setEditVoiceProvider] = useState('');
+  const [editVoiceModel, setEditVoiceModel] = useState('');
   const [editIntention, setEditIntention] = useState('');
-  const [providers, setProviders] = useState<string[]>([]);
+  const [textProviders, setTextProviders] = useState<string[]>([]);
+  const [voiceProviders, setVoiceProviders] = useState<string[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
   const [saving, setSaving] = useState(false);
 
@@ -45,16 +48,17 @@ export function ConversationsApp() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Load provider models for editing
+  // Load provider models for editing — filter by capability so text providers
+  // only appear in the text dropdown and voice providers only in the voice dropdown.
   useEffect(() => {
     listProviders().then(async (infos) => {
-      const keys = infos.map(p => p.key);
-      setProviders(keys.filter(k => k !== 'agent'));
+      setTextProviders(infos.filter(p => p.capabilities.includes('text')).map(p => p.key));
+      setVoiceProviders(infos.filter(p => p.capabilities.includes('voice')).map(p => p.key));
       const modelsMap: Record<string, string[]> = {};
-      for (const pk of keys) {
+      for (const info of infos) {
         try {
-          const models = await getProviderModels(pk);
-          if (models.length > 0) modelsMap[pk] = models;
+          const models = await getProviderModels(info.key);
+          if (models.length > 0) modelsMap[info.key] = models;
         } catch { /* no models */ }
       }
       setModelsByProvider(modelsMap);
@@ -82,8 +86,10 @@ export function ConversationsApp() {
   const startEditing = () => {
     if (!detail) return;
     setEditSource(detail.source);
-    setEditProvider(detail.provider);
-    setEditModel(detail.model);
+    setEditTextProvider(detail.text_provider);
+    setEditTextModel(detail.text_model);
+    setEditVoiceProvider(detail.voice_provider);
+    setEditVoiceModel(detail.voice_model);
     setEditIntention(detail.intention ?? '');
     setEditing(true);
   };
@@ -97,8 +103,10 @@ export function ConversationsApp() {
     const nextIntention = editIntention.trim();
     const updated = await updateConversation(selected, {
       source: editSource !== detail.source ? editSource : undefined,
-      provider: editProvider !== detail.provider ? editProvider : undefined,
-      model: editModel !== detail.model ? editModel : undefined,
+      text_provider: editTextProvider !== detail.text_provider ? editTextProvider : undefined,
+      text_model: editTextModel !== detail.text_model ? editTextModel : undefined,
+      voice_provider: editVoiceProvider !== detail.voice_provider ? editVoiceProvider : undefined,
+      voice_model: editVoiceModel !== detail.voice_model ? editVoiceModel : undefined,
       // Empty string clears the intention; undefined leaves it unchanged.
       intention: nextIntention !== currentIntention ? nextIntention : undefined,
     });
@@ -108,7 +116,8 @@ export function ConversationsApp() {
     refresh();
   };
 
-  const availableModels = modelsByProvider[editProvider] ?? [];
+  const availableTextModels = modelsByProvider[editTextProvider] ?? [];
+  const availableVoiceModels = modelsByProvider[editVoiceProvider] ?? [];
   const lastPromptTokens = [...messages].reverse().find(m => m.prompt_tokens != null)?.prompt_tokens ?? 0;
 
   return (
@@ -134,7 +143,7 @@ export function ConversationsApp() {
                 <span className={styles.source}>{c.display_name ?? c.source}</span>
               </div>
               <div className={styles.itemMeta}>
-                <span>{c.model}</span>
+                <span>{c.text_model}</span>
               </div>
               <div className={styles.itemId}>{c.id.slice(0, 8)}...</div>
             </button>
@@ -148,21 +157,35 @@ export function ConversationsApp() {
           <>
             {/* Detail header */}
             <div className={styles.detailHeader}>
-              {/* Provider / Model / Name + Actions */}
+              {/* Text + Voice provider/model + Name + Actions */}
               <div className={styles.detailRow}>
                 {editing ? (
                   <>
-                    <select className={styles.editSelect} value={editProvider}
-                      onChange={e => { setEditProvider(e.target.value); setEditModel(''); }}>
-                      <option value="">-- provider --</option>
-                      {providers.filter(p => modelsByProvider[p]?.length).map(p => (
+                    <select className={styles.editSelect} value={editTextProvider}
+                      onChange={e => { setEditTextProvider(e.target.value); setEditTextModel(''); }}>
+                      <option value="">-- text provider --</option>
+                      {textProviders.filter(p => modelsByProvider[p]?.length).map(p => (
                         <option key={p} value={p}>{p}</option>
                       ))}
                     </select>
-                    <select className={styles.editSelect} value={editModel}
-                      onChange={e => setEditModel(e.target.value)} disabled={!availableModels.length}>
-                      <option value="">-- model --</option>
-                      {availableModels.map(m => (
+                    <select className={styles.editSelect} value={editTextModel}
+                      onChange={e => setEditTextModel(e.target.value)} disabled={!availableTextModels.length}>
+                      <option value="">-- text model --</option>
+                      {availableTextModels.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <select className={styles.editSelect} value={editVoiceProvider}
+                      onChange={e => { setEditVoiceProvider(e.target.value); setEditVoiceModel(''); }}>
+                      <option value="">-- voice provider --</option>
+                      {voiceProviders.filter(p => modelsByProvider[p]?.length).map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                    <select className={styles.editSelect} value={editVoiceModel}
+                      onChange={e => setEditVoiceModel(e.target.value)} disabled={!availableVoiceModels.length}>
+                      <option value="">-- voice model --</option>
+                      {availableVoiceModels.map(m => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
@@ -182,7 +205,13 @@ export function ConversationsApp() {
                 ) : (
                   <>
                     <div>
-                      <span className={styles.detailLabel}>{detail.provider} / {detail.model} / {detail.source}</span>
+                      <span className={styles.detailLabel}>
+                        {detail.text_provider} / {detail.text_model}
+                        {' · '}
+                        {detail.voice_provider} / {detail.voice_model}
+                        {' · '}
+                        {detail.source}
+                      </span>
                       <div className={styles.detailId}>{detail.id}</div>
                     </div>
                     <div className={styles.detailActions}>

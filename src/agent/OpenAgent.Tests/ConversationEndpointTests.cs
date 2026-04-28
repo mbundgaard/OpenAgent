@@ -22,7 +22,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     public async Task GetConversation_Exists_ReturnsIt()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", "test-provider", "test-model");
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", "test-provider", "test-model", "test-provider", "test-model");
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
 
@@ -48,7 +48,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     public async Task DeleteConversation_ReturnsNoContent()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", "test-provider", "test-model");
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", "test-provider", "test-model", "test-provider", "test-model");
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
 
@@ -70,9 +70,9 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
         var idB = $"order-test-B-{Guid.NewGuid()}";
         var idC = $"order-test-C-{Guid.NewGuid()}";
 
-        var convA = store.GetOrCreate(idA, "app", "test-provider", "test-model");
-        var convB = store.GetOrCreate(idB, "app", "test-provider", "test-model");
-        var convC = store.GetOrCreate(idC, "app", "test-provider", "test-model");
+        var convA = store.GetOrCreate(idA, "app", "test-provider", "test-model", "test-provider", "test-model");
+        var convB = store.GetOrCreate(idB, "app", "test-provider", "test-model", "test-provider", "test-model");
+        var convC = store.GetOrCreate(idC, "app", "test-provider", "test-model", "test-provider", "test-model");
 
         // Set distinct LastActivity values: B newest, A middle, C oldest
         convA.LastActivity = DateTimeOffset.UtcNow.AddMinutes(-5);
@@ -99,7 +99,7 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
     public async Task PatchConversation_MentionFilter_RoundTrips()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
-        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", "test-provider", "test-model");
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", "test-provider", "test-model", "test-provider", "test-model");
 
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
