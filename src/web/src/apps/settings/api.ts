@@ -38,13 +38,6 @@ export async function getProviderModels(key: string): Promise<string[]> {
   return res.json();
 }
 
-/** Resolve a just-in-time auth URL for a provider field. */
-export async function getProviderAuthLink(key: string, fieldKey: string): Promise<string> {
-  const res = await apiFetch(`/api/admin/providers/${key}/auth-link/${fieldKey}`);
-  const body = await res.json();
-  return String(body.url ?? '');
-}
-
 /** Save provider configuration. */
 export async function saveProviderConfig(key: string, config: Record<string, string>): Promise<void> {
   await apiFetch(`/api/admin/providers/${key}/config`, {

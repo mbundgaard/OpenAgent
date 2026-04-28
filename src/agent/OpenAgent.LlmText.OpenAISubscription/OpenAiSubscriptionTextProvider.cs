@@ -29,14 +29,62 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
 
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
-        new() { Key = "authUrl", Label = "OpenAI Subscription Login", Type = "Url" },
+        new()
+        {
+            Key = "authUrl",
+            Label = "OpenAI Subscription Login",
+            Type = "Url",
+            DefaultValue = "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid%20profile%20email%20offline_access&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=openagent"
+        },
         new() { Key = "callbackUrl", Label = "Callback URL", Type = "String" },
         new() { Key = "setupToken", Label = "Setup Token", Type = "Secret", Required = true },
-        new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true },
-        new() { Key = "baseUrl", Label = "Base URL", Type = "String", DefaultValue = "https://chatgpt.com/backend-api" }
+        new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true }
     ];
 
     public IReadOnlyList<string> Models => _config?.Models ?? [];
+
+    public async ValueTask<JsonElement> NormalizeConfigAsync(JsonElement configuration, CancellationToken ct = default)
+    {
+        var dict = new Dictionary<string, JsonElement>();
+        foreach (var prop in configuration.EnumerateObject())
+            dict[prop.Name] = prop.Value;
+
+        if (dict.TryGetValue("callbackUrl", out var callbackElement)
+            && callbackElement.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(callbackElement.GetString()))
+        {
+            var callbackUrl = callbackElement.GetString()!;
+            if (!Uri.TryCreate(callbackUrl, UriKind.Absolute, out var callbackUri))
+                throw new InvalidOperationException("callbackUrl must be an absolute URL.");
+
+            var code = GetQueryParameter(callbackUri, "code");
+            if (string.IsNullOrWhiteSpace(code))
+                throw new InvalidOperationException("callbackUrl must contain a 'code' query parameter.");
+
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+            using var tokenResponse = await client.PostAsync("https://auth.openai.com/oauth/token", new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "authorization_code",
+                ["client_id"] = "app_EMoamEEZ73f0CkXaXp7hrann",
+                ["code"] = code,
+                ["redirect_uri"] = "http://localhost:1455/auth/callback"
+            }), ct);
+
+            var tokenBody = await tokenResponse.Content.ReadAsStringAsync(ct);
+            if (!tokenResponse.IsSuccessStatusCode)
+                throw new InvalidOperationException($"OpenAI token exchange failed ({(int)tokenResponse.StatusCode}): {tokenBody}");
+
+            using var tokenDoc = JsonDocument.Parse(tokenBody);
+            if (!tokenDoc.RootElement.TryGetProperty("access_token", out var accessTokenProp)
+                || string.IsNullOrWhiteSpace(accessTokenProp.GetString()))
+                throw new InvalidOperationException("OpenAI token response missing access_token.");
+
+            dict["setupToken"] = JsonSerializer.SerializeToElement(accessTokenProp.GetString()!);
+            dict["callbackUrl"] = JsonSerializer.SerializeToElement(string.Empty);
+        }
+
+        return JsonSerializer.SerializeToElement(dict);
+    }
 
     public void Configure(JsonElement configuration)
     {
@@ -48,9 +96,6 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
 
         if (configuration.TryGetProperty("models", out var modelsProp) && modelsProp.ValueKind == JsonValueKind.String)
             _config.Models = modelsProp.GetString()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        if (configuration.TryGetProperty("baseUrl", out var baseUrlProp) && baseUrlProp.ValueKind == JsonValueKind.String)
-            _config.BaseUrl = baseUrlProp.GetString() ?? _config.BaseUrl;
 
         _httpClient?.Dispose();
         _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
@@ -106,7 +151,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
                 parallel_tool_calls = true
             };
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, ResolveCodexUrl(_config.BaseUrl))
+            using var request = new HttpRequestMessage(HttpMethod.Post, ResolveCodexUrl())
             {
                 Content = JsonContent.Create(requestBody)
             };
@@ -298,7 +343,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
             input
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, ResolveCodexUrl(_config.BaseUrl))
+        using var request = new HttpRequestMessage(HttpMethod.Post, ResolveCodexUrl())
         {
             Content = JsonContent.Create(requestBody)
         };
@@ -412,12 +457,27 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
             } as object).ToList();
     }
 
-    private static string ResolveCodexUrl(string baseUrl)
+    private static string ResolveCodexUrl()
     {
-        var normalized = baseUrl.TrimEnd('/');
-        if (normalized.EndsWith("/codex/responses", StringComparison.OrdinalIgnoreCase)) return normalized;
-        if (normalized.EndsWith("/codex", StringComparison.OrdinalIgnoreCase)) return normalized + "/responses";
-        return normalized + "/codex/responses";
+        return "https://chatgpt.com/backend-api/codex/responses";
+    }
+
+    private static string? GetQueryParameter(Uri uri, string key)
+    {
+        var query = uri.Query;
+        if (string.IsNullOrEmpty(query)) return null;
+        if (query[0] == '?') query = query[1..];
+
+        foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kvp = part.Split('=', 2);
+            var name = Uri.UnescapeDataString(kvp[0]);
+            if (!string.Equals(name, key, StringComparison.Ordinal)) continue;
+            var value = kvp.Length > 1 ? Uri.UnescapeDataString(kvp[1]) : string.Empty;
+            return value;
+        }
+
+        return null;
     }
 
     private static string ExtractAccountId(string token)

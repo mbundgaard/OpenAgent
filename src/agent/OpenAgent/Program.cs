@@ -123,7 +123,6 @@ builder.Host.UseSerilog((context, serilog) =>
 
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddSingleton<IAgentLogic, AgentLogic>();
-builder.Services.AddSingleton<OpenAgent.Api.OpenAiSubscriptionAuthService>();
 
 builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();

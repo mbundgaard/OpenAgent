@@ -15,20 +15,6 @@ public static class AdminEndpoints
     /// </summary>
     public static void MapAdminEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/admin/providers/openai-subscription/callback", () =>
-        {
-            var html = """
-                       <!doctype html>
-                       <html><body style="font-family:sans-serif;padding:16px;">
-                         <h3>OpenAI login callback received</h3>
-                         <p>Copy this full URL and paste it into the <b>Callback URL</b> field in OpenAgent settings, then click Save.</p>
-                         <textarea style="width:100%;height:110px;" readonly></textarea>
-                         <script>document.querySelector('textarea').value = window.location.href;</script>
-                       </body></html>
-                       """;
-            return Results.Content(html, "text/html");
-        }).AllowAnonymous();
-
         var group = app.MapGroup("/api/admin/providers").RequireAuthorization();
 
         group.MapGet("/", (IEnumerable<IConfigurable> configurables) =>
@@ -94,49 +80,35 @@ public static class AdminEndpoints
             return Results.Ok(masked);
         });
 
-        group.MapGet("/{key}/auth-link/{fieldKey}", (string key, string fieldKey, HttpContext http, OpenAiSubscriptionAuthService auth) =>
-        {
-            if (!string.Equals(key, "openai-subscription", StringComparison.Ordinal) || !string.Equals(fieldKey, "authUrl", StringComparison.Ordinal))
-                return Results.NotFound();
-
-            var redirectUri = $"{http.Request.Scheme}://{http.Request.Host}/api/admin/providers/openai-subscription/callback";
-            var url = auth.CreateAuthorizationUrl(redirectUri);
-            return Results.Ok(new { url });
-        });
-
         group.MapPost("/{key}/config", async (string key, JsonElement config,
-            IEnumerable<IConfigurable> configurables, IConfigStore configStore, OpenAiSubscriptionAuthService auth, CancellationToken ct) =>
+            IEnumerable<IConfigurable> configurables, IConfigStore configStore, CancellationToken ct) =>
         {
             var configurable = configurables.FirstOrDefault(c => c.Key == key);
             if (configurable is null)
                 return Results.NotFound();
 
-            var dict = new Dictionary<string, JsonElement>();
+            // Merge incoming config with existing saved config so partial updates work
+            // (e.g. changing voice without re-sending the apiKey)
             var existing = configStore.Load(key);
+            JsonElement merged;
             if (existing.HasValue)
             {
+                var dict = new Dictionary<string, JsonElement>();
                 foreach (var prop in existing.Value.EnumerateObject())
                     dict[prop.Name] = prop.Value;
-            }
-            foreach (var prop in config.EnumerateObject())
-                dict[prop.Name] = prop.Value;
+                foreach (var prop in config.EnumerateObject())
+                    dict[prop.Name] = prop.Value;
 
-            if (string.Equals(key, "openai-subscription", StringComparison.Ordinal)
-                && dict.TryGetValue("callbackUrl", out var callbackElement)
-                && callbackElement.ValueKind == JsonValueKind.String
-                && !string.IsNullOrWhiteSpace(callbackElement.GetString()))
+                merged = JsonSerializer.SerializeToElement(dict);
+            }
+            else
             {
-                var setupToken = await auth.ExchangeCallbackUrlAsync(callbackElement.GetString()!, ct);
-                dict["setupToken"] = JsonSerializer.SerializeToElement(setupToken);
-                dict["callbackUrl"] = JsonSerializer.SerializeToElement("");
+                merged = config;
             }
 
-            // Runtime-only helper field, never persisted.
-            dict.Remove("authUrl");
-
-            var merged = JsonSerializer.SerializeToElement(dict);
-            configurable.Configure(merged);
-            configStore.Save(key, merged);
+            var normalized = await configurable.NormalizeConfigAsync(merged, ct);
+            configurable.Configure(normalized);
+            configStore.Save(key, normalized);
 
             return Results.NoContent();
         });

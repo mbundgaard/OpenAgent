@@ -10,6 +10,4 @@ internal sealed class OpenAiSubscriptionConfig
     [JsonPropertyName("models")]
     public string[] Models { get; set; } = [];
 
-    [JsonPropertyName("baseUrl")]
-    public string BaseUrl { get; set; } = "https://chatgpt.com/backend-api";
 }

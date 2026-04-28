@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ConfigField } from './api';
-import { getProviderAuthLink, getProviderConfig, getProviderValues, saveProviderConfig } from './api';
+import { getProviderConfig, getProviderValues, saveProviderConfig } from './api';
 import styles from './ProviderForm.module.css';
 
 interface Props {
@@ -14,7 +14,6 @@ export function ProviderForm({ providerKey }: Props) {
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [maskedFields, setMaskedFields] = useState<Set<string>>(new Set());
-  const [openingAuthField, setOpeningAuthField] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,19 +53,6 @@ export function ProviderForm({ providerKey }: Props) {
     return () => { cancelled = true; };
   }, [providerKey]);
 
-  const openAuthLink = async (fieldKey: string) => {
-    setOpeningAuthField(fieldKey);
-    setStatus(null);
-    try {
-      const url = await getProviderAuthLink(providerKey, fieldKey);
-      if (!url) throw new Error('No auth URL returned');
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch {
-      setStatus('Error opening auth link');
-    }
-    setOpeningAuthField(null);
-  };
-
   const handleSave = async () => {
     setSaving(true);
     setStatus(null);
@@ -100,14 +86,11 @@ export function ProviderForm({ providerKey }: Props) {
           {field.type === 'Url' ? (
             <a
               className={styles.input}
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                if (openingAuthField) return;
-                void openAuthLink(field.key);
-              }}
+              href={field.default_value || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              {openingAuthField === field.key ? 'Opening…' : 'Open authentication link'}
+              Open authentication link
             </a>
           ) : field.type === 'Enum' && field.options ? (
             <select
