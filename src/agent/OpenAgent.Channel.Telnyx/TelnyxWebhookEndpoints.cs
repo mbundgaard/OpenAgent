@@ -89,45 +89,13 @@ public static class TelnyxWebhookEndpoints
 
         return env.Data?.EventType switch
         {
-            "call.initiated"      => await OnCallInitiated(provider, env, loggerFactory, ct),
-            "call.hangup"         => await OnCallHangup(provider, env, ct),
-            "call.dtmf.received"  => OnDtmfReceived(provider, env, logger),
-            "streaming.started"   => Results.Ok(),
-            "streaming.stopped"   => Results.Ok(),
-            "streaming.failed"    => await OnStreamingFailed(provider, env, ct),
+            "call.initiated"    => await OnCallInitiated(provider, env, loggerFactory, ct),
+            "call.hangup"       => await OnCallHangup(provider, env, ct),
+            "streaming.started" => Results.Ok(),
+            "streaming.stopped" => Results.Ok(),
+            "streaming.failed"  => await OnStreamingFailed(provider, env, ct),
             _ => Results.Ok(),
         };
-    }
-
-    /// <summary>
-    /// Forward the digit to the bridge for extension routing. If the bridge is already running
-    /// it lands on its DTMF gate channel; if the call is still pending (rare — DTMF before WS
-    /// connect) it buffers on the pending entry and the bridge drains it on start. Subsequent
-    /// digits within the gate window AND digits past the window are silently ignored by the bridge.
-    /// Returns Ok immediately so Telnyx doesn't retry.
-    /// </summary>
-    private static IResult OnDtmfReceived(TelnyxChannelProvider provider, TelnyxWebhookEnvelope env, ILogger logger)
-    {
-        var callControlId = env.Data!.Payload!.CallControlId ?? "";
-        var digit = env.Data!.Payload!.Digit ?? "";
-        if (string.IsNullOrEmpty(digit) || string.IsNullOrEmpty(callControlId))
-            return Results.Ok();
-
-        if (provider.BridgeRegistry.TryGetByCallControlId(callControlId, out var bridge)
-            && bridge is ITelnyxBridge typed)
-        {
-            typed.OnDtmfReceived(digit);
-            return Results.Ok();
-        }
-
-        if (provider.TryGetPending(callControlId, out var pending) && pending is not null)
-        {
-            pending.PendingDtmf.Enqueue(digit);
-            logger.LogDebug("Buffered DTMF digit {Digit} on pending bridge for {CallControlId}",
-                digit, callControlId);
-        }
-
-        return Results.Ok();
     }
 
     private static async Task<IResult> OnCallInitiated(
@@ -139,10 +107,6 @@ public static class TelnyxWebhookEndpoints
         var p = env.Data!.Payload!;
         var from = p.From ?? "";
         var callControlId = p.CallControlId ?? "";
-        // call_session_id is what makes each call unique even when from the same caller —
-        // used by the bridge to key the per-call throwaway conversation. Fallback to a GUID
-        // is defensive; in practice Telnyx always provides this field.
-        var callSessionId = p.CallSessionId ?? Guid.NewGuid().ToString("N");
 
         // Allowlist: empty list means "allow all"
         if (provider.Options.AllowedNumbers.Count > 0 && !provider.Options.AllowedNumbers.Contains(from))
@@ -151,20 +115,24 @@ public static class TelnyxWebhookEndpoints
             return Results.Ok();
         }
 
-        // Answer the call. Conversation creation is deferred to the bridge — it creates a
-        // per-call throwaway on WS connect, which may be swapped for an extension conversation
-        // if DTMF arrives within 8 seconds (extension routing).
+        // Conversation lookup — keyed on caller E.164 so repeat callers get a stable history
+        var conv = provider.ConversationStore.FindOrCreateChannelConversation(
+            channelType: "telnyx",
+            connectionId: provider.ConnectionId,
+            channelChatId: from,
+            source: "telnyx",
+            provider: provider.AgentConfig.VoiceProvider,
+            model: provider.AgentConfig.VoiceModel);
+
+        if (!string.Equals(conv.DisplayName, from, StringComparison.Ordinal))
+            provider.ConversationStore.UpdateDisplayName(conv.Id, from);
+
+        // Answer the call
         await provider.CallControlClient.AnswerAsync(callControlId, ct);
 
-        // Register pending bridge BEFORE issuing streaming_start so the WS endpoint can pick it
-        // up — and so DTMF that arrives before the WS connects can buffer on PendingDtmf.
+        // Register pending bridge BEFORE issuing streaming_start so the WS endpoint can pick it up
         var cts = new CancellationTokenSource();
-        var pending = new PendingBridge(
-            CallControlId: callControlId,
-            CallSessionId: callSessionId,
-            From: from,
-            VoiceProviderKey: provider.AgentConfig.VoiceProvider,
-            Cts: cts);
+        var pending = new PendingBridge(callControlId, conv.Id, conv.Provider, cts);
         if (!provider.TryRegisterPending(callControlId, pending))
             return Results.Ok(); // duplicate event, ignore
 
@@ -237,10 +205,8 @@ public static class TelnyxWebhookEndpoints
     private sealed class TelnyxPayload
     {
         [JsonPropertyName("call_control_id")] public string? CallControlId { get; set; }
-        [JsonPropertyName("call_session_id")] public string? CallSessionId { get; set; }
         [JsonPropertyName("connection_id")] public string? ConnectionId { get; set; }
         [JsonPropertyName("from")] public string? From { get; set; }
         [JsonPropertyName("to")] public string? To { get; set; }
-        [JsonPropertyName("digit")] public string? Digit { get; set; }
     }
 }

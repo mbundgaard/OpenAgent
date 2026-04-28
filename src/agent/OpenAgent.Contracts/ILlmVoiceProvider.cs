@@ -61,15 +61,4 @@ public interface IVoiceSession : IAsyncDisposable
     /// <see cref="AddUserMessageAsync"/> first if you want the model to react to something.
     /// </summary>
     Task RequestResponseAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// Replace the conversation backing this session in flight: refresh the system prompt from
-    /// the new conversation's skills/intention/summary, and inject its prior messages as
-    /// <c>conversation.item.create</c> events so the model has its history. Subsequent persisted
-    /// turns (transcripts, tool calls) land on the new conversation. Throws
-    /// <see cref="NotSupportedException"/> on providers whose protocol cannot mutate the system
-    /// instruction mid-session (notably Gemini Live). Late writes already in flight when the
-    /// swap happens may still land on the previous conversation — that's accepted behaviour.
-    /// </summary>
-    Task RebindConversationAsync(Conversation newConversation, CancellationToken ct = default);
 }

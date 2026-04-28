@@ -134,10 +134,6 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
         }, ct);
     }
 
-    public Task RebindConversationAsync(Conversation newConversation, CancellationToken ct = default)
-        => throw new NotSupportedException(
-            "Gemini Live cannot mutate system_instruction mid-session — RebindConversationAsync is unsupported.");
-
     public async Task RequestResponseAsync(CancellationToken ct = default)
     {
         // Empty turns + turn_complete=true commits whatever was previously added via
