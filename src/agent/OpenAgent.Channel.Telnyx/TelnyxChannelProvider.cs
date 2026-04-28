@@ -118,10 +118,31 @@ public sealed class TelnyxChannelProvider : IChannelProvider
         pending = p;
         return ok;
     }
+
+    /// <summary>
+    /// Read-only lookup for the DTMF webhook handler. Keeps the entry in the dictionary so the
+    /// streaming WS handshake can still claim it via <see cref="TryDequeuePending"/>.
+    /// </summary>
+    public bool TryGetPending(string callControlId, out PendingBridge? pending)
+    {
+        var ok = _pending.TryGetValue(callControlId, out var p);
+        pending = p;
+        return ok;
+    }
 }
 
+/// <summary>
+/// Per-call state created at <c>call.initiated</c>, claimed by the streaming WS handshake. The
+/// conversation isn't created at this point — the bridge does it on connect (per-call throwaway
+/// keyed on <c>{From}:{CallSessionId}</c>). DTMF that arrives before the WS connects buffers
+/// here and is drained by the bridge on start.
+/// </summary>
 public sealed record PendingBridge(
     string CallControlId,
-    string ConversationId,
+    string CallSessionId,
+    string From,
     string VoiceProviderKey,
-    CancellationTokenSource Cts);
+    CancellationTokenSource Cts)
+{
+    public System.Collections.Concurrent.ConcurrentQueue<string> PendingDtmf { get; } = new();
+}

@@ -279,6 +279,145 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
         Assert.True(session.DisposeCalled);
     }
 
+    [Fact]
+    public async Task Dtmf_MidWindow_SwapsToExtensionConversation()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (ws, fakeProvider, throwawayId) = await ConnectStreamAsync(cts.Token);
+
+        var session = await fakeProvider.WaitForSessionAsync(throwawayId, cts.Token);
+        var bridge = await WaitForBridgeAsync(throwawayId, cts.Token);
+
+        // Caller pressed "1" via comma-extension dialing — bridge resolves {from},1, asks the
+        // session to rebind, re-keys the registry, deletes the throwaway.
+        bridge.OnDtmfReceived("1");
+
+        // Wait for the swap to land — RebindConversationAsync recorded on the fake session and
+        // the throwaway removed from the conversation store.
+        var conversationStore = _factory.Services.GetRequiredService<IConversationStore>();
+        await WaitUntilAsync(
+            () => session.ReboundConversationIds.Count > 0
+                  && conversationStore.Get(throwawayId) is null,
+            cts.Token);
+
+        var extensionId = session.ReboundConversationIds.Single();
+        Assert.NotEqual(throwawayId, extensionId);
+
+        var extension = conversationStore.Get(extensionId);
+        Assert.NotNull(extension);
+        Assert.EndsWith(" ext.1", extension!.DisplayName);
+
+        // Registry re-keyed: lookup by call_control_id resolves to the same bridge, lookup by
+        // extension id finds the bridge, throwaway lookup is gone.
+        var registry = _factory.Services.GetRequiredService<TelnyxBridgeRegistry>();
+        Assert.True(registry.TryGet(extensionId, out var registered));
+        Assert.Same(bridge, registered);
+        Assert.False(registry.TryGet(throwawayId, out _));
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Dtmf_BeforeWsConnects_BuffersOnPendingBridge_AndDrainsOnStart()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await SetupRunningConnectionAsync();
+        var manager = _factory.Services.GetRequiredService<IConnectionManager>();
+        var telnyxProvider = manager.GetProviders()
+            .Select(p => p.Provider)
+            .OfType<TelnyxChannelProvider>()
+            .First(p => p.ConnectionId == TestConnectionId);
+
+        var conversationStore = _factory.Services.GetRequiredService<IConversationStore>();
+        var callControlId = "call-" + Guid.NewGuid().ToString("N");
+        var callSessionId = Guid.NewGuid().ToString("N");
+        const string from = "+4520000000";
+        var throwaway = conversationStore.FindOrCreateChannelConversation(
+            channelType: "telnyx",
+            connectionId: TestConnectionId,
+            channelChatId: $"{from}:{callSessionId}",
+            source: "telnyx",
+            provider: "azure-openai-voice",
+            model: "test-model");
+
+        // Register the pending entry, enqueue a digit on it BEFORE the WS connects, then connect.
+        var pendingCts = new CancellationTokenSource();
+        var pending = new PendingBridge(
+            CallControlId: callControlId,
+            CallSessionId: callSessionId,
+            From: from,
+            VoiceProviderKey: "azure-openai-voice",
+            Cts: pendingCts);
+        Assert.True(telnyxProvider.TryRegisterPending(callControlId, pending));
+        pending.PendingDtmf.Enqueue("2");
+
+        var wsClient = _factory.Server.CreateWebSocketClient();
+        var ws = await wsClient.ConnectAsync(
+            new Uri(_factory.Server.BaseAddress, $"/api/webhook/telnyx/{TestWebhookId}/stream?call={Uri.EscapeDataString(callControlId)}"),
+            cts.Token);
+
+        var fakeProvider = _factory.Services.GetRequiredService<TestVoiceProvider>();
+        var session = await fakeProvider.WaitForSessionAsync(throwaway.Id, cts.Token);
+
+        // Bridge drains the pre-WS queue and performs the swap to {from},2 immediately on start.
+        await WaitUntilAsync(() => session.ReboundConversationIds.Count > 0, cts.Token);
+        var extensionId = session.ReboundConversationIds.Single();
+        var extension = conversationStore.Get(extensionId);
+        Assert.NotNull(extension);
+        Assert.EndsWith(" ext.2", extension!.DisplayName);
+        Assert.Null(conversationStore.Get(throwaway.Id));
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Dtmf_OnGeminiNotSupported_LogsWarning_AndKeepsThrowaway()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (ws, fakeProvider, throwawayId) = await ConnectStreamAsync(cts.Token);
+
+        // Configure the fake session to throw NotSupportedException from Rebind — same shape
+        // as Gemini Live's implementation.
+        var session = await fakeProvider.WaitForSessionAsync(throwawayId, cts.Token);
+        session.RebindHook = _ => throw new NotSupportedException("test: gemini cannot rebind");
+
+        var bridge = await WaitForBridgeAsync(throwawayId, cts.Token);
+        bridge.OnDtmfReceived("1");
+
+        // Give the bridge a moment to attempt the swap and log; the throwaway must remain.
+        await Task.Delay(200, cts.Token);
+
+        var conversationStore = _factory.Services.GetRequiredService<IConversationStore>();
+        Assert.NotNull(conversationStore.Get(throwawayId));
+
+        var registry = _factory.Services.GetRequiredService<TelnyxBridgeRegistry>();
+        Assert.True(registry.TryGet(throwawayId, out _));
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Dtmf_SecondDigit_Ignored_SingleShot()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (ws, fakeProvider, throwawayId) = await ConnectStreamAsync(cts.Token);
+
+        var session = await fakeProvider.WaitForSessionAsync(throwawayId, cts.Token);
+        var bridge = await WaitForBridgeAsync(throwawayId, cts.Token);
+
+        bridge.OnDtmfReceived("1");
+        await WaitUntilAsync(() => session.ReboundConversationIds.Count > 0, cts.Token);
+
+        // Gate is single-shot — second digit must not produce another swap.
+        bridge.OnDtmfReceived("2");
+        await Task.Delay(150, cts.Token);
+
+        Assert.Single(session.ReboundConversationIds);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+    }
+
     /// <summary>
     /// Polls the bridge registry until the bridge for the given conversation has registered itself.
     /// </summary>
@@ -311,21 +450,29 @@ public class TelnyxMediaBridgeTests : IClassFixture<WebApplicationFactory<Progra
             .OfType<TelnyxChannelProvider>()
             .First(p => p.ConnectionId == TestConnectionId);
 
-        // Seed a Phone conversation directly — bypasses the call.initiated webhook (which would
-        // need a real Telnyx Call Control API to answer the call) and gets us a stable id.
+        // The bridge creates its own throwaway conversation on WS connect, keyed on
+        // {From}:{CallSessionId}. We pre-seed that exact key so FindOrCreate reuses it and we
+        // can locate the conversation deterministically post-connect.
         var conversationStore = _factory.Services.GetRequiredService<IConversationStore>();
         var callControlId = "call-" + Guid.NewGuid().ToString("N");
+        var callSessionId = Guid.NewGuid().ToString("N");
+        const string from = "+4520000000";
         var conversation = conversationStore.FindOrCreateChannelConversation(
             channelType: "telnyx",
             connectionId: TestConnectionId,
-            channelChatId: "+4520000000",
+            channelChatId: $"{from}:{callSessionId}",
             source: "telnyx",
             provider: "azure-openai-voice",
             model: "test-model");
 
         // Pre-register the pending bridge so the streaming endpoint can dequeue it.
         var pendingCts = new CancellationTokenSource();
-        var pending = new PendingBridge(callControlId, conversation.Id, conversation.Provider, pendingCts);
+        var pending = new PendingBridge(
+            CallControlId: callControlId,
+            CallSessionId: callSessionId,
+            From: from,
+            VoiceProviderKey: conversation.Provider,
+            Cts: pendingCts);
         Assert.True(telnyxProvider.TryRegisterPending(callControlId, pending));
 
         var wsClient = _factory.Server.CreateWebSocketClient();

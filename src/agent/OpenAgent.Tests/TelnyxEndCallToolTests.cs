@@ -27,7 +27,7 @@ public class TelnyxEndCallToolTests
     {
         var registry = new TelnyxBridgeRegistry();
         var fake = new FakeBridge();
-        registry.Register("conv-3", fake);
+        registry.Register("call-3", "conv-3", fake);
 
         var tool = new EndCallTool(registry);
         var result = await tool.ExecuteAsync("{}", "conv-3");
@@ -43,6 +43,8 @@ public class TelnyxEndCallToolTests
     private sealed class FakeBridge : ITelnyxBridge
     {
         public bool HangupRequested { get; private set; }
+        public List<string> DtmfDigits { get; } = new();
         public void SetPendingHangup() => HangupRequested = true;
+        public void OnDtmfReceived(string digit) => DtmfDigits.Add(digit);
     }
 }

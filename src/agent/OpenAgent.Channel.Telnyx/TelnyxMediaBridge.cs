@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
@@ -38,6 +39,16 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
     private int _activeToolCalls;
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
+    // Conversation currently bound to this bridge. Starts as the throwaway created in RunAsync;
+    // may be swapped to an extension conversation on first DTMF within the gate window.
+    private string _currentConversationId = string.Empty;
+    // DTMF extension-routing gate. The first digit (within an 8s window from bridge start)
+    // triggers a swap to {from},{digit}; subsequent digits / a timeout close the gate. The
+    // channel is drained by RunDtmfGateAsync once and then ignored.
+    private static readonly TimeSpan DtmfGateWindow = TimeSpan.FromSeconds(8);
+    private readonly Channel<string> _dtmfChannel = System.Threading.Channels.Channel.CreateUnbounded<string>(
+        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+    private bool _gateClosed;
 
     public TelnyxMediaBridge(
         TelnyxChannelProvider provider,
@@ -61,13 +72,32 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
     /// </summary>
     public async Task RunAsync()
     {
-        _provider.BridgeRegistry.Register(_pending.ConversationId, this);
+        // Per-call throwaway conversation — keyed on call_session_id so each call is its own row
+        // (each non-extension call gets a fresh conversation, no cross-call merge). DisplayName
+        // is just the caller number; if a DTMF swap happens the extension gets "ext.N" suffixed.
+        var throwawayChatId = $"{_pending.From}:{_pending.CallSessionId}";
+        var conversation = _provider.ConversationStore.FindOrCreateChannelConversation(
+            channelType: "telnyx",
+            connectionId: _provider.ConnectionId,
+            channelChatId: throwawayChatId,
+            source: "telnyx",
+            provider: _provider.AgentConfig.VoiceProvider,
+            model: _provider.AgentConfig.VoiceModel);
+
+        if (!string.Equals(conversation.DisplayName, _pending.From, StringComparison.Ordinal))
+            _provider.ConversationStore.UpdateDisplayName(conversation.Id, _pending.From);
+
+        _currentConversationId = conversation.Id;
+        _provider.BridgeRegistry.Register(_pending.CallControlId, _currentConversationId, this);
+
+        // Drain any DTMF digits buffered before the WS connected (rare but real — Telnyx may
+        // deliver call.dtmf.received before the streaming WS handshake completes).
+        while (_pending.PendingDtmf.TryDequeue(out var queuedDigit))
+            _dtmfChannel.Writer.TryWrite(queuedDigit);
+
         try
         {
             var voiceProvider = _provider.VoiceProviderResolver(_pending.VoiceProviderKey);
-            var conversation = _provider.ConversationStore.Get(_pending.ConversationId)
-                ?? throw new InvalidOperationException(
-                    $"Conversation {_pending.ConversationId} missing — cannot start voice session.");
 
             // Telnyx delivers a-law / 8 kHz on both directions for European calls (PCMA is the
             // default termination codec on +45 numbers). Pure byte-pipe: matches what the carrier
@@ -80,28 +110,15 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
             // Register with the global voice session manager so skill tools (and anything else
             // that consults IVoiceSessionManager) can find this call's session by conversation id
             // — required for mid-call system-prompt refresh after activate_skill.
-            _provider.VoiceSessionManager.RegisterSession(_pending.ConversationId, _session);
+            _provider.VoiceSessionManager.RegisterSession(_currentConversationId, _session);
 
-            // Seed the realtime session with prior conversation context. Realtime APIs don't
-            // replay history on connect — we have to send it explicitly. Two pieces:
-            //   1. The compaction summary (long-term context) is already in the system prompt
-            //      via BuildSessionConfig — nothing to do here.
-            //   2. Live post-cut messages are sent as ONE synthetic user item containing a
-            //      transcript blob. AddUserMessageAsync alone does not trigger a response.
-            var (seedCount, transcript) = BuildHistoryTranscript(
-                _provider.ConversationStore.GetMessages(_pending.ConversationId));
-            if (transcript is not null)
-            {
-                _logger.LogInformation(
-                    "Seeding voice session with {MessageCount} prior messages ({CharCount} chars) for conversation {ConversationId}",
-                    seedCount, transcript.Length, _pending.ConversationId);
-                await _session.AddUserMessageAsync(transcript, _cts.Token);
-            }
+            // Throwaway conversation has no prior history — nothing to seed. (Extension swap
+            // injects history via RebindConversationAsync if/when it fires.)
 
             // Kick the model to speak first. The synthetic prompt is realtime-only — it goes to
             // the live session but is NOT persisted to conversation history (it's a one-shot
-            // trigger, not a real turn). The model has its name/identity from the system prompt;
-            // this just signals "the call connected, please greet them".
+            // trigger, not a real turn). Identity-neutral greeting so a mid-greeting DTMF swap
+            // doesn't leave the model in a wrong-persona moment.
             var caller = conversation.DisplayName ?? "unknown";
             await _session.AddUserMessageAsync(
                 $"[Phone call connected. Caller: {caller}. Greet them — be brief and natural, like answering the phone for someone you know.]",
@@ -109,44 +126,114 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
             await _session.RequestResponseAsync(_cts.Token);
 
             // First loop to finish wins — the other gets cancelled in the finally block.
+            // The DTMF gate runs alongside but doesn't gate completion — it self-cancels on
+            // window expiry or first digit.
+            _ = RunDtmfGateAsync(_cts.Token);
             await Task.WhenAny(ReadLoopAsync(_cts.Token), WriteLoopAsync(_cts.Token));
         }
         catch (OperationCanceledException) { /* expected on shutdown */ }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Telnyx bridge errored for conversation {ConversationId}",
-                _pending.ConversationId);
+                _currentConversationId);
         }
         finally
         {
             await _cts.CancelAsync();
-            _provider.VoiceSessionManager.UnregisterSession(_pending.ConversationId);
+            _provider.VoiceSessionManager.UnregisterSession(_currentConversationId);
             if (_session is not null)
                 await _session.DisposeAsync();
-            _provider.BridgeRegistry.Unregister(_pending.ConversationId);
+            _provider.BridgeRegistry.Unregister(_pending.CallControlId, _currentConversationId);
         }
     }
 
     /// <summary>
-    /// Renders post-cut user/assistant text turns as a single transcript blob, wrapped in
-    /// <c>&lt;conversation_history&gt;</c> tags. Skips tool-call/result messages and any messages
-    /// without text content — those don't survive the cross-modal text-to-voice translation
-    /// cleanly, and the realtime model doesn't need them to follow the gist of recent turns.
-    /// Returns null when there's nothing to seed.
+    /// Buffer a DTMF digit into the gate channel. Called from the webhook handler when
+    /// <c>call.dtmf.received</c> arrives for this bridge's call control id. After the gate
+    /// closes (first digit OR 8s timeout), additional digits are silently ignored.
     /// </summary>
-    private static (int MessageCount, string? Transcript) BuildHistoryTranscript(IReadOnlyList<Message> messages)
+    public void OnDtmfReceived(string digit)
     {
-        var lines = new List<string>(messages.Count);
-        foreach (var m in messages)
+        if (_gateClosed) return;
+        _dtmfChannel.Writer.TryWrite(digit);
+    }
+
+    /// <summary>
+    /// Reads the first digit (if any) within the 8-second extension-routing window and dispatches
+    /// the swap. After the window closes — by digit OR timeout — additional reads stop.
+    /// </summary>
+    private async Task RunDtmfGateAsync(CancellationToken ct)
+    {
+        using var gateCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        gateCts.CancelAfter(DtmfGateWindow);
+        try
         {
-            if (m.Role == "tool") continue;
-            if (string.IsNullOrWhiteSpace(m.Content)) continue;
-            if (m.Role != "user" && m.Role != "assistant") continue;
-            lines.Add($"{m.Role}: {m.Content!.Trim()}");
+            var digit = await _dtmfChannel.Reader.ReadAsync(gateCts.Token);
+            _gateClosed = true;
+            await PerformDtmfSwapAsync(digit, ct);
+        }
+        catch (OperationCanceledException) when (gateCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // 8s expired with no digit — throwaway continues as the call's permanent conversation.
+            _gateClosed = true;
+            _logger.LogInformation(
+                "DTMF gate closed (no digit) for call {CallControlId} — throwaway {ConversationId} kept",
+                _pending.CallControlId, _currentConversationId);
+        }
+        catch (OperationCanceledException) { /* parent ct cancelled (call torn down) */ }
+    }
+
+    /// <summary>
+    /// Resolves <c>{from},{digit}</c> into the persistent extension conversation, asks the live
+    /// session to rebind, re-keys the registry, and deletes the throwaway. Gemini Live throws
+    /// <see cref="NotSupportedException"/> from rebind — we log and leave the throwaway intact
+    /// (DTMF is a no-op on Gemini, by design).
+    /// </summary>
+    private async Task PerformDtmfSwapAsync(string digit, CancellationToken ct)
+    {
+        var extensionChatId = $"{_pending.From},{digit}";
+        var extension = _provider.ConversationStore.FindOrCreateChannelConversation(
+            channelType: "telnyx",
+            connectionId: _provider.ConnectionId,
+            channelChatId: extensionChatId,
+            source: "telnyx",
+            provider: _provider.AgentConfig.VoiceProvider,
+            model: _provider.AgentConfig.VoiceModel);
+
+        var desiredDisplayName = $"{_pending.From} ext.{digit}";
+        if (!string.Equals(extension.DisplayName, desiredDisplayName, StringComparison.Ordinal))
+            _provider.ConversationStore.UpdateDisplayName(extension.Id, desiredDisplayName);
+
+        var throwawayId = _currentConversationId;
+
+        try
+        {
+            await _session!.RebindConversationAsync(extension, ct);
+        }
+        catch (NotSupportedException)
+        {
+            _logger.LogWarning(
+                "Voice provider {Provider} does not support mid-session rebind; ignoring DTMF for call {CallControlId}",
+                _pending.VoiceProviderKey, _pending.CallControlId);
+            return;
         }
 
-        if (lines.Count == 0) return (0, null);
-        return (lines.Count, "<conversation_history>\n" + string.Join("\n", lines) + "\n</conversation_history>");
+        // Pointer flip: future tool calls / EndCallTool / VoiceSessionManager calls go to the
+        // extension. The session itself already swapped its _conversation reference inside
+        // RebindConversationAsync, so subsequent persists land on the extension too.
+        _currentConversationId = extension.Id;
+        _provider.BridgeRegistry.UpdateConversationId(_pending.CallControlId, throwawayId, extension.Id);
+        _provider.VoiceSessionManager.UnregisterSession(throwawayId);
+        _provider.VoiceSessionManager.RegisterSession(extension.Id, _session!);
+
+        // Delete the throwaway — its only contents are the synthetic greeting trigger and the
+        // assistant greeting, both fine to lose per the design.
+        try { _provider.ConversationStore.Delete(throwawayId); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete throwaway {ConversationId}", throwawayId); }
+
+        _logger.LogInformation(
+            "DTMF swap complete: {Throwaway} -> {Extension} (digit {Digit}) for call {CallControlId}",
+            throwawayId, extension.Id, digit, _pending.CallControlId);
     }
 
     /// <summary>
@@ -208,7 +295,7 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
         catch (WebSocketException ex)
         {
             _logger.LogWarning(ex, "Telnyx WebSocket lost for conversation {ConversationId}",
-                _pending.ConversationId);
+                _currentConversationId);
         }
         finally
         {
@@ -273,7 +360,7 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
         catch (WebSocketException ex)
         {
             _logger.LogWarning(ex, "Telnyx WebSocket send failed for conversation {ConversationId}",
-                _pending.ConversationId);
+                _currentConversationId);
         }
     }
 
