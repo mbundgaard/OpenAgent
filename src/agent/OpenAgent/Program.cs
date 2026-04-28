@@ -173,6 +173,8 @@ builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddKeyedSingleton<ILlmTextProvider, AzureOpenAiTextProvider>(AzureOpenAiTextProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmTextProvider, AnthropicSubscriptionTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmTextProvider, OpenAiSubscriptionTextProvider>(OpenAiSubscriptionTextProvider.ProviderKey);
+// Daily refresher keeps the rotating refresh-token chain alive even when the agent is idle.
+builder.Services.AddHostedService<OpenAiSubscriptionTokenRefresher>();
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, GrokRealtimeVoiceProvider>(GrokRealtimeVoiceProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, GeminiLiveVoiceProvider>(GeminiLiveVoiceProvider.ProviderKey);

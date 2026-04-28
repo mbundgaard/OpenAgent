@@ -18,10 +18,14 @@ namespace OpenAgent.LlmText.OpenAISubscription;
 /// <summary>
 /// ChatGPT subscription-backed text provider using the chatgpt.com Codex responses endpoint.
 /// </summary>
-public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogger<OpenAiSubscriptionTextProvider> logger) : ILlmTextProvider, IDisposable
+public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConfigStore configStore, ILogger<OpenAiSubscriptionTextProvider> logger) : ILlmTextProvider, IDisposable
 {
     private OpenAiSubscriptionConfig? _config;
     private HttpClient? _httpClient;
+
+    // Serializes refresh-token rotations. Refresh tokens are single-use — two concurrent
+    // refresh calls would both burn the same refresh token and one would fail.
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -30,6 +34,9 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
     private const string OAuthAuthorizeEndpoint = "https://auth.openai.com/oauth/authorize";
     private const string OAuthTokenEndpoint = "https://auth.openai.com/oauth/token";
     private static readonly TimeSpan PendingAuthTtl = TimeSpan.FromMinutes(15);
+    // Pi's pattern — store expiresAt minus a 5-minute safety margin so callers can use a
+    // plain `now >= ExpiresAtUnix` and still have headroom for clock skew + slow refresh.
+    private static readonly TimeSpan ExpirySafetyMargin = TimeSpan.FromMinutes(5);
 
     // Pending PKCE verifiers keyed by OAuth state. State is round-tripped through the IdP and
     // echoed back on the callback URL; the matching verifier is pulled from here when
@@ -117,11 +124,22 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
                 throw new InvalidOperationException($"OpenAI token exchange failed ({(int)tokenResponse.StatusCode}): {tokenBody}");
 
             using var tokenDoc = JsonDocument.Parse(tokenBody);
-            if (!tokenDoc.RootElement.TryGetProperty("access_token", out var accessTokenProp)
+            var rootElement = tokenDoc.RootElement;
+            if (!rootElement.TryGetProperty("access_token", out var accessTokenProp)
                 || string.IsNullOrWhiteSpace(accessTokenProp.GetString()))
                 throw new InvalidOperationException("OpenAI token response missing access_token.");
+            if (!rootElement.TryGetProperty("refresh_token", out var refreshTokenProp)
+                || string.IsNullOrWhiteSpace(refreshTokenProp.GetString()))
+                throw new InvalidOperationException("OpenAI token response missing refresh_token.");
+            if (!rootElement.TryGetProperty("expires_in", out var expiresInProp)
+                || expiresInProp.ValueKind != JsonValueKind.Number)
+                throw new InvalidOperationException("OpenAI token response missing expires_in.");
+
+            var expiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInProp.GetInt32()) - ExpirySafetyMargin;
 
             dict["setupToken"] = JsonSerializer.SerializeToElement(accessTokenProp.GetString()!);
+            dict["refreshToken"] = JsonSerializer.SerializeToElement(refreshTokenProp.GetString()!);
+            dict["expiresAt"] = JsonSerializer.SerializeToElement(expiresAt.ToUnixTimeSeconds());
             dict["callbackUrl"] = JsonSerializer.SerializeToElement(string.Empty);
         }
 
@@ -143,7 +161,112 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
         logger.LogInformation("OpenAI subscription provider configured with {ModelCount} models", DefaultModels.Length);
     }
 
-    public void Dispose() => _httpClient?.Dispose();
+    public void Dispose()
+    {
+        _httpClient?.Dispose();
+        _refreshLock.Dispose();
+    }
+
+    /// <summary>
+    /// Returns the current access token, refreshing it first if it is at or past expiry.
+    /// Refresh is serialized via <see cref="_refreshLock"/> so concurrent turns can't both
+    /// burn the same single-use refresh token.
+    /// </summary>
+    private async Task<string> GetActiveTokenAsync(CancellationToken ct)
+    {
+        if (_config is null)
+            throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
+
+        // Legacy configs (saved before refresh support shipped) have no refresh_token /
+        // expiresAt. Fall back to the static access token until the user re-authenticates.
+        if (string.IsNullOrEmpty(_config.RefreshToken) || _config.ExpiresAtUnix == 0)
+            return _config.SetupToken;
+
+        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() < _config.ExpiresAtUnix)
+            return _config.SetupToken;
+
+        await _refreshLock.WaitAsync(ct);
+        try
+        {
+            // Re-check inside the lock — another caller may have just refreshed.
+            if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() < _config.ExpiresAtUnix)
+                return _config.SetupToken;
+
+            await RefreshTokenInternalAsync(ct);
+            return _config.SetupToken;
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Forces a token refresh regardless of current expiry. Called by the daily
+    /// background refresher to keep the rotating refresh-token chain alive even when
+    /// the agent is otherwise idle. No-op when there's no refresh token to spend.
+    /// </summary>
+    internal async Task RefreshNowAsync(CancellationToken ct)
+    {
+        if (_config is null || string.IsNullOrEmpty(_config.RefreshToken))
+            return;
+
+        await _refreshLock.WaitAsync(ct);
+        try
+        {
+            await RefreshTokenInternalAsync(ct);
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Performs the OAuth refresh-token exchange and persists the rotated triplet via
+    /// <see cref="IConfigStore"/>. Caller must hold <see cref="_refreshLock"/>.
+    /// </summary>
+    private async Task RefreshTokenInternalAsync(CancellationToken ct)
+    {
+        if (_config is null || string.IsNullOrEmpty(_config.RefreshToken))
+            throw new InvalidOperationException("Cannot refresh — no refresh token on file.");
+
+        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+        using var resp = await client.PostAsync(OAuthTokenEndpoint, new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = _config.RefreshToken,
+            ["client_id"] = OAuthClientId
+        }), ct);
+
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            logger.LogError("OpenAI token refresh failed ({StatusCode}): {Body}", (int)resp.StatusCode, body);
+            throw new InvalidOperationException($"OpenAI token refresh failed ({(int)resp.StatusCode}): {body}");
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        var newAccess = root.TryGetProperty("access_token", out var a) ? a.GetString() : null;
+        var newRefresh = root.TryGetProperty("refresh_token", out var r) ? r.GetString() : null;
+        var newExpiresIn = root.TryGetProperty("expires_in", out var e) && e.ValueKind == JsonValueKind.Number ? e.GetInt32() : (int?)null;
+
+        if (string.IsNullOrEmpty(newAccess) || string.IsNullOrEmpty(newRefresh) || newExpiresIn is null)
+            throw new InvalidOperationException("OpenAI token refresh response missing required fields.");
+
+        _config.SetupToken = newAccess;
+        _config.RefreshToken = newRefresh;
+        _config.ExpiresAtUnix = (DateTimeOffset.UtcNow.AddSeconds(newExpiresIn.Value) - ExpirySafetyMargin).ToUnixTimeSeconds();
+
+        // Persist immediately — refresh tokens rotate, so dropping the new triplet here
+        // would lock the user out on the next restart.
+        configStore.Save(Key, JsonSerializer.SerializeToElement(_config));
+
+        logger.LogInformation(
+            "OpenAI subscription token refreshed; expires {ExpiresAt:u}",
+            DateTimeOffset.FromUnixTimeSeconds(_config.ExpiresAtUnix));
+    }
 
     public int? GetContextWindow(string model)
     {
@@ -151,6 +274,42 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
         if (model.Contains("gpt-4o", StringComparison.OrdinalIgnoreCase)) return 128_000;
         if (model.Contains("gpt-4", StringComparison.OrdinalIgnoreCase)) return 128_000;
         return null;
+    }
+
+    /// <summary>
+    /// Sends a request to the chatgpt.com Codex backend with a fresh access token.
+    /// Retries once on 401 by forcing a refresh — covers cases where OpenAI revokes
+    /// a token early or our cached expiry was stale across an instance restart.
+    /// The request is rebuilt each attempt so a freshly-rotated token gets used.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithRefreshAsync(Func<string, HttpRequestMessage> buildRequest, CancellationToken ct)
+    {
+        if (_httpClient is null)
+            throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
+
+        var refreshedThisTurn = false;
+        while (true)
+        {
+            var token = await GetActiveTokenAsync(ct);
+            var request = buildRequest(token);
+            try
+            {
+                var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && !refreshedThisTurn)
+                {
+                    refreshedThisTurn = true;
+                    response.Dispose();
+                    logger.LogWarning("chatgpt.com returned 401 — refreshing access token and retrying once.");
+                    await RefreshNowAsync(ct);
+                    continue;
+                }
+                return response;
+            }
+            finally
+            {
+                request.Dispose();
+            }
+        }
     }
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
@@ -172,7 +331,6 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         agentLogic.AddMessage(conversationId, userMessage);
 
-        var accountId = ExtractAccountId(_config.SetupToken);
         var input = BuildInput(conversation);
         var tools = BuildTools();
 
@@ -191,16 +349,19 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
                 parallel_tool_calls = true
             };
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, ResolveCodexUrl())
+            using var response = await SendWithRefreshAsync(token =>
             {
-                Content = JsonContent.Create(requestBody)
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.SetupToken);
-            request.Headers.TryAddWithoutValidation("chatgpt-account-id", accountId);
-            request.Headers.TryAddWithoutValidation("OpenAI-Beta", "responses=experimental");
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+                var req = new HttpRequestMessage(HttpMethod.Post, ResolveCodexUrl())
+                {
+                    Content = JsonContent.Create(requestBody)
+                };
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                req.Headers.TryAddWithoutValidation("chatgpt-account-id", ExtractAccountId(token));
+                req.Headers.TryAddWithoutValidation("OpenAI-Beta", "responses=experimental");
+                req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+                return req;
+            }, ct);
 
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(ct);
@@ -367,7 +528,6 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
-        var accountId = ExtractAccountId(_config.SetupToken);
         var input = messages.Where(m => m.Role != "system").Select(m => new
         {
             role = m.Role == "tool" ? "user" : m.Role,
@@ -383,16 +543,19 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
             input
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, ResolveCodexUrl())
+        using var response = await SendWithRefreshAsync(token =>
         {
-            Content = JsonContent.Create(requestBody)
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.SetupToken);
-        request.Headers.TryAddWithoutValidation("chatgpt-account-id", accountId);
-        request.Headers.TryAddWithoutValidation("OpenAI-Beta", "responses=experimental");
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            var req = new HttpRequestMessage(HttpMethod.Post, ResolveCodexUrl())
+            {
+                Content = JsonContent.Create(requestBody)
+            };
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Headers.TryAddWithoutValidation("chatgpt-account-id", ExtractAccountId(token));
+            req.Headers.TryAddWithoutValidation("OpenAI-Beta", "responses=experimental");
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            return req;
+        }, ct);
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);
