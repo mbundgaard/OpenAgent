@@ -10,6 +10,7 @@ using OpenAgent.Contracts;
 using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.LlmText.AnthropicSubscription;
 using OpenAgent.LlmText.OpenAIAzure;
+using OpenAgent.LlmText.OpenAISubscription;
 using OpenAgent.LlmVoice.GeminiLive;
 using OpenAgent.LlmVoice.GrokRealtime;
 using OpenAgent.LlmVoice.OpenAIAzure;
@@ -122,6 +123,7 @@ builder.Host.UseSerilog((context, serilog) =>
 
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddSingleton<IAgentLogic, AgentLogic>();
+builder.Services.AddSingleton<OpenAgent.Api.OpenAiSubscriptionAuthService>();
 
 builder.Services.AddSingleton<IToolHandler, FileSystemToolHandler>();
 builder.Services.AddSingleton<IToolHandler, ShellToolHandler>();
@@ -135,7 +137,8 @@ builder.Services.AddSingleton<IToolHandler>(sp =>
         () => new ILlmTextProvider[]
         {
             sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey),
-            sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey)
+            sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey),
+            sp.GetRequiredKeyedService<ILlmTextProvider>(OpenAiSubscriptionTextProvider.ProviderKey)
         }));
 
 builder.Services.AddScheduledTasks(environment.DataPath);
@@ -170,6 +173,7 @@ builder.Services.AddSingleton<ICompactionSummarizer, CompactionSummarizer>();
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddKeyedSingleton<ILlmTextProvider, AzureOpenAiTextProvider>(AzureOpenAiTextProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmTextProvider, AnthropicSubscriptionTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey);
+builder.Services.AddKeyedSingleton<ILlmTextProvider, OpenAiSubscriptionTextProvider>(OpenAiSubscriptionTextProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, AzureOpenAiRealtimeVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, GrokRealtimeVoiceProvider>(GrokRealtimeVoiceProvider.ProviderKey);
 builder.Services.AddKeyedSingleton<ILlmVoiceProvider, GeminiLiveVoiceProvider>(GeminiLiveVoiceProvider.ProviderKey);
@@ -193,6 +197,8 @@ builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmTextProvider>(AzureOpenAiTextProvider.ProviderKey));
 builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmTextProvider>(AnthropicSubscriptionTextProvider.ProviderKey));
+builder.Services.AddSingleton<IConfigurable>(sp =>
+    sp.GetRequiredKeyedService<ILlmTextProvider>(OpenAiSubscriptionTextProvider.ProviderKey));
 builder.Services.AddSingleton<IConfigurable>(sp =>
     sp.GetRequiredKeyedService<ILlmVoiceProvider>(AzureOpenAiRealtimeVoiceProvider.ProviderKey));
 builder.Services.AddSingleton<IConfigurable>(sp =>

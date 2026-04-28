@@ -36,6 +36,12 @@
   border-color: var(--color-accent);
 }
 
+a.input {
+  display: inline-block;
+  text-decoration: none;
+  cursor: pointer;
+}
+
 .actions {
   display: flex;
   align-items: center;
