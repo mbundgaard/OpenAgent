@@ -29,14 +29,24 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
 
     public string Key => ProviderKey;
 
+    // Hardcoded model list — Anthropic's catalog is fixed and exposing a free-text field in
+    // the UI just invites typos. Update here when new models ship.
+    private static readonly string[] DefaultModels =
+    [
+        "claude-opus-4-5",
+        "claude-opus-4-6",
+        "claude-sonnet-4-5",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5"
+    ];
+
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
         new() { Key = "setupToken", Label = "Setup Token", Type = "Secret", Required = true },
-        new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true },
         new() { Key = "maxTokens", Label = "Max Tokens", Type = "String", DefaultValue = "16000" }
     ];
 
-    public IReadOnlyList<string> Models => _config?.Models ?? [];
+    public IReadOnlyList<string> Models => DefaultModels;
 
     public void Configure(JsonElement configuration)
     {
@@ -45,12 +55,6 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
 
         if (string.IsNullOrWhiteSpace(_config.SetupToken))
             throw new InvalidOperationException("setupToken is required.");
-
-        // Parse models from comma-separated string
-        if (configuration.TryGetProperty("models", out var modelsProp) && modelsProp.ValueKind == JsonValueKind.String)
-        {
-            _config.Models = modelsProp.GetString()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        }
 
         // Parse maxTokens from string field
         if (configuration.TryGetProperty("maxTokens", out var maxTokensProp) && maxTokensProp.ValueKind == JsonValueKind.String)
@@ -75,7 +79,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         logger.LogInformation("Anthropic subscription provider configured with {ModelCount} models, maxTokens={MaxTokens}",
-            _config.Models.Length, _config.MaxTokens);
+            DefaultModels.Length, _config.MaxTokens);
     }
 
     public void Dispose() => _httpClient?.Dispose();
