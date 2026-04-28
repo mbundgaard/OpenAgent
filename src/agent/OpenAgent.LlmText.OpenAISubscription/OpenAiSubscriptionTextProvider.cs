@@ -37,6 +37,22 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
     // GET-config / POST-config endpoint pair (both hit the same singleton).
     private static readonly ConcurrentDictionary<string, PendingAuth> PendingAuths = new();
 
+    // Hardcoded model list — the chatgpt.com Codex backend exposes a fixed catalog and exposing
+    // a free-text field in the UI just invites typos. Update here when the catalog changes.
+    private static readonly string[] DefaultModels =
+    [
+        "gpt-5.3-codex",
+        "gpt-5.1",
+        "gpt-5.1-codex-max",
+        "gpt-5.1-codex-mini",
+        "gpt-5.2",
+        "gpt-5.2-codex",
+        "gpt-5.3-codex-spark",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.5"
+    ];
+
     public const string ProviderKey = "openai-subscription";
 
     public string Key => ProviderKey;
@@ -46,7 +62,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
     // URL fails both checks.
     public IReadOnlyList<ProviderConfigField> ConfigFields => BuildConfigFields();
 
-    public IReadOnlyList<string> Models => _config?.Models ?? [];
+    public IReadOnlyList<string> Models => DefaultModels;
 
     public async ValueTask<JsonElement> NormalizeConfigAsync(JsonElement configuration, CancellationToken ct = default)
     {
@@ -121,13 +137,10 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
             throw new InvalidOperationException(
                 "OpenAI subscription is not configured. Open the OpenAI Subscription Login link, sign in, then paste the redirect URL into 'Callback URL' and save.");
 
-        if (configuration.TryGetProperty("models", out var modelsProp) && modelsProp.ValueKind == JsonValueKind.String)
-            _config.Models = modelsProp.GetString()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
         _httpClient?.Dispose();
         _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
 
-        logger.LogInformation("OpenAI subscription provider configured with {ModelCount} models", _config.Models.Length);
+        logger.LogInformation("OpenAI subscription provider configured with {ModelCount} models", DefaultModels.Length);
     }
 
     public void Dispose() => _httpClient?.Dispose();
@@ -512,8 +525,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
         [
             new() { Key = "authUrl", Label = "OpenAI Subscription Login", Type = "Url", DefaultValue = url },
             new() { Key = "callbackUrl", Label = "Callback URL", Type = "String", Required = true },
-            new() { Key = "setupToken", Label = "Setup Token", Type = "Secret" },
-            new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true }
+            new() { Key = "setupToken", Label = "Setup Token", Type = "Secret" }
         ];
     }
 
