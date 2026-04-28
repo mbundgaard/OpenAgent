@@ -71,11 +71,19 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
 
     public IReadOnlyList<string> Models => DefaultModels;
 
+    // refreshToken is persisted by NormalizeConfigAsync but never rendered in the form.
+    // Mask it from /api/admin/providers/.../values — it's as sensitive as the access token.
+    public IReadOnlyCollection<string> InternalSecretKeys { get; } = ["refreshToken"];
+
     public async ValueTask<JsonElement> NormalizeConfigAsync(JsonElement configuration, CancellationToken ct = default)
     {
         var dict = new Dictionary<string, JsonElement>();
         foreach (var prop in configuration.EnumerateObject())
             dict[prop.Name] = prop.Value;
+
+        // Scrub legacy fields no longer in ConfigFields. `models` was the user-editable
+        // catalog before it was hardcoded; old saves still carry it.
+        dict.Remove("models");
 
         if (dict.TryGetValue("callbackUrl", out var callbackElement)
             && callbackElement.ValueKind == JsonValueKind.String

@@ -27,4 +27,12 @@ public interface IConfigurable
 
     /// <summary>Available models/deployments for this provider. Empty if not a model provider.</summary>
     IReadOnlyList<string> Models => [];
+
+    /// <summary>
+    /// Names of stored fields that should be masked in admin-facing responses but are NOT
+    /// part of the user-facing <see cref="ConfigFields"/> form. Use for internal credentials
+    /// like rotated refresh tokens — the field is persisted by the provider's normalization
+    /// step, but should never leave the server in plaintext via the values endpoint.
+    /// </summary>
+    IReadOnlyCollection<string> InternalSecretKeys => [];
 }

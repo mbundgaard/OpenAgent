@@ -61,10 +61,13 @@ public static class AdminEndpoints
             if (saved is null)
                 return Results.Ok(new { configured = false });
 
-            // Mask secret fields
+            // Mask secret fields — both UI-declared (Type == "Secret") and internal-only
+            // credentials the provider stashes via NormalizeConfigAsync (e.g. OAuth refresh
+            // tokens). Both are equally sensitive; only the former renders in the form.
             var secretKeys = configurable.ConfigFields
                 .Where(f => f.Type == "Secret")
                 .Select(f => f.Key)
+                .Concat(configurable.InternalSecretKeys)
                 .ToHashSet();
 
             var masked = new Dictionary<string, object?> { ["configured"] = true };
