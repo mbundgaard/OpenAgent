@@ -80,6 +80,13 @@ public static class TelnyxWebhookEndpoints
             return Results.Unauthorized();
         }
 
+        // Dump the raw JSON for every accepted event. Lets us see the full Telnyx payload —
+        // including fields we don't currently parse (sip_username, sip_to, custom_headers, etc.)
+        // — when investigating extension routing or unfamiliar webhook shapes. Information level
+        // because these aren't frequent (a few per call) and the body is genuinely useful.
+        logger.LogInformation("Telnyx webhook {EventType} payload: {RawBody}",
+            env.Data?.EventType, System.Text.Encoding.UTF8.GetString(rawBody));
+
         return env.Data?.EventType switch
         {
             "call.initiated"    => await OnCallInitiated(provider, env, loggerFactory, ct),
