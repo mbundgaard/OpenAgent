@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -23,23 +25,26 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
+    private const string OAuthClientId = "app_EMoamEEZ73f0CkXaXp7hrann";
+    private const string OAuthRedirectUri = "http://localhost:1455/auth/callback";
+    private const string OAuthAuthorizeEndpoint = "https://auth.openai.com/oauth/authorize";
+    private const string OAuthTokenEndpoint = "https://auth.openai.com/oauth/token";
+    private static readonly TimeSpan PendingAuthTtl = TimeSpan.FromMinutes(15);
+
+    // Pending PKCE verifiers keyed by OAuth state. State is round-tripped through the IdP and
+    // echoed back on the callback URL; the matching verifier is pulled from here when
+    // NormalizeConfigAsync runs the token exchange. Static so the dict survives across the
+    // GET-config / POST-config endpoint pair (both hit the same singleton).
+    private static readonly ConcurrentDictionary<string, PendingAuth> PendingAuths = new();
+
     public const string ProviderKey = "openai-subscription";
 
     public string Key => ProviderKey;
 
-    public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
-    [
-        new()
-        {
-            Key = "authUrl",
-            Label = "OpenAI Subscription Login",
-            Type = "Url",
-            DefaultValue = "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid%20profile%20email%20offline_access&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=openagent"
-        },
-        new() { Key = "callbackUrl", Label = "Callback URL", Type = "String", Required = true },
-        new() { Key = "setupToken", Label = "Setup Token", Type = "Secret" },
-        new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true }
-    ];
+    // Generated fresh on every read so each form-open mints a unique state + PKCE pair.
+    // OpenAI's IdP requires state >= 8 chars and the Codex flow requires PKCE; a static
+    // URL fails both checks.
+    public IReadOnlyList<ProviderConfigField> ConfigFields => BuildConfigFields();
 
     public IReadOnlyList<string> Models => _config?.Models ?? [];
 
@@ -57,17 +62,38 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
             if (!Uri.TryCreate(callbackUrl, UriKind.Absolute, out var callbackUri))
                 throw new InvalidOperationException("callbackUrl must be an absolute URL.");
 
+            // The IdP may have rejected the request and redirected with ?error=...; surface that
+            // verbatim instead of looking for a code that isn't there.
+            var oauthError = GetQueryParameter(callbackUri, "error");
+            if (!string.IsNullOrWhiteSpace(oauthError))
+            {
+                var description = GetQueryParameter(callbackUri, "error_description") ?? "";
+                throw new InvalidOperationException($"OpenAI OAuth error: {oauthError}. {description}".Trim());
+            }
+
             var code = GetQueryParameter(callbackUri, "code");
             if (string.IsNullOrWhiteSpace(code))
                 throw new InvalidOperationException("callbackUrl must contain a 'code' query parameter.");
 
+            var state = GetQueryParameter(callbackUri, "state");
+            if (string.IsNullOrWhiteSpace(state))
+                throw new InvalidOperationException("callbackUrl must contain a 'state' query parameter.");
+
+            // Single-use lookup: TryRemove consumes the pending entry so a leaked code can't
+            // be replayed. Expired/unknown state means the user needs to open the link again.
+            if (!PendingAuths.TryRemove(state, out var pending))
+                throw new InvalidOperationException("Auth state expired or unknown. Re-open the OpenAI Subscription Login link and try again.");
+            if (pending.Expires < DateTimeOffset.UtcNow)
+                throw new InvalidOperationException("Auth state expired. Re-open the OpenAI Subscription Login link and try again.");
+
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
-            using var tokenResponse = await client.PostAsync("https://auth.openai.com/oauth/token", new FormUrlEncodedContent(new Dictionary<string, string>
+            using var tokenResponse = await client.PostAsync(OAuthTokenEndpoint, new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["grant_type"] = "authorization_code",
-                ["client_id"] = "app_EMoamEEZ73f0CkXaXp7hrann",
+                ["client_id"] = OAuthClientId,
                 ["code"] = code,
-                ["redirect_uri"] = "http://localhost:1455/auth/callback"
+                ["redirect_uri"] = OAuthRedirectUri,
+                ["code_verifier"] = pending.CodeVerifier
             }), ct);
 
             var tokenBody = await tokenResponse.Content.ReadAsStringAsync(ct);
@@ -92,7 +118,8 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
                   ?? throw new InvalidOperationException("Failed to deserialize provider configuration.");
 
         if (string.IsNullOrWhiteSpace(_config.SetupToken))
-            throw new InvalidOperationException("setupToken is required.");
+            throw new InvalidOperationException(
+                "OpenAI subscription is not configured. Open the OpenAI Subscription Login link, sign in, then paste the redirect URL into 'Callback URL' and save.");
 
         if (configuration.TryGetProperty("models", out var modelsProp) && modelsProp.ValueKind == JsonValueKind.String)
             _config.Models = modelsProp.GetString()!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -462,6 +489,53 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
         return "https://chatgpt.com/backend-api/codex/responses";
     }
 
+    private static IReadOnlyList<ProviderConfigField> BuildConfigFields()
+    {
+        var (state, verifier, challenge) = GeneratePkce();
+        var expires = DateTimeOffset.UtcNow + PendingAuthTtl;
+        PendingAuths[state] = new PendingAuth { CodeVerifier = verifier, Expires = expires };
+        ExpirePendingAuths();
+
+        var url = OAuthAuthorizeEndpoint
+                  + "?response_type=code"
+                  + "&client_id=" + OAuthClientId
+                  + "&redirect_uri=" + Uri.EscapeDataString(OAuthRedirectUri)
+                  + "&scope=" + Uri.EscapeDataString("openid profile email offline_access")
+                  + "&id_token_add_organizations=true"
+                  + "&codex_cli_simplified_flow=true"
+                  + "&originator=openagent"
+                  + "&state=" + state
+                  + "&code_challenge=" + challenge
+                  + "&code_challenge_method=S256";
+
+        return
+        [
+            new() { Key = "authUrl", Label = "OpenAI Subscription Login", Type = "Url", DefaultValue = url },
+            new() { Key = "callbackUrl", Label = "Callback URL", Type = "String", Required = true },
+            new() { Key = "setupToken", Label = "Setup Token", Type = "Secret" },
+            new() { Key = "models", Label = "Models (comma-separated)", Type = "String", Required = true }
+        ];
+    }
+
+    private static (string State, string Verifier, string Challenge) GeneratePkce()
+    {
+        var state = Base64Url(RandomNumberGenerator.GetBytes(16));
+        var verifier = Base64Url(RandomNumberGenerator.GetBytes(32));
+        var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        return (state, verifier, challenge);
+    }
+
+    private static string Base64Url(byte[] bytes) =>
+        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    private static void ExpirePendingAuths()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var (key, value) in PendingAuths)
+            if (value.Expires < now)
+                PendingAuths.TryRemove(key, out _);
+    }
+
     private static string? GetQueryParameter(Uri uri, string key)
     {
         var query = uri.Query;
@@ -509,6 +583,12 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, ILogg
         public string Name { get; set; } = "";
         public string Arguments { get; set; } = "";
         public string StoredId => ItemId is null ? CallId : $"{CallId}|{ItemId}";
+    }
+
+    private sealed class PendingAuth
+    {
+        public required string CodeVerifier { get; init; }
+        public required DateTimeOffset Expires { get; init; }
     }
 
     private sealed class StoredToolCall
