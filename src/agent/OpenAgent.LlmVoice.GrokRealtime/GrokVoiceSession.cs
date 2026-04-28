@@ -22,7 +22,11 @@ namespace OpenAgent.LlmVoice.GrokRealtime;
 internal sealed class GrokVoiceSession : IVoiceSession
 {
     private readonly GrokConfig _config;
-    private readonly Conversation _conversation;
+    // Mutable so RebindConversationAsync can swap the bound conversation in flight (DTMF
+    // extension routing on Telnyx). Subsequent persists in HandleEnvelopeAsync read this
+    // field directly so they land on the new conversation post-swap; in-flight tasks that
+    // already captured the old id may still write to it — accepted per the design.
+    private Conversation _conversation;
     private readonly IAgentLogic _agentLogic;
     private readonly ILogger _logger;
     private readonly string _codec;
@@ -138,6 +142,57 @@ internal sealed class GrokVoiceSession : IVoiceSession
     public async Task RequestResponseAsync(CancellationToken ct = default)
     {
         await SendEventAsync(new GrokClientEvent { Type = EventTypes.ResponseCreate }, ct);
+    }
+
+    public async Task RebindConversationAsync(Conversation newConversation, CancellationToken ct = default)
+    {
+        // Swap the bound conversation FIRST so BuildSessionConfig (called by RefreshSystemPrompt)
+        // and any subsequent persistence land on the new conversation.
+        var oldId = _conversation.Id;
+        _conversation = newConversation;
+
+        // Push the new system prompt (skills, intention, summary all derived from the new conv).
+        await RefreshSystemPromptAsync(ct);
+
+        // Inject the new conversation's prior messages so the model has its history.
+        var stored = _agentLogic.GetMessages(newConversation.Id, includeToolResultBlobs: false);
+        var injected = 0;
+        foreach (var message in stored)
+        {
+            if (message.Role is "tool") continue;
+            if (string.IsNullOrEmpty(message.Content)) continue;
+            if (message.ToolCalls is not null) continue;
+            await SendConversationItemAsync(message.Role, message.Content, ct);
+            injected++;
+        }
+
+        _logger.LogInformation(
+            "Rebound voice session: {OldConversation} -> {NewConversation} ({Injected} messages injected)",
+            oldId, newConversation.Id, injected);
+    }
+
+    private async Task SendConversationItemAsync(string role, string text, CancellationToken ct)
+    {
+        // Assistant-role items use content-type "text"; user-role items use "input_text".
+        var item = role == "assistant"
+            ? (object)new
+            {
+                type = "message",
+                role = "assistant",
+                content = new[] { new { type = "text", text } }
+            }
+            : new
+            {
+                type = "message",
+                role = "user",
+                content = new[] { new { type = "input_text", text } }
+            };
+
+        await SendEventAsync(new GrokClientEvent
+        {
+            Type = EventTypes.ConversationItemCreate,
+            Item = item
+        }, ct);
     }
 
     public async ValueTask DisposeAsync()

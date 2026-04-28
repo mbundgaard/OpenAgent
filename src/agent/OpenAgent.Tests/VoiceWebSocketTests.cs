@@ -163,6 +163,7 @@ public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
 
         public Task AddUserMessageAsync(string text, CancellationToken ct = default) => Task.CompletedTask;
         public Task RequestResponseAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task RebindConversationAsync(OpenAgent.Models.Conversations.Conversation newConversation, CancellationToken ct = default) => Task.CompletedTask;
 
         public IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync(CancellationToken ct = default)
             => _events.Reader.ReadAllAsync(ct);

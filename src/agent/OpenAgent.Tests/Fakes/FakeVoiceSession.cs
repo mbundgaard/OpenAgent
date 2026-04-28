@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Voice;
 
 namespace OpenAgent.Tests.Fakes;
@@ -57,6 +58,15 @@ public sealed class FakeVoiceSession : IVoiceSession
     {
         RequestResponseCount++;
         return Task.CompletedTask;
+    }
+
+    public List<string> ReboundConversationIds { get; } = new();
+    public Func<Conversation, Task>? RebindHook { get; set; }
+
+    public async Task RebindConversationAsync(Conversation newConversation, CancellationToken ct = default)
+    {
+        ReboundConversationIds.Add(newConversation.Id);
+        if (RebindHook is not null) await RebindHook(newConversation);
     }
 
     public IAsyncEnumerable<VoiceEvent> ReceiveEventsAsync(CancellationToken ct = default) =>
