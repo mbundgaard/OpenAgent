@@ -1,6 +1,8 @@
 using AVFoundation;
 using AudioToolbox;
 using Foundation;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent.App.Core.Voice;
 
 namespace OpenAgent.App;
@@ -13,6 +15,7 @@ namespace OpenAgent.App;
 /// </summary>
 public sealed class IosCallAudio : ICallAudio
 {
+    private readonly ILogger<IosCallAudio> _logger;
     private AVAudioEngine? _engine;
     private AVAudioPlayerNode? _player;
     private AVAudioFormat? _outFormat;
@@ -23,8 +26,16 @@ public sealed class IosCallAudio : ICallAudio
 
     public event Action<byte[]>? OnPcmCaptured;
 
+    public IosCallAudio(ILogger<IosCallAudio>? logger = null)
+    {
+        _logger = logger ?? NullLogger<IosCallAudio>.Instance;
+    }
+
     public async Task StartAsync(int sampleRate, CancellationToken ct)
     {
+        _logger.LogInformation("Audio start requested sampleRate={SampleRate} permission={Permission}",
+            sampleRate, AVAudioSession.SharedInstance().RecordPermission);
+
         var session = AVAudioSession.SharedInstance();
         session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
             AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.DefaultToSpeaker);
@@ -44,6 +55,9 @@ public sealed class IosCallAudio : ICallAudio
             _inputNativeFormat = input.GetBusOutputFormat(0);
             _converter = new AVAudioConverter(_inputNativeFormat, _outFormat);
 
+            _logger.LogInformation("Audio formats input={InRate}Hz/{InCh}ch out={OutRate}Hz/1ch",
+                _inputNativeFormat.SampleRate, _inputNativeFormat.ChannelCount, sampleRate);
+
             input.InstallTapOnBus(0, 4096, _inputNativeFormat, (buffer, _) =>
             {
                 if (_muted) return;
@@ -53,14 +67,20 @@ public sealed class IosCallAudio : ICallAudio
 
             _engine.Prepare();
             _engine.StartAndReturnError(out var err);
-            if (err is not null) throw new InvalidOperationException(err.LocalizedDescription);
+            if (err is not null)
+            {
+                _logger.LogError("Audio engine start failed: {Error}", err.LocalizedDescription);
+                throw new InvalidOperationException(err.LocalizedDescription);
+            }
             _player.Play();
+            _logger.LogInformation("Audio engine running");
         }
         await Task.CompletedTask;
     }
 
     public Task StopAsync()
     {
+        _logger.LogInformation("Audio stop");
         lock (_lifecycleLock)
         {
             _player?.Stop();

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OpenAgent.App.Core.Api;
+using OpenAgent.App.Core.Logging;
 using OpenAgent.App.Core.Services;
 using OpenAgent.App.Core.Voice;
 using ZXing.Net.Maui.Controls;
@@ -36,9 +37,31 @@ public static class MauiProgram
         builder.Services.AddTransient<Pages.SettingsPage>();
         builder.Services.AddTransient<ViewModels.SettingsViewModel>();
 
+        // Ship logs to the agent backend so we can diagnose live-device issues without
+        // attaching a debugger. The provider buffers locally and flushes every 5s; it
+        // resolves IApiClient lazily on each flush via the closure below, so it's safe
+        // to register before MauiApp.Build() — DI doesn't have to be ready yet.
+        AgentLoggerProvider? agentLoggerProvider = null;
+        builder.Logging.AddProvider(new LazyLoggerProviderShim(() =>
+            agentLoggerProvider ??= new AgentLoggerProvider(() => _serviceProvider?.GetService<IApiClient>())));
+
 #if DEBUG
         builder.Logging.AddDebug();
 #endif
-        return builder.Build();
+        var app = builder.Build();
+        _serviceProvider = app.Services;
+        return app;
     }
+
+    private static IServiceProvider? _serviceProvider;
+}
+
+// Bridges Logging.AddProvider() (called pre-Build) to a provider that needs the built service container.
+internal sealed class LazyLoggerProviderShim : ILoggerProvider
+{
+    private readonly Func<ILoggerProvider> _factory;
+    private ILoggerProvider? _inner;
+    public LazyLoggerProviderShim(Func<ILoggerProvider> factory) => _factory = factory;
+    public ILogger CreateLogger(string categoryName) => (_inner ??= _factory()).CreateLogger(categoryName);
+    public void Dispose() => _inner?.Dispose();
 }

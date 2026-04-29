@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent.App.Core.Voice;
 
 namespace OpenAgent.App.ViewModels;
@@ -19,6 +21,7 @@ public partial class CallViewModel : ObservableObject, IDisposable
 {
     private readonly IServiceProvider _services;
     private readonly ICallAudio _audio;
+    private readonly ILogger<CallViewModel> _logger;
     private readonly CallStateMachine _sm = new();
     private readonly ReconnectBackoff _backoff = new();
 
@@ -36,10 +39,11 @@ public partial class CallViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<TranscriptBubble> Bubbles { get; } = new();
 
-    public CallViewModel(IServiceProvider services, ICallAudio audio)
+    public CallViewModel(IServiceProvider services, ICallAudio audio, ILogger<CallViewModel>? logger = null)
     {
         _services = services;
         _audio = audio;
+        _logger = logger ?? NullLogger<CallViewModel>.Instance;
         _audio.OnPcmCaptured += pcm =>
         {
             // Fire-and-forget: SendAudioAsync serializes internally via SemaphoreSlim.
@@ -53,6 +57,7 @@ public partial class CallViewModel : ObservableObject, IDisposable
     [RelayCommand]
     public Task StartAsync()
     {
+        _logger.LogInformation("Call start convo={ConversationId} title={Title}", ConversationId, Title);
         _cts = new CancellationTokenSource();
         _ended = false;
         _transcript = new TranscriptRouter(
@@ -82,6 +87,7 @@ public partial class CallViewModel : ObservableObject, IDisposable
                 }
                 catch (Exception ex) when (!ct.IsCancellationRequested)
                 {
+                    _logger.LogWarning("Call connect failed: {Error}", ex.Message);
                     await TeardownAsync();
                     if (!await TryReconnectOrFinishAsync(ex.Message, authRejected: false, ct)) return;
                     continue;
@@ -95,6 +101,7 @@ public partial class CallViewModel : ObservableObject, IDisposable
 
                 if (disconnect.AuthRejected)
                 {
+                    _logger.LogWarning("Call auth rejected — sending user back to onboarding");
                     await OnMain(() => Shell.Current.DisplayAlert("Authentication failed",
                         "Token rejected by agent. Please reconfigure.", "OK"));
                     await OnMain(() => Shell.Current.GoToAsync("//onboarding"));
@@ -106,6 +113,7 @@ public partial class CallViewModel : ObservableObject, IDisposable
             catch (OperationCanceledException) { return; }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Call session loop crashed: {Error}", ex.Message);
                 await TeardownAsync();
                 await OnMain(() => Shell.Current.DisplayAlert("Call failed", ex.Message, "OK"));
                 await OnMain(() => Shell.Current.GoToAsync(".."));
@@ -123,9 +131,12 @@ public partial class CallViewModel : ObservableObject, IDisposable
             switch (frame)
             {
                 case VoiceFrame.EventFrame { Event: VoiceEvent.SessionReady ready }:
+                    _logger.LogInformation("SessionReady codecs={InCodec}/{OutCodec} sampleRates={InRate}/{OutRate}",
+                        ready.InputCodec, ready.OutputCodec, ready.InputSampleRate, ready.OutputSampleRate);
                     if (!string.Equals(ready.InputCodec, "pcm16", StringComparison.OrdinalIgnoreCase)
                         || !string.Equals(ready.OutputCodec, "pcm16", StringComparison.OrdinalIgnoreCase))
                     {
+                        _logger.LogWarning("Codec mismatch — client handles pcm16 only");
                         await OnMain(() => Shell.Current.DisplayAlert("Codec mismatch",
                             $"Agent announced {ready.InputCodec}/{ready.OutputCodec}; this client only handles pcm16.", "OK"));
                         return new VoiceFrame.Disconnected("Unsupported codec", AuthRejected: false);
@@ -140,7 +151,10 @@ public partial class CallViewModel : ObservableObject, IDisposable
                     if (ef.Event is VoiceEvent.TranscriptDone) _transcript!.OnDone();
                     SetState(_sm.State, viaMachine: sm => sm.Apply(ef.Event));
                     if (ef.Event is VoiceEvent.Error err)
+                    {
+                        _logger.LogWarning("Voice error from agent: {Error}", err.Message);
                         await OnMain(() => Shell.Current.DisplayAlert("Voice error", err.Message, "OK"));
+                    }
                     break;
 
                 case VoiceFrame.AudioFrame af:
@@ -203,8 +217,10 @@ public partial class CallViewModel : ObservableObject, IDisposable
 
     private void SetState(CallState newState, Action<CallStateMachine> viaMachine)
     {
+        var prev = _sm.State;
         viaMachine(_sm);
         var s = _sm.State;
+        if (s != prev) _logger.LogInformation("Call state {From} -> {To}", prev, s);
         MainThread.BeginInvokeOnMainThread(() => State = s);
     }
 

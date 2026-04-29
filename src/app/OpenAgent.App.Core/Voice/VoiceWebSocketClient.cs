@@ -1,5 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenAgent.App.Core.Services;
 
 namespace OpenAgent.App.Core.Voice;
@@ -8,10 +10,16 @@ namespace OpenAgent.App.Core.Voice;
 public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
 {
     private readonly ICredentialStore _credentials;
+    private readonly ILogger<VoiceWebSocketClient> _logger;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _ws;
+    private int _sendCount;
 
-    public VoiceWebSocketClient(ICredentialStore credentials) => _credentials = credentials;
+    public VoiceWebSocketClient(ICredentialStore credentials, ILogger<VoiceWebSocketClient>? logger = null)
+    {
+        _credentials = credentials;
+        _logger = logger ?? NullLogger<VoiceWebSocketClient>.Instance;
+    }
 
     public async Task ConnectAsync(string conversationId, CancellationToken ct)
     {
@@ -23,8 +31,21 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
             Query = $"api_key={Uri.EscapeDataString(creds.Token)}"
         }.Uri;
 
+        // Log host + conversation only — never the token or the full query string.
+        _logger.LogInformation("WS connect {Scheme}://{Host}{Path} convo={ConversationId}",
+            scheme, baseUri.Authority, wsUrl.AbsolutePath, conversationId);
+
         _ws = new ClientWebSocket();
-        await _ws.ConnectAsync(wsUrl, ct);
+        try
+        {
+            await _ws.ConnectAsync(wsUrl, ct);
+            _logger.LogInformation("WS connected state={State}", _ws.State);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning("WS connect failed: {Error}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -41,6 +62,10 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
         {
             if (ws.State != WebSocketState.Open) return;
             await ws.SendAsync(pcm16, WebSocketMessageType.Binary, true, ct);
+            // Log only every ~100th frame so we get a heartbeat without flooding the buffer.
+            // Audio captured at 24kHz mono PCM16 in ~85ms chunks = ~12 sends/sec.
+            var n = Interlocked.Increment(ref _sendCount);
+            if (n == 1 || n % 100 == 0) _logger.LogDebug("WS audio frames sent: {Count}", n);
         }
         finally
         {
@@ -70,6 +95,7 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
 
             if (receiveError is not null)
             {
+                _logger.LogWarning("WS receive error: {Error}", receiveError);
                 yield return new VoiceFrame.Disconnected(receiveError, AuthRejected: false);
                 yield break;
             }
@@ -77,6 +103,8 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
             if (result.MessageType == WebSocketMessageType.Close)
             {
                 var auth = _ws.CloseStatus is (WebSocketCloseStatus)1008 or (WebSocketCloseStatus)4001;
+                _logger.LogInformation("WS closed status={Status} ({Code}) auth={Auth} desc={Desc}",
+                    _ws.CloseStatus, (int?)_ws.CloseStatus, auth, _ws.CloseStatusDescription ?? "");
                 yield return new VoiceFrame.Disconnected(_ws.CloseStatusDescription, auth);
                 yield break;
             }
@@ -95,7 +123,16 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
             {
                 var json = Encoding.UTF8.GetString(bytes);
                 var evt = VoiceEventParser.Parse(json);
-                if (evt is not null) yield return new VoiceFrame.EventFrame(evt);
+                if (evt is not null)
+                {
+                    _logger.LogDebug("WS event {EventType}", evt.GetType().Name);
+                    yield return new VoiceFrame.EventFrame(evt);
+                }
+                else
+                {
+                    // Unparsed text frames are silent today; log them so we notice protocol drift.
+                    _logger.LogDebug("WS text frame unparsed (len={Len})", bytes.Length);
+                }
             }
         }
     }
