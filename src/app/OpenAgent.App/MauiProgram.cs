@@ -20,6 +20,10 @@ public static class MauiProgram
         builder.Services.AddTransient<IVoiceWebSocketClient, VoiceWebSocketClient>();
         builder.Services.AddSingleton(sp => new ConversationCache(FileSystem.AppDataDirectory));
 
+#if IOS
+        builder.Services.AddTransient<ICallAudio, IosCallAudio>();
+#endif
+
         // ViewModels + Pages
         builder.Services.AddTransient<Pages.OnboardingPage>();
         builder.Services.AddTransient<ViewModels.OnboardingViewModel>();
