@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:converters="clr-namespace:OpenAgent.App.Converters"
              x:Class="OpenAgent.App.App">
   <Application.Resources>
     <ResourceDictionary>
@@ -8,6 +9,8 @@
         <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
         <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
       </ResourceDictionary.MergedDictionaries>
+      <converters:RelativeTimeConverter x:Key="RelativeTime" />
+      <converters:MuteLabelConverter    x:Key="MuteLabel" />
     </ResourceDictionary>
   </Application.Resources>
 </Application>

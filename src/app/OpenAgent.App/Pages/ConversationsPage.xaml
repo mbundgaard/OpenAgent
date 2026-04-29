@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:OpenAgent.App.ViewModels"
+             xmlns:m="clr-namespace:OpenAgent.App.Core.Models;assembly=OpenAgent.App.Core"
+             xmlns:c="clr-namespace:OpenAgent.App.Converters"
+             x:Class="OpenAgent.App.Pages.ConversationsPage"
+             x:DataType="vm:ConversationsViewModel"
+             Title="Conversations">
+  <ContentPage.Resources>
+    <c:RelativeTimeConverter x:Key="RelativeTime" />
+  </ContentPage.Resources>
+  <ContentPage.ToolbarItems>
+    <ToolbarItem Text="Settings" Command="{Binding OpenSettingsCommand}" />
+  </ContentPage.ToolbarItems>
+
+  <Grid>
+    <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding LoadCommand}">
+      <CollectionView ItemsSource="{Binding Items}" SelectionMode="None">
+        <CollectionView.EmptyView>
+          <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
+            <Label Text="No conversations yet" FontAttributes="Bold" />
+            <Label Text="Tap + to start one" />
+          </VerticalStackLayout>
+        </CollectionView.EmptyView>
+        <CollectionView.ItemTemplate>
+          <DataTemplate x:DataType="m:ConversationListItem">
+            <SwipeView>
+              <SwipeView.LeftItems>
+                <SwipeItems>
+                  <SwipeItem Text="Rename" BackgroundColor="#0A84FF"
+                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ConversationsViewModel}}, Path=RenameCommand}"
+                             CommandParameter="{Binding .}" />
+                </SwipeItems>
+              </SwipeView.LeftItems>
+              <SwipeView.RightItems>
+                <SwipeItems>
+                  <SwipeItem Text="Delete" BackgroundColor="Red"
+                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ConversationsViewModel}}, Path=DeleteCommand}"
+                             CommandParameter="{Binding .}" />
+                </SwipeItems>
+              </SwipeView.RightItems>
+              <Grid Padding="16,12" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                <Grid.GestureRecognizers>
+                  <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ConversationsViewModel}}, Path=OpenCommand}"
+                                        CommandParameter="{Binding .}" />
+                </Grid.GestureRecognizers>
+                <Label Grid.Column="0" Grid.Row="0" Text="{Binding Title}" FontSize="16" />
+                <Label Grid.Column="0" Grid.Row="1" Text="{Binding Source}" FontSize="11" Opacity="0.6" />
+                <Label Grid.Column="1" Grid.Row="0" Text="{Binding SortKey, Converter={StaticResource RelativeTime}}" FontSize="12" Opacity="0.6" />
+              </Grid>
+            </SwipeView>
+          </DataTemplate>
+        </CollectionView.ItemTemplate>
+      </CollectionView>
+    </RefreshView>
+
+    <Button Text="+" Command="{Binding NewCallCommand}"
+            BackgroundColor="#0A84FF" TextColor="White"
+            CornerRadius="28" WidthRequest="56" HeightRequest="56"
+            HorizontalOptions="End" VerticalOptions="End" Margin="0,0,24,24" />
+  </Grid>
+</ContentPage>
