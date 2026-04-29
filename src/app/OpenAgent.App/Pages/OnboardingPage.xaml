@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:zxing="clr-namespace:ZXing.Net.Maui.Controls;assembly=ZXing.Net.Maui.Controls"
+             xmlns:vm="clr-namespace:OpenAgent.App.ViewModels"
+             x:Class="OpenAgent.App.Pages.OnboardingPage"
+             x:DataType="vm:OnboardingViewModel"
+             Title="Connect to agent"
+             BackgroundColor="Black">
+  <Grid>
+    <zxing:CameraBarcodeReaderView x:Name="Reader" BarcodesDetected="OnBarcodesDetected" />
+    <VerticalStackLayout VerticalOptions="End" Padding="24" Spacing="16">
+      <Label Text="Point camera at the QR code from the agent" TextColor="White" HorizontalOptions="Center" />
+      <Label Text="{Binding Error}" TextColor="#FF6B6B" IsVisible="{Binding HasError}" HorizontalOptions="Center" />
+      <Button Text="Enter manually" Command="{Binding OpenManualEntryCommand}" />
+    </VerticalStackLayout>
+  </Grid>
+</ContentPage>
