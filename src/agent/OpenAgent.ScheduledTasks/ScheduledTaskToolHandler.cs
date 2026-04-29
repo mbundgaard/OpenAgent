@@ -25,7 +25,8 @@ public sealed class ScheduledTaskToolHandler : IToolHandler
             new CreateScheduledTaskTool(service, logger),
             new ListScheduledTasksTool(service),
             new UpdateScheduledTaskTool(service, logger),
-            new DeleteScheduledTaskTool(service, logger)
+            new DeleteScheduledTaskTool(service, logger),
+            new RunScheduledTaskTool(service, logger)
         ];
     }
 }
@@ -238,6 +239,53 @@ internal sealed class UpdateScheduledTaskTool(ScheduledTaskService service, ILog
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to update scheduled task");
+            return JsonSerializer.Serialize(new { error = ex.Message });
+        }
+    }
+}
+
+/// <summary>
+/// Runs a scheduled task immediately, regardless of its schedule. Returns once the run has been
+/// kicked off — execution itself is async on the service. Use this when the user asks "run X now"
+/// instead of waiting for the next scheduled tick.
+/// </summary>
+internal sealed class RunScheduledTaskTool(ScheduledTaskService service, ILogger logger) : ITool
+{
+    public AgentToolDefinition Definition { get; } = new()
+    {
+        Name = "run_scheduled_task",
+        Description = "Run a scheduled task immediately, regardless of its schedule. " +
+                      "Use this when the user wants the task to fire now without waiting for the next tick. " +
+                      "Does not change the task's normal schedule — the next scheduled run still happens as planned.",
+        Parameters = new
+        {
+            type = "object",
+            properties = new
+            {
+                taskId = new { type = "string", description = "ID of the task to run" }
+            },
+            required = new[] { "taskId" }
+        }
+    };
+
+    public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
+    {
+        try
+        {
+            var args = JsonDocument.Parse(arguments).RootElement;
+            var taskId = args.GetProperty("taskId").GetString()!;
+
+            await service.RunNowAsync(taskId, promptOverride: null, ct);
+
+            return JsonSerializer.Serialize(new
+            {
+                status = "started",
+                taskId
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to run scheduled task");
             return JsonSerializer.Serialize(new { error = ex.Message });
         }
     }
