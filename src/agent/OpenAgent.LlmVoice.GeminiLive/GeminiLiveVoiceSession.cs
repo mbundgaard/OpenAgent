@@ -105,20 +105,6 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
             yield return evt;
     }
 
-    /// <summary>
-    /// Gemini Live's <c>setup</c> is a one-shot bring-up message — there's no equivalent of
-    /// OpenAI Realtime's <c>session.update</c>. We can't change <c>system_instruction</c>
-    /// mid-session, so this is a no-op. A new system prompt only takes effect on the next
-    /// session.
-    /// </summary>
-    public Task RefreshSystemPromptAsync(CancellationToken ct = default)
-    {
-        _logger.LogDebug(
-            "RefreshSystemPromptAsync ignored for Gemini Live session {ConversationId} — protocol does not support mid-session prompt updates",
-            _conversation.Id);
-        return Task.CompletedTask;
-    }
-
     public async Task AddUserMessageAsync(string text, CancellationToken ct = default)
     {
         // Push a user-role turn with turn_complete=false so the model treats it as accumulated
@@ -158,6 +144,17 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
         catch (OperationCanceledException) { }
 
         await CloseWebSocketAsync(_ws);
+
+        if (_conversation.VoiceSessionOpen)
+        {
+            _conversation.VoiceSessionOpen = false;
+            // Targeted column update — must NOT use UpdateConversation here. The captured
+            // _conversation is a snapshot from session start; a full-row write would clobber
+            // mid-session mutations to ActiveSkills, Intention, MentionFilter, etc.
+            try { _agentLogic.SetVoiceSession(_conversation.Id, _conversation.VoiceSessionId, false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to clear VoiceSessionOpen for {ConversationId}", _conversation.Id); }
+        }
+
         _ws.Dispose();
         _sendLock.Dispose();
         _receiveCts.Dispose();
@@ -392,7 +389,7 @@ internal sealed class GeminiLiveVoiceSession : IVoiceSession
             SessionId = Guid.NewGuid().ToString(); // Gemini doesn't provide an explicit session ID
             _conversation.VoiceSessionId = SessionId;
             _conversation.VoiceSessionOpen = true;
-            _agentLogic.UpdateConversation(_conversation);
+            _agentLogic.SetVoiceSession(_conversation.Id, SessionId, true);
             _setupComplete.TrySetResult();
             return;
         }

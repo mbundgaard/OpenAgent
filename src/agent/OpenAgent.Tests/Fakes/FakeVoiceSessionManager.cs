@@ -4,9 +4,9 @@ namespace OpenAgent.Tests.Fakes;
 
 /// <summary>
 /// Inert <see cref="IVoiceSessionManager"/> for tests. Tracks registered sessions in a dictionary
-/// so tests can drive the same code path as production (skill tools query this manager and call
-/// <see cref="IVoiceSession.RefreshSystemPromptAsync"/> on what they find). When no session has
-/// been registered, <see cref="TryGetSession"/> returns false — matching production behavior for
+/// so tests can drive the same code path as production (skill tools query this manager to decide
+/// whether to deliver the skill body inline as a tool result). When no session has been
+/// registered, <see cref="TryGetSession"/> returns false — matching production behavior for
 /// text-only conversations.
 /// </summary>
 public sealed class FakeVoiceSessionManager : IVoiceSessionManager

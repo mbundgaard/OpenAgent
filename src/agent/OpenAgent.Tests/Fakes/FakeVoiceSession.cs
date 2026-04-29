@@ -16,7 +16,6 @@ public sealed class FakeVoiceSession : IVoiceSession
     public bool CommitCalled;
     public bool CancelCalled;
     public bool DisposeCalled;
-    public int RefreshCount;
     private readonly Channel<VoiceEvent> _events =
         System.Threading.Channels.Channel.CreateUnbounded<VoiceEvent>();
 
@@ -35,12 +34,6 @@ public sealed class FakeVoiceSession : IVoiceSession
     public Task CancelResponseAsync(CancellationToken ct = default)
     {
         CancelCalled = true;
-        return Task.CompletedTask;
-    }
-
-    public Task RefreshSystemPromptAsync(CancellationToken ct = default)
-    {
-        RefreshCount++;
         return Task.CompletedTask;
     }
 

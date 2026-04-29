@@ -370,6 +370,22 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryStartCompaction(conversation);
     }
 
+    public void SetVoiceSession(string conversationId, string? sessionId, bool open)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE Conversations
+            SET VoiceSessionId = @voiceSessionId,
+                VoiceSessionOpen = @voiceSessionOpen
+            WHERE Id = @id
+            """;
+        cmd.Parameters.AddWithValue("@id", conversationId);
+        cmd.Parameters.AddWithValue("@voiceSessionId", (object?)sessionId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@voiceSessionOpen", open ? 1 : 0);
+        cmd.ExecuteNonQuery();
+    }
+
     public bool Delete(string conversationId)
     {
         // Cancel any in-flight compaction before tearing down the conversation's data.

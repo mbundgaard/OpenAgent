@@ -106,22 +106,6 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         }
     }
 
-    /// <summary>
-    /// Re-sends the session.update event with a freshly built system prompt. Called after the
-    /// agent mutates conversation state that affects the prompt (e.g. activate_skill) so the
-    /// model sees the change without requiring a new call.
-    /// </summary>
-    public async Task RefreshSystemPromptAsync(CancellationToken ct = default)
-    {
-        // Send only the session.update — skip the SessionReady channel write, which is a
-        // one-time client signal at session bring-up, not something we re-broadcast on refresh.
-        await SendEventAsync(new ClientEvent
-        {
-            Type = EventTypes.SessionUpdate,
-            Session = BuildSessionConfig()
-        }, ct);
-    }
-
     public async ValueTask DisposeAsync()
     {
         await _receiveCts.CancelAsync();
@@ -142,7 +126,10 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
         if (_conversation.VoiceSessionOpen)
         {
             _conversation.VoiceSessionOpen = false;
-            try { _agentLogic.UpdateConversation(_conversation); }
+            // Targeted column update — must NOT use UpdateConversation here. The captured
+            // _conversation is a snapshot from session start; a full-row write would clobber
+            // mid-session mutations to ActiveSkills, Intention, MentionFilter, etc.
+            try { _agentLogic.SetVoiceSession(_conversation.Id, _conversation.VoiceSessionId, false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to clear VoiceSessionOpen for {ConversationId}", _conversation.Id); }
         }
 
@@ -457,10 +444,12 @@ internal sealed class AzureOpenAiVoiceSession : IVoiceSession
             _logger.LogDebug("Session created with ID {SessionId} for conversation {ConversationId}",
                 SessionId, _conversation.Id);
 
-            // Update conversation with session state
+            // Update conversation with session state — targeted update so we don't risk
+            // clobbering other columns from a stale snapshot. _conversation is also updated
+            // locally so subsequent reads on this session see the right values.
             _conversation.VoiceSessionId = SessionId;
             _conversation.VoiceSessionOpen = true;
-            _agentLogic.UpdateConversation(_conversation);
+            _agentLogic.SetVoiceSession(_conversation.Id, SessionId, true);
         }
         return null;
     }

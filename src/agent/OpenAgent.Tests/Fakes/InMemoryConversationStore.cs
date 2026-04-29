@@ -92,6 +92,13 @@ public sealed class InMemoryConversationStore : IConversationStore
     public void Update(Conversation conversation) =>
         _conversations[conversation.Id] = conversation;
 
+    public void SetVoiceSession(string conversationId, string? sessionId, bool open)
+    {
+        if (!_conversations.TryGetValue(conversationId, out var conv)) return;
+        conv.VoiceSessionId = sessionId;
+        conv.VoiceSessionOpen = open;
+    }
+
     public void UpdateDisplayName(string conversationId, string? displayName)
     {
         if (_conversations.TryGetValue(conversationId, out var conv) && conv.DisplayName != displayName)

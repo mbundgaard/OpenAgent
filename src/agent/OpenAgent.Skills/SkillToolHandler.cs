@@ -46,85 +46,69 @@ internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore
         }
     };
 
-    public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
+    public Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
         var args = JsonDocument.Parse(arguments).RootElement;
         var name = args.GetProperty("name").GetString()!;
 
         logger.LogDebug("activate_skill called: skill={SkillName}, conversation={ConversationId}", name, conversationId);
 
-        if (!catalog.TryGetSkill(name, out _))
+        if (!catalog.TryGetSkill(name, out var entry))
         {
             logger.LogWarning("Skill not found in catalog: {SkillName}", name);
-            return JsonSerializer.Serialize(new { error = $"Skill '{name}' not found" });
+            return Task.FromResult(JsonSerializer.Serialize(new { error = $"Skill '{name}' not found" }));
         }
 
         var conversation = store.Get(conversationId);
         if (conversation is null)
         {
             logger.LogWarning("Conversation not found: {ConversationId}", conversationId);
-            return JsonSerializer.Serialize(new { error = "Conversation not found" });
+            return Task.FromResult(JsonSerializer.Serialize(new { error = "Conversation not found" }));
         }
 
         const int maxActiveSkills = 5;
 
         conversation.ActiveSkills ??= [];
-        if (conversation.ActiveSkills.Contains(name, StringComparer.OrdinalIgnoreCase))
+        var alreadyActive = conversation.ActiveSkills.Contains(name, StringComparer.OrdinalIgnoreCase);
+
+        if (!alreadyActive)
         {
-            logger.LogDebug("Skill already active: {SkillName} on {ConversationId}", name, conversationId);
-            return JsonSerializer.Serialize(new { status = "already_active", skill = name });
+            if (conversation.ActiveSkills.Count >= maxActiveSkills)
+            {
+                logger.LogWarning("Max active skills reached for {ConversationId}: {Count}/{Max}", conversationId, conversation.ActiveSkills.Count, maxActiveSkills);
+                return Task.FromResult(JsonSerializer.Serialize(new { error = $"Maximum {maxActiveSkills} active skills reached. Deactivate a skill first." }));
+            }
+
+            conversation.ActiveSkills.Add(name);
+            store.Update(conversation);
+            logger.LogInformation("Skill activated: {SkillName} on {ConversationId}, persisted active skills: [{ActiveSkills}]",
+                name, conversationId, string.Join(", ", conversation.ActiveSkills));
         }
 
-        if (conversation.ActiveSkills.Count >= maxActiveSkills)
+        // Voice/realtime sessions lock the system prompt at session start, so a system-prompt
+        // rebuild on the next turn won't reach the live session. Deliver the skill body in the
+        // tool result instead — it lands in the realtime conversation buffer and the model
+        // attends to it like any other fresh turn. Text channels rebuild the system prompt every
+        // turn, so the thin status JSON is enough.
+        var hasVoiceSession = voiceSessionManager.TryGetSession(conversationId, out _);
+        if (hasVoiceSession)
         {
-            logger.LogWarning("Max active skills reached for {ConversationId}: {Count}/{Max}", conversationId, conversation.ActiveSkills.Count, maxActiveSkills);
-            return JsonSerializer.Serialize(new { error = $"Maximum {maxActiveSkills} active skills reached. Deactivate a skill first." });
+            var body = catalog.ReadSkillBody(name) ?? entry!.Body;
+            return Task.FromResult(JsonSerializer.Serialize(new
+            {
+                status = alreadyActive ? "already_active" : "activated",
+                skill = name,
+                instructions = body,
+                message = $"Skill '{name}' is active. Read and follow the instructions above to complete the user's task."
+            }));
         }
 
-        conversation.ActiveSkills.Add(name);
-        store.Update(conversation);
-
-        // Verify persistence by re-reading from store
-        var persisted = store.Get(conversationId);
-        var persistedSkills = persisted?.ActiveSkills ?? [];
-        logger.LogInformation("Skill activated: {SkillName} on {ConversationId}, persisted active skills: [{ActiveSkills}]",
-            name, conversationId, string.Join(", ", persistedSkills));
-
-        // Voice/realtime sessions lock the system prompt at session start, so push a refresh
-        // when a session is live. No-op for text channels (where each turn rebuilds the prompt).
-        await VoiceSessionRefreshHelper.TryRefreshVoiceSessionAsync(voiceSessionManager, conversationId, "activate_skill", logger, ct);
-
-        return JsonSerializer.Serialize(new
+        return Task.FromResult(JsonSerializer.Serialize(new
         {
-            status = "activated",
+            status = alreadyActive ? "already_active" : "activated",
             skill = name,
             message = $"Skill '{name}' activated. Its instructions are now in the system prompt."
-        });
-    }
-}
-
-internal static class VoiceSessionRefreshHelper
-{
-    public static async Task TryRefreshVoiceSessionAsync(
-        IVoiceSessionManager manager,
-        string conversationId,
-        string reason,
-        ILogger logger,
-        CancellationToken ct)
-    {
-        if (!manager.TryGetSession(conversationId, out var session) || session is null)
-            return;
-        try
-        {
-            await session.RefreshSystemPromptAsync(ct);
-            logger.LogDebug("Voice system prompt refreshed for {ConversationId} ({Reason})", conversationId, reason);
-        }
-        catch (Exception ex)
-        {
-            // Don't fail the tool call on a refresh hiccup — the next call will pick up the
-            // mutated state, and the original tool result is still meaningful.
-            logger.LogWarning(ex, "Voice system prompt refresh failed for {ConversationId} ({Reason})", conversationId, reason);
-        }
+        }));
     }
 }
 
@@ -145,31 +129,37 @@ internal sealed class DeactivateSkillTool(IConversationStore store, IVoiceSessio
         }
     };
 
-    public async Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
+    public Task<string> ExecuteAsync(string arguments, string conversationId, CancellationToken ct = default)
     {
         var args = JsonDocument.Parse(arguments).RootElement;
         var name = args.GetProperty("name").GetString()!;
 
         var conversation = store.Get(conversationId);
         if (conversation is null)
-            return JsonSerializer.Serialize(new { error = "Conversation not found" });
+            return Task.FromResult(JsonSerializer.Serialize(new { error = "Conversation not found" }));
 
         var match = conversation.ActiveSkills?.FirstOrDefault(s => string.Equals(s, name, StringComparison.OrdinalIgnoreCase));
         if (match is null)
-            return JsonSerializer.Serialize(new { status = "not_active", skill = name });
+            return Task.FromResult(JsonSerializer.Serialize(new { status = "not_active", skill = name }));
 
         conversation.ActiveSkills!.Remove(match);
-
         store.Update(conversation);
+        logger.LogInformation("Skill deactivated: {SkillName} on {ConversationId}", name, conversationId);
 
-        await VoiceSessionRefreshHelper.TryRefreshVoiceSessionAsync(voiceSessionManager, conversationId, "deactivate_skill", logger, ct);
+        // In a live voice session the skill's body was previously delivered as a tool result
+        // and still sits in the realtime conversation buffer — call out that those instructions
+        // should no longer apply, since the body itself can't be retracted.
+        var hasVoiceSession = voiceSessionManager.TryGetSession(conversationId, out _);
+        var message = hasVoiceSession
+            ? $"Skill '{name}' deactivated. The instructions you previously received for this skill no longer apply — disregard them."
+            : $"Skill '{name}' deactivated. Its instructions are no longer in the system prompt.";
 
-        return JsonSerializer.Serialize(new
+        return Task.FromResult(JsonSerializer.Serialize(new
         {
             status = "deactivated",
             skill = name,
-            message = $"Skill '{name}' deactivated. Its instructions are no longer in the system prompt."
-        });
+            message
+        }));
     }
 }
 

@@ -50,6 +50,9 @@ internal sealed class AgentLogic(
     public void UpdateConversation(Conversation conversation)
         => store.Update(conversation);
 
+    public void SetVoiceSession(string conversationId, string? sessionId, bool open)
+        => store.SetVoiceSession(conversationId, sessionId, open);
+
     public Task<bool> CompactAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default)
         => store.CompactNowAsync(conversationId, reason, customInstructions, ct);
 }

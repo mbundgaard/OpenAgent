@@ -64,6 +64,7 @@ public class AgentLogicCompactAsyncTests
         public IReadOnlyList<Conversation> GetAll() => throw new NotImplementedException();
         public Conversation? Get(string conversationId) => throw new NotImplementedException();
         public void Update(Conversation conversation) => throw new NotImplementedException();
+        public void SetVoiceSession(string conversationId, string? sessionId, bool open) => throw new NotImplementedException();
         public void UpdateDisplayName(string conversationId, string? displayName) => throw new NotImplementedException();
         public bool Delete(string conversationId) => throw new NotImplementedException();
         public void AddMessage(string conversationId, Message message) => throw new NotImplementedException();
@@ -83,6 +84,7 @@ public class AgentLogicCompactAsyncTests
         public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false) => store.GetMessages(conversationId, includeToolResultBlobs);
         public Conversation? GetConversation(string conversationId) => store.Get(conversationId);
         public void UpdateConversation(Conversation conversation) => store.Update(conversation);
+        public void SetVoiceSession(string conversationId, string? sessionId, bool open) => store.SetVoiceSession(conversationId, sessionId, open);
 
         public Task<bool> CompactAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default)
             => store.CompactNowAsync(conversationId, reason, customInstructions, ct);

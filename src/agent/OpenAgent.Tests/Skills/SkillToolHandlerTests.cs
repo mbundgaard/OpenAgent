@@ -185,6 +185,66 @@ public class SkillToolHandlerTests : IDisposable
         Assert.True(catalog.TryGetSkill("second", out _));
     }
 
+    [Fact]
+    public async Task ActivateSkill_includes_body_when_voice_session_active()
+    {
+        const string body = "# Paymo\nRun `python3 hours-summary.py` to compute hours.";
+        CreateSkill("paymo", "Log hours.", body);
+        _store.GetOrCreate("conv1", "test", "test", "test", "test", "test");
+
+        var voiceManager = new FakeVoiceSessionManager();
+        voiceManager.RegisterSession("conv1", new FakeVoiceSession());
+
+        var catalog = new SkillCatalog(_tempDir);
+        var handler = new SkillToolHandler(catalog, _store, voiceManager, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var tool = handler.Tools.First(t => t.Definition.Name == "activate_skill");
+
+        var result = await tool.ExecuteAsync("""{"name": "paymo"}""", "conv1");
+
+        Assert.Contains("activated", result);
+        Assert.Contains("hours-summary.py", result);
+        Assert.Contains("\"instructions\"", result);
+        Assert.Contains("paymo", _store.Get("conv1")!.ActiveSkills!);
+    }
+
+    [Fact]
+    public async Task ActivateSkill_omits_body_when_no_voice_session()
+    {
+        CreateSkill("paymo", "Log hours.", "# Paymo body");
+        _store.GetOrCreate("conv1", "test", "test", "test", "test", "test");
+
+        var catalog = new SkillCatalog(_tempDir);
+        var handler = new SkillToolHandler(catalog, _store, new FakeVoiceSessionManager(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var tool = handler.Tools.First(t => t.Definition.Name == "activate_skill");
+
+        var result = await tool.ExecuteAsync("""{"name": "paymo"}""", "conv1");
+
+        Assert.Contains("activated", result);
+        Assert.DoesNotContain("\"instructions\"", result);
+        Assert.DoesNotContain("Paymo body", result);
+    }
+
+    [Fact]
+    public async Task DeactivateSkill_tells_model_to_disregard_when_voice_session_active()
+    {
+        CreateSkill("paymo", "Log hours.", "Body.");
+        _store.GetOrCreate("conv1", "test", "test", "test", "test", "test");
+
+        var voiceManager = new FakeVoiceSessionManager();
+        voiceManager.RegisterSession("conv1", new FakeVoiceSession());
+
+        var catalog = new SkillCatalog(_tempDir);
+        var handler = new SkillToolHandler(catalog, _store, voiceManager, Microsoft.Extensions.Logging.Abstractions.NullLogger<SkillToolHandler>.Instance);
+        var activate = handler.Tools.First(t => t.Definition.Name == "activate_skill");
+        var deactivate = handler.Tools.First(t => t.Definition.Name == "deactivate_skill");
+
+        await activate.ExecuteAsync("""{"name": "paymo"}""", "conv1");
+        var result = await deactivate.ExecuteAsync("""{"name": "paymo"}""", "conv1");
+
+        Assert.Contains("deactivated", result);
+        Assert.Contains("disregard", result);
+    }
+
     private void CreateSkill(string name, string description, string body)
     {
         var dir = Path.Combine(_tempDir, name);
