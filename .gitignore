@@ -496,3 +496,8 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 /ServiceHost.exe
+
+# MAUI app
+src/app/**/bin/
+src/app/**/obj/
+src/app/**/*.user
