@@ -503,8 +503,8 @@ src/app/**/bin/
 src/app/**/obj/
 src/app/**/*.user
 
-# iOS asset catalog generated in CI from the master 1024x1024 PNG
-src/app/OpenAgent.App/Platforms/iOS/Assets.xcassets/
+# iOS app-icon PNGs generated in CI from the master 1024x1024 PNG
+src/app/OpenAgent.App/Platforms/iOS/AppIcon*.png
 
 # Local-only secrets and signing material — never commit
 .local-secrets/

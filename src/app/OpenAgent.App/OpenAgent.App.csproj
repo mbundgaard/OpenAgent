@@ -15,15 +15,22 @@
     <!-- MAUI 10 deprecates sync DisplayAlert and AVAudioSession.ModeVoiceChat; we still use them
          pending an async refactor. Keep building while we migrate. -->
     <NoWarn>$(NoWarn);CS0618</NoWarn>
-    <!-- Manual asset catalog (generated in CI from a single 1024x1024 PNG via sips).
-         MAUI's MauiIcon does not produce an iOS asset catalog for our setup. -->
-    <XSAppIconAssets>Platforms\iOS\Assets.xcassets\AppIcon.appiconset</XSAppIconAssets>
   </PropertyGroup>
 
   <ItemGroup>
     <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#000000" BaseSize="128,128" />
     <MauiXaml Update="**\*.xaml" SubType="Designer" />
     <MauiCss Include="**\*.css" />
+  </ItemGroup>
+
+  <!-- iOS app icons: shipped at the bundle root via BundleResource so the legacy
+       CFBundleIcons / CFBundleIconFiles scheme in Info.plist can find them.
+       The PNGs are generated in CI from the 1024x1024 master via sips; on Windows
+       they don't exist, so the Condition guards against MSBuild errors. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-ios'">
+    <BundleResource Include="Platforms\iOS\AppIcon60x60@2x.png"   Condition="Exists('Platforms\iOS\AppIcon60x60@2x.png')" />
+    <BundleResource Include="Platforms\iOS\AppIcon60x60@3x.png"   Condition="Exists('Platforms\iOS\AppIcon60x60@3x.png')" />
+    <BundleResource Include="Platforms\iOS\AppIcon-marketing.png" Condition="Exists('Platforms\iOS\AppIcon-marketing.png')" />
   </ItemGroup>
 
   <ItemGroup>
