@@ -49,22 +49,6 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           echo "$PROFILE" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
 
-      - name: Generate iOS app-icon PNGs (bundle-root, legacy CFBundleIcons)
-        if: startsWith(github.ref, 'refs/tags/app-v')
-        # MAUI's iOS pipeline doesn't compile asset catalogs for our setup, so we
-        # ship the icons as BundleResources at the bundle root using Apple's
-        # legacy CFBundleIcons-dictionary scheme. Filenames must match the
-        # CFBundleIconFiles entries in Info.plist.
-        run: |
-          set -e
-          SRC="src/app/OpenAgent.App/Resources/AppIcon/appicon.png"
-          OUT="src/app/OpenAgent.App/Platforms/iOS"
-          # Apple needs 60pt @2x = 120, @3x = 180. We also ship marketing 1024.
-          sips -s format png -Z 120  "$SRC" --out "$OUT/AppIcon60x60@2x.png" >/dev/null
-          sips -s format png -Z 180  "$SRC" --out "$OUT/AppIcon60x60@3x.png" >/dev/null
-          sips -s format png -Z 1024 "$SRC" --out "$OUT/AppIcon-marketing.png" >/dev/null
-          ls -la "$OUT" | grep -E 'AppIcon|marketing'
-
       - name: Build & archive (Release, signed)
         if: startsWith(github.ref, 'refs/tags/app-v')
         working-directory: src/app
@@ -83,22 +67,35 @@ jobs:
           if [ -z "$IPA" ]; then echo "No .ipa found under bin/Release"; ls -R src/app/OpenAgent.App/bin/Release; exit 1; fi
           echo "path=$IPA" >> "$GITHUB_OUTPUT"
 
-      - name: Diagnose bundle (Info.plist + icon assets)
+      - name: Inject icons into .ipa and re-sign
         if: startsWith(github.ref, 'refs/tags/app-v')
+        env:
+          SIGNING_IDENTITY: "Apple Distribution: Martin Bundgaard (U3ADU3K4XK)"
+        # MSBuild's BundleResource/MauiIcon both refuse to land icons in the .app
+        # for our MAUI single-project setup. Bypass MSBuild entirely: unzip the
+        # already-signed .ipa, drop the icons in, re-sign with the same identity
+        # while preserving entitlements, re-zip in place.
         run: |
           set -e
+          SRC="src/app/OpenAgent.App/Resources/AppIcon/appicon.png"
           IPA="${{ steps.ipa.outputs.path }}"
           WORK=$(mktemp -d)
           unzip -q "$IPA" -d "$WORK"
           APP=$(find "$WORK/Payload" -maxdepth 2 -name '*.app' | head -n1)
-          echo "===== Info.plist ====="
-          plutil -p "$APP/Info.plist" | grep -iE 'CFBundleIcon|XSAppIconAssets' || echo "(no icon-related keys)"
-          echo "===== app bundle root .png files ====="
-          ls -la "$APP" | grep -iE '\.png$|AppIcon' || echo "(no .png in app root)"
-          echo "===== Assets.car / asset catalog presence ====="
-          ls -la "$APP" | grep -iE 'Assets\.car|\.xcassets' || echo "(no Assets.car)"
-          echo "===== full app bundle file list ====="
-          ls -la "$APP"
+          echo "Patching $APP"
+          sips -s format png -Z 120  "$SRC" --out "$APP/AppIcon60x60@2x.png" >/dev/null
+          sips -s format png -Z 180  "$SRC" --out "$APP/AppIcon60x60@3x.png" >/dev/null
+          sips -s format png -Z 1024 "$SRC" --out "$APP/AppIcon-marketing.png" >/dev/null
+          # Re-sign while preserving entitlements/requirements/identifier from the original signature.
+          codesign --force --sign "$SIGNING_IDENTITY" \
+            --preserve-metadata=identifier,entitlements,requirements,flags \
+            --timestamp=none \
+            "$APP"
+          codesign --verify --verbose=2 "$APP"
+          rm -f "$IPA"
+          (cd "$WORK" && zip -qr "$IPA" Payload/)
+          echo "Bundle root .png after injection:"
+          (cd "$WORK" && ls -la "Payload"/$(basename "$APP") | grep -E '\.png$' || true)
 
       - name: Upload to TestFlight
         if: startsWith(github.ref, 'refs/tags/app-v')

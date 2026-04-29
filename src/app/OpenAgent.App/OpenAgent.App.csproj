@@ -22,16 +22,9 @@
     <MauiXaml Update="**\*.xaml" SubType="Designer" />
     <MauiCss Include="**\*.css" />
   </ItemGroup>
-
-  <!-- iOS app icons: shipped at the bundle root via BundleResource so the legacy
-       CFBundleIcons / CFBundleIconFiles scheme in Info.plist can find them.
-       The PNGs are generated in CI from the 1024x1024 master via sips; on Windows
-       they don't exist, so the Condition guards against MSBuild errors. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-ios'">
-    <BundleResource Include="Platforms\iOS\AppIcon60x60@2x.png"   Condition="Exists('Platforms\iOS\AppIcon60x60@2x.png')" />
-    <BundleResource Include="Platforms\iOS\AppIcon60x60@3x.png"   Condition="Exists('Platforms\iOS\AppIcon60x60@3x.png')" />
-    <BundleResource Include="Platforms\iOS\AppIcon-marketing.png" Condition="Exists('Platforms\iOS\AppIcon-marketing.png')" />
-  </ItemGroup>
+  <!-- iOS app icons: not shipped via MSBuild items — MAUI iOS publish strips
+       BundleResource and MauiIcon outputs. Instead, the workflow injects them
+       into the signed .ipa post-build (see ios-build.yml: "Inject icons into .ipa"). -->
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" />

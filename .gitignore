@@ -503,8 +503,7 @@ src/app/**/bin/
 src/app/**/obj/
 src/app/**/*.user
 
-# iOS app-icon PNGs generated in CI from the master 1024x1024 PNG
-src/app/OpenAgent.App/Platforms/iOS/AppIcon*.png
+# iOS app-icon PNGs are injected into the .ipa post-build, not committed
 
 # Local-only secrets and signing material — never commit
 .local-secrets/
