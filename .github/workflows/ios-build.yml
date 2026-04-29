@@ -67,14 +67,15 @@ jobs:
           if [ -z "$IPA" ]; then echo "No .ipa found under bin/Release"; ls -R src/app/OpenAgent.App/bin/Release; exit 1; fi
           echo "path=$IPA" >> "$GITHUB_OUTPUT"
 
-      - name: Inject icons into .ipa and re-sign
+      - name: Inject Assets.car (asset catalog) into .ipa and re-sign
         if: startsWith(github.ref, 'refs/tags/app-v')
         env:
           SIGNING_IDENTITY: "Apple Distribution: Martin Bundgaard (U3ADU3K4XK)"
-        # MSBuild's BundleResource/MauiIcon both refuse to land icons in the .app
-        # for our MAUI single-project setup. Bypass MSBuild entirely: unzip the
-        # already-signed .ipa, drop the icons in, re-sign with the same identity
-        # while preserving entitlements, re-zip in place.
+        # Apple now requires a compiled Assets.car with the 1024x1024 marketing
+        # icon inside the asset catalog ("Any Appearance image well"). We can't
+        # get MAUI's MSBuild pipeline to produce one, so we build it ourselves
+        # with actool and inject the resulting Assets.car into the .app bundle,
+        # then re-sign with the original identity.
         run: |
           set -e
           SRC="$(pwd)/src/app/OpenAgent.App/Resources/AppIcon/appicon.png"
@@ -83,19 +84,64 @@ jobs:
           unzip -q "$IPA" -d "$WORK"
           APP=$(find "$WORK/Payload" -maxdepth 2 -name '*.app' | head -n1)
           echo "Patching $APP"
-          sips -s format png -Z 120  "$SRC" --out "$APP/AppIcon60x60@2x.png" >/dev/null
-          sips -s format png -Z 180  "$SRC" --out "$APP/AppIcon60x60@3x.png" >/dev/null
-          sips -s format png -Z 1024 "$SRC" --out "$APP/AppIcon-marketing.png" >/dev/null
-          # Re-sign while preserving entitlements/requirements/identifier from the original signature.
+
+          # Build the .xcassets source tree
+          XC="$WORK/src/Assets.xcassets"
+          ICON="$XC/AppIcon.appiconset"
+          mkdir -p "$ICON"
+          for size in 40 58 60 80 87 120 152 167 180 1024; do
+            sips -s format png -Z "$size" "$SRC" --out "$ICON/appicon-${size}.png" >/dev/null
+          done
+          cat > "$ICON/Contents.json" <<'JSON'
+          {
+            "images": [
+              { "size": "20x20", "idiom": "iphone",        "filename": "appicon-40.png",   "scale": "2x" },
+              { "size": "20x20", "idiom": "iphone",        "filename": "appicon-60.png",   "scale": "3x" },
+              { "size": "29x29", "idiom": "iphone",        "filename": "appicon-58.png",   "scale": "2x" },
+              { "size": "29x29", "idiom": "iphone",        "filename": "appicon-87.png",   "scale": "3x" },
+              { "size": "40x40", "idiom": "iphone",        "filename": "appicon-80.png",   "scale": "2x" },
+              { "size": "40x40", "idiom": "iphone",        "filename": "appicon-120.png",  "scale": "3x" },
+              { "size": "60x60", "idiom": "iphone",        "filename": "appicon-120.png",  "scale": "2x" },
+              { "size": "60x60", "idiom": "iphone",        "filename": "appicon-180.png",  "scale": "3x" },
+              { "size": "1024x1024", "idiom": "ios-marketing", "filename": "appicon-1024.png", "scale": "1x" }
+            ],
+            "info": { "version": 1, "author": "xcode" }
+          }
+          JSON
+          cat > "$XC/Contents.json" <<'JSON'
+          { "info": { "version": 1, "author": "xcode" } }
+          JSON
+
+          # Compile to Assets.car directly into the bundle
+          xcrun actool \
+            --output-format human-readable-text \
+            --notices --warnings \
+            --output-partial-info-plist "$WORK/partial-info.plist" \
+            --app-icon AppIcon \
+            --compress-pngs \
+            --enable-on-demand-resources NO \
+            --target-device iphone \
+            --minimum-deployment-target 17.0 \
+            --platform iphoneos \
+            --compile "$APP" \
+            "$XC"
+
+          echo "actool emitted into $APP:"
+          ls -la "$APP" | grep -iE 'Assets\.car|AppIcon' || true
+          echo "Partial Info.plist from actool:"
+          plutil -p "$WORK/partial-info.plist" || true
+
+          # Re-sign — modifying the bundle invalidates the existing signature
           codesign --force --sign "$SIGNING_IDENTITY" \
             --preserve-metadata=identifier,entitlements,requirements,flags \
             --timestamp=none \
             "$APP"
           codesign --verify --verbose=2 "$APP"
+
+          # Re-zip back into the .ipa
           rm -f "$IPA"
           (cd "$WORK" && zip -qr "$IPA" Payload/)
-          echo "Bundle root .png after injection:"
-          ls -la "$APP" | grep -E '\.png$' || true
+          echo "Done. Bundle now contains Assets.car."
 
       - name: Upload to TestFlight
         if: startsWith(github.ref, 'refs/tags/app-v')
