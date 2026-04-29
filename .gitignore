@@ -502,3 +502,12 @@ $RECYCLE.BIN/
 src/app/**/bin/
 src/app/**/obj/
 src/app/**/*.user
+
+# Local-only secrets and signing material — never commit
+.local-secrets/
+*.p12
+*.cer
+*.csr
+*.mobileprovision
+*.p8
+*.b64
