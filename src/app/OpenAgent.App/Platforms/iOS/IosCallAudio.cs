@@ -31,28 +31,31 @@ public sealed class IosCallAudio : ICallAudio
         session.SetMode(AVAudioSession.ModeVoiceChat, out _);
         session.SetActive(true, out _);
 
-        _outFormat = new AVAudioFormat(AVAudioCommonFormat.PCMInt16, sampleRate, 1, interleaved: true);
-
-        _engine = new AVAudioEngine();
-        _player = new AVAudioPlayerNode();
-        _engine.AttachNode(_player);
-        _engine.Connect(_player, _engine.MainMixerNode, _outFormat);
-
-        var input = _engine.InputNode;
-        _inputNativeFormat = input.GetBusOutputFormat(0);
-        _converter = new AVAudioConverter(_inputNativeFormat, _outFormat);
-
-        input.InstallTapOnBus(0, 4096, _inputNativeFormat, (buffer, _) =>
+        lock (_lifecycleLock)
         {
-            if (_muted) return;
-            var bytes = ConvertToInt16Mono(buffer);
-            if (bytes is { Length: > 0 }) OnPcmCaptured?.Invoke(bytes);
-        });
+            _outFormat = new AVAudioFormat(AVAudioCommonFormat.PCMInt16, sampleRate, 1, interleaved: true);
 
-        _engine.Prepare();
-        _engine.StartAndReturnError(out var err);
-        if (err is not null) throw new InvalidOperationException(err.LocalizedDescription);
-        _player.Play();
+            _engine = new AVAudioEngine();
+            _player = new AVAudioPlayerNode();
+            _engine.AttachNode(_player);
+            _engine.Connect(_player, _engine.MainMixerNode, _outFormat);
+
+            var input = _engine.InputNode;
+            _inputNativeFormat = input.GetBusOutputFormat(0);
+            _converter = new AVAudioConverter(_inputNativeFormat, _outFormat);
+
+            input.InstallTapOnBus(0, 4096, _inputNativeFormat, (buffer, _) =>
+            {
+                if (_muted) return;
+                var bytes = ConvertToInt16Mono(buffer);
+                if (bytes is { Length: > 0 }) OnPcmCaptured?.Invoke(bytes);
+            });
+
+            _engine.Prepare();
+            _engine.StartAndReturnError(out var err);
+            if (err is not null) throw new InvalidOperationException(err.LocalizedDescription);
+            _player.Play();
+        }
         await Task.CompletedTask;
     }
 

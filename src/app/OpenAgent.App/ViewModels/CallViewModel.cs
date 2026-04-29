@@ -71,35 +71,46 @@ public partial class CallViewModel : ObservableObject, IDisposable
     {
         while (!ct.IsCancellationRequested && !_ended)
         {
-            SetState(CallState.Connecting, viaMachine: sm => sm.OnConnecting());
-
             try
             {
-                _ws = _services.GetRequiredService<IVoiceWebSocketClient>();
-                await _ws.ConnectAsync(ConversationId!, ct);
+                SetState(CallState.Connecting, viaMachine: sm => sm.OnConnecting());
+
+                try
+                {
+                    _ws = _services.GetRequiredService<IVoiceWebSocketClient>();
+                    await _ws.ConnectAsync(ConversationId!, ct);
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    await TeardownAsync();
+                    if (!await TryReconnectOrFinishAsync(ex.Message, authRejected: false, ct)) return;
+                    continue;
+                }
+
+                _backoff.Reset();
+                var disconnect = await DrainFramesAsync(ct);
+                await TeardownAsync();
+
+                if (ct.IsCancellationRequested || _ended) return;
+
+                if (disconnect.AuthRejected)
+                {
+                    await OnMain(() => Shell.Current.DisplayAlert("Authentication failed",
+                        "Token rejected by agent. Please reconfigure.", "OK"));
+                    await OnMain(() => Shell.Current.GoToAsync("//onboarding"));
+                    return;
+                }
+
+                if (!await TryReconnectOrFinishAsync(disconnect.Reason ?? "Connection lost", authRejected: false, ct)) return;
             }
-            catch (Exception ex) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex)
             {
                 await TeardownAsync();
-                if (!await TryReconnectOrFinishAsync(ex.Message, authRejected: false, ct)) return;
-                continue;
-            }
-
-            _backoff.Reset();
-            var disconnect = await DrainFramesAsync(ct);
-            await TeardownAsync();
-
-            if (ct.IsCancellationRequested || _ended) return;
-
-            if (disconnect.AuthRejected)
-            {
-                await OnMain(() => Shell.Current.DisplayAlert("Authentication failed",
-                    "Token rejected by agent. Please reconfigure.", "OK"));
-                await OnMain(() => Shell.Current.GoToAsync("//onboarding"));
+                await OnMain(() => Shell.Current.DisplayAlert("Call failed", ex.Message, "OK"));
+                await OnMain(() => Shell.Current.GoToAsync(".."));
                 return;
             }
-
-            if (!await TryReconnectOrFinishAsync(disconnect.Reason ?? "Connection lost", authRejected: false, ct)) return;
         }
     }
 

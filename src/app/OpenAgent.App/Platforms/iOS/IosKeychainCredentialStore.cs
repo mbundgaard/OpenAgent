@@ -18,7 +18,8 @@ public sealed class IosKeychainCredentialStore : ICredentialStore
         query.ReturnData = true;
         var result = SecKeyChain.QueryAsData(query, false, out var status);
         if (status != SecStatusCode.Success || result is null) return Task.FromResult<QrPayload?>(null);
-        var json = result.ToString();
+        var json = NSString.FromData(result, NSStringEncoding.UTF8)?.ToString();
+        if (string.IsNullOrEmpty(json)) return Task.FromResult<QrPayload?>(null);
         var payload = JsonSerializer.Deserialize<QrPayload>(json);
         return Task.FromResult(payload);
     }

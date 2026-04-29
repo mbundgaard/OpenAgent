@@ -2,11 +2,13 @@ namespace OpenAgent.App;
 
 public partial class App : Application
 {
-    public App()
+    public App() => InitializeComponent();
+
+    protected override Window CreateWindow(IActivationState? activationState)
     {
-        InitializeComponent();
         var shell = new AppShell();
-        MainPage = shell;
-        Dispatcher.Dispatch(async () => await shell.RouteInitialAsync());
+        var window = new Window(shell);
+        window.Created += async (_, _) => await shell.RouteInitialAsync();
+        return window;
     }
 }

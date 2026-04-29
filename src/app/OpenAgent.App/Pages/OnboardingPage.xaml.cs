@@ -20,6 +20,12 @@ public partial class OnboardingPage : ContentPage
         BindingContext = _vm = vm;
     }
 
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        _handled = false;
+    }
+
     private async void OnBarcodesDetected(object? sender, BarcodeDetectionEventArgs e)
     {
         if (_handled) return;
