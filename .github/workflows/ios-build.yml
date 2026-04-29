@@ -77,8 +77,8 @@ jobs:
         # while preserving entitlements, re-zip in place.
         run: |
           set -e
-          SRC="src/app/OpenAgent.App/Resources/AppIcon/appicon.png"
-          IPA="${{ steps.ipa.outputs.path }}"
+          SRC="$(pwd)/src/app/OpenAgent.App/Resources/AppIcon/appicon.png"
+          IPA="$(pwd)/${{ steps.ipa.outputs.path }}"
           WORK=$(mktemp -d)
           unzip -q "$IPA" -d "$WORK"
           APP=$(find "$WORK/Payload" -maxdepth 2 -name '*.app' | head -n1)
@@ -95,7 +95,7 @@ jobs:
           rm -f "$IPA"
           (cd "$WORK" && zip -qr "$IPA" Payload/)
           echo "Bundle root .png after injection:"
-          (cd "$WORK" && ls -la "Payload"/$(basename "$APP") | grep -E '\.png$' || true)
+          ls -la "$APP" | grep -E '\.png$' || true
 
       - name: Upload to TestFlight
         if: startsWith(github.ref, 'refs/tags/app-v')
