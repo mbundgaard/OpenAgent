@@ -15,10 +15,12 @@
     <!-- MAUI 10 deprecates sync DisplayAlert and AVAudioSession.ModeVoiceChat; we still use them
          pending an async refactor. Keep building while we migrate. -->
     <NoWarn>$(NoWarn);CS0618</NoWarn>
+    <!-- Manual asset catalog (generated in CI from a single 1024x1024 PNG via sips).
+         MAUI's MauiIcon does not produce an iOS asset catalog for our setup. -->
+    <XSAppIconAssets>Platforms\iOS\Assets.xcassets\AppIcon.appiconset</XSAppIconAssets>
   </PropertyGroup>
 
   <ItemGroup>
-    <MauiIcon Include="Resources\AppIcon\appicon.png" />
     <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#000000" BaseSize="128,128" />
     <MauiXaml Update="**\*.xaml" SubType="Designer" />
     <MauiCss Include="**\*.css" />

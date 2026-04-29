@@ -49,6 +49,43 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           echo "$PROFILE" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
 
+      - name: Generate iOS AppIcon.appiconset from 1024x1024 PNG
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        # MAUI's MauiIcon doesn't produce an iOS asset catalog for our setup,
+        # so we build AppIcon.appiconset ourselves from the master 1024x1024 PNG
+        # using macOS's `sips`. Apple requires 120x120 + 1024x1024 at minimum;
+        # we include the full standard iPhone set for completeness.
+        run: |
+          set -e
+          SRC="src/app/OpenAgent.App/Resources/AppIcon/appicon.png"
+          XC="src/app/OpenAgent.App/Platforms/iOS/Assets.xcassets"
+          ICON="$XC/AppIcon.appiconset"
+          mkdir -p "$ICON"
+          for size in 40 58 60 80 87 120 152 167 180 1024; do
+            sips -s format png -Z "$size" "$SRC" --out "$ICON/appicon-${size}.png" >/dev/null
+          done
+          cat > "$ICON/Contents.json" <<'JSON'
+          {
+            "images": [
+              { "size": "20x20", "idiom": "iphone",        "filename": "appicon-40.png",   "scale": "2x" },
+              { "size": "20x20", "idiom": "iphone",        "filename": "appicon-60.png",   "scale": "3x" },
+              { "size": "29x29", "idiom": "iphone",        "filename": "appicon-58.png",   "scale": "2x" },
+              { "size": "29x29", "idiom": "iphone",        "filename": "appicon-87.png",   "scale": "3x" },
+              { "size": "40x40", "idiom": "iphone",        "filename": "appicon-80.png",   "scale": "2x" },
+              { "size": "40x40", "idiom": "iphone",        "filename": "appicon-120.png",  "scale": "3x" },
+              { "size": "60x60", "idiom": "iphone",        "filename": "appicon-120.png",  "scale": "2x" },
+              { "size": "60x60", "idiom": "iphone",        "filename": "appicon-180.png",  "scale": "3x" },
+              { "size": "1024x1024", "idiom": "ios-marketing", "filename": "appicon-1024.png", "scale": "1x" }
+            ],
+            "info": { "version": 1, "author": "xcode" }
+          }
+          JSON
+          # Top-level asset catalog manifest (required so actool recognises the bundle)
+          cat > "$XC/Contents.json" <<'JSON'
+          { "info": { "version": 1, "author": "xcode" } }
+          JSON
+          ls -la "$ICON"
+
       - name: Build & archive (Release, signed)
         if: startsWith(github.ref, 'refs/tags/app-v')
         working-directory: src/app
