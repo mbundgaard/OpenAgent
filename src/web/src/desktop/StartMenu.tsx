@@ -6,9 +6,10 @@ interface Props {
   apps: AppDefinition[];
   onOpen: (app: AppDefinition) => void;
   onClose: () => void;
+  onPairPhone: () => void;
 }
 
-export function StartMenu({ apps, onOpen, onClose }: Props) {
+export function StartMenu({ apps, onOpen, onClose, onPairPhone }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   // Close when clicking outside the menu
@@ -31,6 +32,11 @@ export function StartMenu({ apps, onOpen, onClose }: Props) {
     onClose();
   }
 
+  function handlePairPhone() {
+    onPairPhone();
+    onClose();
+  }
+
   return (
     <div ref={ref} className={styles.menu}>
       {apps.map(app => (
@@ -41,6 +47,13 @@ export function StartMenu({ apps, onOpen, onClose }: Props) {
           <span className={styles.label}>{app.title}</span>
         </button>
       ))}
+      <div className={styles.separator} />
+      <button className={styles.item} onClick={handlePairPhone}>
+        <svg className={styles.icon}>
+          <use href="/icons.svg#pair-phone-icon" />
+        </svg>
+        <span className={styles.label}>Pair Phone</span>
+      </button>
     </div>
   );
 }
