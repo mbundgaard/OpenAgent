@@ -12,6 +12,9 @@
     <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
     <RuntimeIdentifier Condition="$(Configuration) == 'Release'">ios-arm64</RuntimeIdentifier>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- MAUI 10 deprecates sync DisplayAlert and AVAudioSession.ModeVoiceChat; we still use them
+         pending an async refactor. Keep building while we migrate. -->
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +28,7 @@
     <PackageReference Include="Microsoft.Maui.Controls" />
     <PackageReference Include="Microsoft.Maui.Controls.Compatibility" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="ZXing.Net.Maui" />
     <PackageReference Include="ZXing.Net.Maui.Controls" />

@@ -32,6 +32,6 @@ public partial class OnboardingPage : ContentPage
         var text = e.Results?.FirstOrDefault()?.Value;
         if (string.IsNullOrEmpty(text)) return;
         _handled = true;
-        await MainThread.InvokeOnMainThreadAsync(() => _vm.OnQrScannedCommand.ExecuteAsync(text));
+        await MainThread.InvokeOnMainThreadAsync(() => _vm.OnQrScannedAsync(text));
     }
 }

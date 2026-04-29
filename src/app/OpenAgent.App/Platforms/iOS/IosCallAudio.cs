@@ -28,7 +28,7 @@ public sealed class IosCallAudio : ICallAudio
         var session = AVAudioSession.SharedInstance();
         session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
             AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.DefaultToSpeaker);
-        session.SetMode(AVAudioSession.ModeVoiceChat, out _);
+        session.SetMode(AVAudioSessionMode.VoiceChat, out _);
         session.SetActive(true, out _);
 
         lock (_lifecycleLock)
@@ -90,7 +90,7 @@ public sealed class IosCallAudio : ICallAudio
 
         unsafe
         {
-            var dst = (short*)buffer.Int16ChannelData[0];
+            var dst = (short*)buffer.Int16ChannelData;
             for (var i = 0; i < frameCount; i++)
                 dst[i] = (short)(pcm16[i * 2] | (pcm16[i * 2 + 1] << 8));
         }
@@ -118,7 +118,7 @@ public sealed class IosCallAudio : ICallAudio
 
         var consumed = false;
         var outStatus = converter.ConvertToBuffer(dst, out var error,
-            (AVAudioPacketCount _, out AVAudioConverterInputStatus s) =>
+            (uint _, out AVAudioConverterInputStatus s) =>
             {
                 if (consumed) { s = AVAudioConverterInputStatus.NoDataNow; return null!; }
                 consumed = true;
@@ -135,7 +135,7 @@ public sealed class IosCallAudio : ICallAudio
 
         unsafe
         {
-            var srcPtr = (short*)dst.Int16ChannelData[0];
+            var srcPtr = (short*)dst.Int16ChannelData;
             for (var i = 0; i < dst.FrameLength; i++)
             {
                 var s = srcPtr[i];

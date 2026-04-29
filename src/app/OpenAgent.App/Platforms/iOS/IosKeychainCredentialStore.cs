@@ -15,7 +15,7 @@ public sealed class IosKeychainCredentialStore : ICredentialStore
     public Task<QrPayload?> LoadAsync(CancellationToken ct = default)
     {
         var query = NewQuery();
-        query.ReturnData = true;
+        // Newer Microsoft.iOS bindings dropped SecRecord.ReturnData; QueryAsData implicitly returns data.
         var result = SecKeyChain.QueryAsData(query, false, out var status);
         if (status != SecStatusCode.Success || result is null) return Task.FromResult<QrPayload?>(null);
         var json = NSString.FromData(result, NSStringEncoding.UTF8)?.ToString();
