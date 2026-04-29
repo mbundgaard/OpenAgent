@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="OpenAgent.App.Core/OpenAgent.App.Core.csproj" />
   <Project Path="OpenAgent.App.Tests/OpenAgent.App.Tests.csproj" />
+  <Project Path="OpenAgent.App/OpenAgent.App.csproj" />
 </Solution>
