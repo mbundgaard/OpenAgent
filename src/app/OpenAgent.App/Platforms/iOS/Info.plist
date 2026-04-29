@@ -38,5 +38,9 @@
   <string>OpenAgent needs the microphone to talk to the agent.</string>
   <key>NSCameraUsageDescription</key>
   <string>OpenAgent uses the camera to scan the connection QR code.</string>
+  <!-- We only use Apple's OS-provided HTTPS/TLS for the WebSocket. No proprietary
+       or extra crypto, so we're exempt from US export-compliance documentation. -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
 </dict>
 </plist>
