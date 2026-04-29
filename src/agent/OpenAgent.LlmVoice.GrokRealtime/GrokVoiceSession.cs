@@ -103,22 +103,6 @@ internal sealed class GrokVoiceSession : IVoiceSession
             yield return evt;
     }
 
-    /// <summary>
-    /// Re-sends the session.update event with a freshly built system prompt. Called after the
-    /// agent mutates conversation state that affects the prompt (e.g. activate_skill) so the
-    /// model sees the change without requiring a new call.
-    /// </summary>
-    public async Task RefreshSystemPromptAsync(CancellationToken ct = default)
-    {
-        // Send only the session.update — the SessionReady channel write is a one-time bring-up
-        // signal, not something we re-broadcast on refresh.
-        await SendEventAsync(new GrokClientEvent
-        {
-            Type = EventTypes.SessionUpdate,
-            Session = BuildSessionConfig()
-        }, ct);
-    }
-
     public async Task AddUserMessageAsync(string text, CancellationToken ct = default)
     {
         // Adds a user-role message to the realtime conversation buffer. No response trigger —
@@ -164,7 +148,10 @@ internal sealed class GrokVoiceSession : IVoiceSession
         if (_conversation.VoiceSessionOpen)
         {
             _conversation.VoiceSessionOpen = false;
-            try { _agentLogic.UpdateConversation(_conversation); }
+            // Targeted column update — must NOT use UpdateConversation here. The captured
+            // _conversation is a snapshot from session start; a full-row write would clobber
+            // mid-session mutations to ActiveSkills, Intention, MentionFilter, etc.
+            try { _agentLogic.SetVoiceSession(_conversation.Id, _conversation.VoiceSessionId, false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to clear VoiceSessionOpen for {ConversationId}", _conversation.Id); }
         }
 
@@ -414,7 +401,7 @@ internal sealed class GrokVoiceSession : IVoiceSession
                 SessionId, _conversation.Id);
             _conversation.VoiceSessionId = SessionId;
             _conversation.VoiceSessionOpen = true;
-            _agentLogic.UpdateConversation(_conversation);
+            _agentLogic.SetVoiceSession(_conversation.Id, SessionId, true);
         }
         return null;
     }

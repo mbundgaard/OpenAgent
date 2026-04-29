@@ -34,6 +34,13 @@ public interface IAgentLogic
     void UpdateConversation(Conversation conversation);
 
     /// <summary>
+    /// Updates only the voice session columns. Voice providers use this at session start and
+    /// dispose to avoid the full-row write of <see cref="UpdateConversation"/>, which would
+    /// trample mid-session mutations made by tools (activate_skill, set_intention, etc.).
+    /// </summary>
+    void SetVoiceSession(string conversationId, string? sessionId, bool open);
+
+    /// <summary>
     /// Triggers compaction on-demand. Thin pass-through to
     /// <see cref="IConversationStore.CompactNowAsync"/>. Providers use this during overflow
     /// recovery to avoid reaching into the store directly.

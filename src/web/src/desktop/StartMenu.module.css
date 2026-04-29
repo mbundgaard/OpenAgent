@@ -40,3 +40,9 @@
 .label {
   white-space: nowrap;
 }
+
+.separator {
+  height: 1px;
+  margin: 4px 12px;
+  background: var(--color-border);
+}

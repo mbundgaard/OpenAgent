@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { AppDefinition } from '../apps/types';
 import type { WindowState } from '../windows/types';
 import { StartMenu } from './StartMenu';
+import { PairPhone } from './PairPhone';
 import styles from './TopBar.module.css';
 
 interface Props {
@@ -19,6 +20,7 @@ function formatTime(): string {
 
 export function TopBar({ apps, windows, onOpenApp, onFocus, onMinimize, onRestore }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pairPhoneOpen, setPairPhoneOpen] = useState(false);
   const [time, setTime] = useState(formatTime);
 
   useEffect(() => {
@@ -86,8 +88,11 @@ export function TopBar({ apps, windows, onOpenApp, onFocus, onMinimize, onRestor
 
       {/* Start menu dropdown */}
       {menuOpen && (
-        <StartMenu apps={apps} onOpen={onOpenApp} onClose={handleMenuClose} />
+        <StartMenu apps={apps} onOpen={onOpenApp} onClose={handleMenuClose} onPairPhone={() => setPairPhoneOpen(true)} />
       )}
+
+      {/* Pair phone QR modal */}
+      {pairPhoneOpen && <PairPhone onClose={() => setPairPhoneOpen(false)} />}
     </div>
   );
 }

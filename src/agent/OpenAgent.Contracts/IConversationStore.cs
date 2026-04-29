@@ -51,6 +51,13 @@ public interface IConversationStore : IConfigurable
     void Update(Conversation conversation);
 
     /// <summary>
+    /// Updates only the voice session columns (id + open flag). Used by voice providers at
+    /// session start and dispose so they don't trample mid-session mutations to other fields
+    /// (active skills, intention, mention filter, model swaps) with a stale snapshot.
+    /// </summary>
+    void SetVoiceSession(string conversationId, string? sessionId, bool open);
+
+    /// <summary>
     /// Updates the conversation's human-readable display name. No-op if the value is unchanged.
     /// Channel providers call this on every inbound message so renames propagate.
     /// </summary>

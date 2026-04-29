@@ -39,15 +39,6 @@ public interface IVoiceSession : IAsyncDisposable
     Task CancelResponseAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Re-sends the session configuration with a freshly built system prompt. Realtime sessions
-    /// lock the system prompt at session start, so any later mutation that affects the prompt
-    /// (skill activation/deactivation, intention change, mention filter) won't reach the model
-    /// without an explicit refresh. No-op when the underlying protocol doesn't support mid-session
-    /// updates.
-    /// </summary>
-    Task RefreshSystemPromptAsync(CancellationToken ct = default);
-
-    /// <summary>
     /// Adds a synthetic user-role message to the live session WITHOUT triggering a response.
     /// Used to seed the realtime context (e.g. replaying conversation history on connect, or
     /// injecting an event breadcrumb). Pair with <see cref="RequestResponseAsync"/> when you
