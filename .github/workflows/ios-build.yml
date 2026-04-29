@@ -1,0 +1,81 @@
+name: iOS app build
+
+on:
+  push:
+    branches: [master]
+    tags: ['app-v*']
+    paths: ['src/app/**', '.github/workflows/ios-build.yml']
+  pull_request:
+    paths: ['src/app/**', '.github/workflows/ios-build.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-ios
+
+      - name: Run Core tests
+        working-directory: src/app
+        run: dotnet test OpenAgent.App.Tests/OpenAgent.App.Tests.csproj --logger "trx" --logger "console;verbosity=detailed"
+
+      - name: Build (Debug)
+        if: ${{ !startsWith(github.ref, 'refs/tags/app-v') }}
+        working-directory: src/app
+        run: dotnet build OpenAgent.App/OpenAgent.App.csproj -c Debug -f net10.0-ios
+
+      - name: Import code-signing certs
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12 }}
+          p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+
+      - name: Install provisioning profile
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        env:
+          PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROFILE" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+
+      - name: Build & archive (Release, signed)
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        working-directory: src/app
+        run: |
+          dotnet publish OpenAgent.App/OpenAgent.App.csproj \
+            -c Release -f net10.0-ios \
+            -p:ArchiveOnBuild=true \
+            -p:CodesignKey="Apple Distribution" \
+            -p:CodesignProvision="OpenAgent App Store"
+
+      - name: Locate IPA
+        id: ipa
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        run: |
+          IPA=$(find src/app/OpenAgent.App/bin/Release -name 'OpenAgent.App.ipa' | head -n1)
+          if [ -z "$IPA" ]; then echo "No .ipa found under bin/Release"; ls -R src/app/OpenAgent.App/bin/Release; exit 1; fi
+          echo "path=$IPA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to TestFlight
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        uses: apple-actions/upload-testflight-build@v1
+        with:
+          app-path: ${{ steps.ipa.outputs.path }}
+          issuer-id: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_KEY_P8 }}
+
+      - name: Upload IPA artifact
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenAgent-App-ipa
+          path: ${{ steps.ipa.outputs.path }}
