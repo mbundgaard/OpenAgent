@@ -33,8 +33,10 @@ public sealed class IosCallAudio : ICallAudio
 
     public async Task StartAsync(int sampleRate, CancellationToken ct)
     {
-        _logger.LogInformation("Audio start requested sampleRate={SampleRate} permission={Permission}",
-            sampleRate, AVAudioSession.SharedInstance().RecordPermission);
+        // RecordPermission moved from AVAudioSession to AVAudioApplication in iOS 17;
+        // omitting it here keeps the call site free of CA1422 without pulling in the
+        // newer API. The mic-on event downstream already implies permission was granted.
+        _logger.LogInformation("Audio start requested sampleRate={SampleRate}", sampleRate);
 
         var session = AVAudioSession.SharedInstance();
         session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
