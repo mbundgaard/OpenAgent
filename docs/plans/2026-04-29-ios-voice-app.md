@@ -1517,7 +1517,7 @@ git commit -am "feat(app-core): VoiceWebSocketClient"
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
     <ApplicationTitle>OpenAgent</ApplicationTitle>
-    <ApplicationId>dk.muneris.openagent</ApplicationId>
+    <ApplicationId>sh.comput.openagent</ApplicationId>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
@@ -1722,7 +1722,7 @@ public class Program
   <key>CFBundleDisplayName</key>
   <string>OpenAgent</string>
   <key>CFBundleIdentifier</key>
-  <string>dk.muneris.openagent</string>
+  <string>sh.comput.openagent</string>
   <key>CFBundleShortVersionString</key>
   <string>1.0</string>
   <key>CFBundleVersion</key>

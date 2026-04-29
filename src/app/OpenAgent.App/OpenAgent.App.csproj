@@ -6,7 +6,7 @@
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
     <ApplicationTitle>OpenAgent</ApplicationTitle>
-    <ApplicationId>dk.muneris.openagent</ApplicationId>
+    <ApplicationId>sh.comput.openagent</ApplicationId>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
