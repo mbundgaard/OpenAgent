@@ -3,6 +3,10 @@ namespace OpenAgent.App.Core.Onboarding;
 /// <summary>Parses agent connection URLs of the form https://host[:port]/[path]?token=... (or with #token=).</summary>
 public static class QrPayloadParser
 {
+    /// <summary>
+    /// Parses an agent connection URL of the form https://host[:port]/[path]?token=... (or with #token=...).
+    /// Returns false and a non-empty <paramref name="error"/> on failure.
+    /// </summary>
     public static bool TryParse(string input, out QrPayload? payload, out string error)
     {
         payload = null;
@@ -23,6 +27,12 @@ public static class QrPayloadParser
         if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
         {
             error = $"Unsupported scheme: {uri.Scheme}";
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            error = "URL must not contain userinfo";
             return false;
         }
 
