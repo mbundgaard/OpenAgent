@@ -43,6 +43,12 @@ public static class QrPayloadParser
             return false;
         }
 
+        if (token.AsSpan().IndexOfAny('\r', '\n', '\0') >= 0)
+        {
+            error = "Token contains invalid characters";
+            return false;
+        }
+
         // Preserve the original authority literally (Uri.Authority drops default ports like :443 for https).
         var authority = ExtractAuthority(input, uri);
         var basePart = $"{uri.Scheme}://{authority}{uri.AbsolutePath}";

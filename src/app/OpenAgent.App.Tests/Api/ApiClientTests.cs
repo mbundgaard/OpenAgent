@@ -57,4 +57,33 @@ public class ApiClientTests
         var (client, _) = Make(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
         await Assert.ThrowsAsync<AuthRejectedException>(() => client.GetConversationsAsync());
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task Rename_throws_on_empty_intention(string? intention)
+    {
+        var (client, _) = Make();
+        await Assert.ThrowsAsync<ArgumentException>(() => client.RenameConversationAsync("x", intention!));
+    }
+
+    [Fact]
+    public async Task Throws_ApiException_on_5xx_with_status_code()
+    {
+        var (client, _) = Make(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("internal failure")
+        });
+        var ex = await Assert.ThrowsAsync<ApiException>(() => client.GetConversationsAsync());
+        Assert.Equal(500, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task Throws_NetworkException_on_transport_failure()
+    {
+        var (client, _) = Make(_ => throw new HttpRequestException("boom"));
+        var ex = await Assert.ThrowsAsync<NetworkException>(() => client.GetConversationsAsync());
+        Assert.IsType<HttpRequestException>(ex.InnerException);
+    }
 }

@@ -26,6 +26,7 @@ public class QrPayloadParserTests
     [InlineData("")]
     [InlineData("https://host.example/?token=")]     // empty token
     [InlineData("https://user:pass@host.example/?token=t")]  // userinfo
+    [InlineData("https://host.example/?token=ab\rcd")]   // CR in token
     public void Rejects_malformed(string input)
     {
         var ok = QrPayloadParser.TryParse(input, out _, out var error);

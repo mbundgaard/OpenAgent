@@ -29,6 +29,9 @@ public sealed class ApiClient : IApiClient
     /// <inheritdoc/>
     public Task RenameConversationAsync(string conversationId, string intention, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(intention))
+            throw new ArgumentException("Intention required", nameof(intention));
+
         // Anonymous type serialized through JsonOptions.Default — snake_case policy is a no-op for the lowercase "intention" key.
         var body = JsonContent.Create(new { intention }, options: JsonOptions.Default);
         return SendAsync<object>(HttpMethod.Patch, $"api/conversations/{Uri.EscapeDataString(conversationId)}", body, ct);
@@ -46,15 +49,18 @@ public sealed class ApiClient : IApiClient
         try { resp = await _http.SendAsync(req, ct); }
         catch (Exception ex) when (ex is not OperationCanceledException) { throw new NetworkException(ex.Message, ex); }
 
-        if (resp.StatusCode == HttpStatusCode.Unauthorized) throw new AuthRejectedException();
-
-        if (!resp.IsSuccessStatusCode)
+        using (resp)
         {
-            var content = await resp.Content.ReadAsStringAsync(ct);
-            throw new ApiException($"{(int)resp.StatusCode} {resp.ReasonPhrase}: {content}", (int)resp.StatusCode);
-        }
+            if (resp.StatusCode == HttpStatusCode.Unauthorized) throw new AuthRejectedException();
 
-        if (typeof(T) == typeof(object)) return default;
-        return await resp.Content.ReadFromJsonAsync<T>(JsonOptions.Default, ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var content = await resp.Content.ReadAsStringAsync(ct);
+                throw new ApiException($"{(int)resp.StatusCode} {resp.ReasonPhrase}: {content}", (int)resp.StatusCode);
+            }
+
+            if (typeof(T) == typeof(object)) return default;
+            return await resp.Content.ReadFromJsonAsync<T>(JsonOptions.Default, ct);
+        }
     }
 }
