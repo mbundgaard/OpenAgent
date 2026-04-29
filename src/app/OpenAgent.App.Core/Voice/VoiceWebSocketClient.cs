@@ -87,7 +87,8 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
             WebSocketReceiveResult result;
             string? receiveError = null;
             try { result = await _ws.ReceiveAsync(buffer, ct); }
-            catch (WebSocketException ex)
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
             {
                 receiveError = ex.Message;
                 result = null!;
@@ -135,6 +136,9 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
                 }
             }
         }
+
+        if (_ws is not null && _ws.State != WebSocketState.Open)
+            _logger.LogWarning("WS loop exited state={State} (was not a clean close)", _ws.State);
     }
 
     public async ValueTask DisposeAsync()

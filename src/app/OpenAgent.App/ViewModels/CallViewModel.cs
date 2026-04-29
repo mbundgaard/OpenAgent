@@ -46,11 +46,10 @@ public partial class CallViewModel : ObservableObject, IDisposable
         _logger = logger ?? NullLogger<CallViewModel>.Instance;
         _audio.OnPcmCaptured += pcm =>
         {
-            // Fire-and-forget: SendAudioAsync serializes internally via SemaphoreSlim.
             var ws = _ws;
             var token = _cts?.Token ?? CancellationToken.None;
             if (ws is null || token.IsCancellationRequested) return;
-            _ = ws.SendAudioAsync(pcm, token);
+            _ = SendAudioSafe(ws, pcm, token);
         };
     }
 
@@ -214,6 +213,13 @@ public partial class CallViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     public void ToggleTranscript() => ShowTranscript = !ShowTranscript;
+
+    private async Task SendAudioSafe(IVoiceWebSocketClient ws, byte[] pcm, CancellationToken ct)
+    {
+        try { await ws.SendAudioAsync(pcm, ct); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _logger.LogWarning("Audio send failed: {Error}", ex.Message); }
+    }
 
     private void SetState(CallState newState, Action<CallStateMachine> viaMachine)
     {
