@@ -296,6 +296,7 @@ app.MapSystemPromptEndpoints();
 app.MapConnectionEndpoints();
 app.MapFileExplorerEndpoints();
 app.MapLogEndpoints();
+app.MapClientLogEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapTelnyxWebhookEndpoints();
 app.MapTelnyxStreamingEndpoint();
