@@ -24,13 +24,13 @@ A manual-entry sheet sits behind a small "Enter manually" link as a fallback (tw
 
 ## Conversation list
 
-Shows **all** conversations the agent knows about, not just app-sourced ones, sorted by `lastMessageAt` desc. Each row:
+Shows **all** conversations the agent knows about, not just app-sourced ones, sorted by `last_activity` desc (falling back to `created_at` when no activity has been recorded yet). Each row:
 
-- **Title** — `intention` if set, else first user message truncated to ~60 chars, else "Untitled".
+- **Title** — `display_name` if set, else `intention`, else `id`. (The agent computes a short display name for channel conversations and exposes it via `ConversationListItemResponse.display_name`; we don't recompute it client-side.)
 - **Right-side timestamp** — relative ("2h ago", "yesterday", `dd MMM` for older).
 - **Source badge** — small pill: `app`, `telegram`, `whatsapp`, `webhook`, etc.
 
-Pull-to-refresh. Floating `+` FAB → new conversation. Swipe-left → delete (with confirm). Long-press → rename sheet, calls `PATCH /api/conversations/{id}` with `intention`.
+Pull-to-refresh. Floating `+` FAB → new conversation. Swipe-left → delete (with confirm). Swipe-right → rename sheet, calls `PATCH /api/conversations/{id}` with `intention`. (The plan originally specified long-press, but MAUI has no built-in long-press recognizer; swipe-right is the closest iOS-native gesture and keeps the UX consistent with swipe-left for delete.)
 
 Cached on every successful load to `FileSystem.AppDataDirectory/conversations.cache.json`. On load failure the cached list is shown with an "Offline" banner.
 
@@ -68,7 +68,7 @@ No REST retries — single failure surfaces a banner; user retries by pulling.
 
 ## Audio
 
-PCM16 mono 24 kHz both directions. The client validates `session_ready.input_codec/output_codec == "pcm16"` and `input_sample_rate/output_sample_rate == 24000`; anything else surfaces an error and ends the call (matches `useVoiceSession.ts:209` behaviour).
+PCM16 mono is the only client-supported codec. The session_ready event announces the rates the server picked (today gpt-realtime emits 24 kHz both directions; this is the highest the model supports, so an upgrade can only go higher within the same protocol). The client validates `input_codec == output_codec == "pcm16"` and **uses whatever sample rate the server announces** — same approach as `useVoiceSession.ts:209-215`. Hard-coding 24 kHz would break against any future provider variant or session option override; trusting the announcement is the cheap forward-compatible choice.
 
 iOS implementation:
 - `AVAudioSession` category `PlayAndRecord`, mode `VoiceChat`, options `AllowBluetooth | DefaultToSpeaker`.

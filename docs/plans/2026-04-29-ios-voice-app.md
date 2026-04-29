@@ -151,6 +151,8 @@ git commit -m "chore(app): scaffold OpenAgent.App.Core and OpenAgent.App.Tests"
 
 ## Phase 1 — Core models, parsers, state (Windows-testable, TDD)
 
+> **Contract lock-in.** Before writing any DTO or parser in this phase, open `src/agent/OpenAgent.Models/Conversations/ConversationResponses.cs` and `src/agent/OpenAgent.Models/Voice/VoiceWebSocketContracts.cs` once and copy field names verbatim. The fixtures and DTOs below are already aligned to those files as of 2026-04-29; if they have drifted, fix the fixture and DTO together so the round-trip test asserts a real contract.
+
 ### Task 2: QR payload parser
 
 **Files:**
@@ -397,25 +399,38 @@ git commit -am "feat(app-core): ICredentialStore + InMemory impl"
 - Test: `src/app/OpenAgent.App.Tests/Models/ConversationListItemTests.cs`
 - Test fixture: `src/app/OpenAgent.App.Tests/Fixtures/conversation-list.json`
 
-**Step 1: Capture a real fixture.** Add this canned JSON at `src/app/OpenAgent.App.Tests/Fixtures/conversation-list.json` (matches the snake_case the agent emits):
+> **Field names verified against** `src/agent/OpenAgent.Models/Conversations/ConversationResponses.cs:8-58` on 2026-04-29: `id`, `source`, `created_at`, `turn_count`, `last_activity` (nullable), `display_name` (optional), `intention` (optional). No `last_message_at` or `message_count` on the wire.
+
+**Step 1: Fixture** at `src/app/OpenAgent.App.Tests/Fixtures/conversation-list.json`:
 
 ```json
 [
   {
     "id": "abc-123",
     "source": "telegram",
-    "intention": "Pricing chat",
+    "text_provider": "openai",
+    "text_model": "gpt-4o",
+    "voice_provider": "openai",
+    "voice_model": "gpt-4o-realtime",
     "created_at": "2026-04-28T10:00:00Z",
-    "last_message_at": "2026-04-29T08:30:00Z",
-    "message_count": 14
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "turn_count": 14,
+    "last_activity": "2026-04-29T08:30:00Z",
+    "display_name": "Pricing chat",
+    "intention": "Discuss pricing tiers"
   },
   {
     "id": "def-456",
     "source": "app",
-    "intention": null,
+    "text_provider": "openai",
+    "text_model": "gpt-4o",
+    "voice_provider": "openai",
+    "voice_model": "gpt-4o-realtime",
     "created_at": "2026-04-29T09:00:00Z",
-    "last_message_at": null,
-    "message_count": 0
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "turn_count": 0
   }
 ]
 ```
@@ -445,10 +460,26 @@ public class ConversationListItemTests
         Assert.Equal(2, items!.Count);
         Assert.Equal("abc-123", items[0].Id);
         Assert.Equal("telegram", items[0].Source);
-        Assert.Equal("Pricing chat", items[0].Intention);
-        Assert.Equal(14, items[0].MessageCount);
+        Assert.Equal("Pricing chat", items[0].DisplayName);
+        Assert.Equal("Discuss pricing tiers", items[0].Intention);
+        Assert.Equal(14, items[0].TurnCount);
+        Assert.Equal(new DateTimeOffset(2026, 4, 29, 8, 30, 0, TimeSpan.Zero), items[0].LastActivity);
+        Assert.Null(items[1].DisplayName);
         Assert.Null(items[1].Intention);
-        Assert.Null(items[1].LastMessageAt);
+        Assert.Null(items[1].LastActivity);
+    }
+
+    [Fact]
+    public void Title_helper_falls_back_through_display_name_intention_id()
+    {
+        var item = new ConversationListItem { Id = "id-1", Source = "app", CreatedAt = DateTimeOffset.UtcNow };
+        Assert.Equal("id-1", item.Title);
+
+        var withIntention = item with { Intention = "I" };
+        Assert.Equal("I", withIntention.Title);
+
+        var withDisplay = withIntention with { DisplayName = "D" };
+        Assert.Equal("D", withDisplay.Title);
     }
 }
 ```
@@ -480,27 +511,38 @@ using System.Text.Json.Serialization;
 
 namespace OpenAgent.App.Core.Models;
 
-/// <summary>One row as returned by GET /api/conversations.</summary>
-public sealed class ConversationListItem
+/// <summary>One row as returned by GET /api/conversations. Field names mirror ConversationListItemResponse on the agent.</summary>
+public sealed record ConversationListItem
 {
     [JsonPropertyName("id")] public required string Id { get; init; }
     [JsonPropertyName("source")] public required string Source { get; init; }
+    [JsonPropertyName("created_at")] public required DateTimeOffset CreatedAt { get; init; }
+    [JsonPropertyName("last_activity")] public DateTimeOffset? LastActivity { get; init; }
+    [JsonPropertyName("turn_count")] public int TurnCount { get; init; }
+    [JsonPropertyName("display_name")] public string? DisplayName { get; init; }
     [JsonPropertyName("intention")] public string? Intention { get; init; }
-    [JsonPropertyName("created_at")] public DateTimeOffset CreatedAt { get; init; }
-    [JsonPropertyName("last_message_at")] public DateTimeOffset? LastMessageAt { get; init; }
-    [JsonPropertyName("message_count")] public int MessageCount { get; init; }
+
+    /// <summary>Effective row title — display_name wins, then intention, then id.</summary>
+    [JsonIgnore]
+    public string Title => !string.IsNullOrWhiteSpace(DisplayName) ? DisplayName!
+                          : !string.IsNullOrWhiteSpace(Intention) ? Intention!
+                          : Id;
+
+    /// <summary>Effective sort key for list ordering — last_activity if known, else created_at.</summary>
+    [JsonIgnore]
+    public DateTimeOffset SortKey => LastActivity ?? CreatedAt;
 }
 ```
+
+The DTO drops several wire-only fields (token counts, providers/models). They round-trip cleanly because `System.Text.Json` ignores unknown JSON properties by default; we only deserialize what we render. Fields can be added later when the UI needs them.
 
 **Step 6: Run, expect PASS.**
 
 **Step 7: Commit.**
 
 ```bash
-git commit -am "feat(app-core): ConversationListItem DTO + JSON options"
+git commit -am "feat(app-core): ConversationListItem DTO matching agent contract"
 ```
-
-> Note: cross-check the actual JSON shape returned by `GET /api/conversations` in the agent code (`ConversationEndpoints.cs`) before relying on field names. If a field name differs from the fixture, adjust the fixture (not the code) so the round-trip remains the contract test.
 
 ---
 
@@ -1125,7 +1167,7 @@ public class ApiClientTests
         var (client, stub) = Make(req =>
             new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""[{"id":"x","source":"app","created_at":"2026-04-29T10:00:00Z","message_count":0}]""")
+                Content = new StringContent("""[{"id":"x","source":"app","text_provider":"o","text_model":"m","voice_provider":"o","voice_model":"m","created_at":"2026-04-29T10:00:00Z","total_prompt_tokens":0,"total_completion_tokens":0,"turn_count":0}]""")
             });
         var items = await client.GetConversationsAsync();
         Assert.Single(items);
@@ -1334,6 +1376,7 @@ namespace OpenAgent.App.Core.Voice;
 public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
 {
     private readonly ICredentialStore _credentials;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _ws;
 
     public VoiceWebSocketClient(ICredentialStore credentials) => _credentials = credentials;
@@ -1352,10 +1395,25 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
         await _ws.ConnectAsync(wsUrl, ct);
     }
 
-    public Task SendAudioAsync(ReadOnlyMemory<byte> pcm16, CancellationToken ct)
+    /// <summary>
+    /// Sends one PCM16 audio chunk. Must serialize sends — ClientWebSocket throws
+    /// InvalidOperationException on concurrent SendAsync calls, and the audio capture tap
+    /// can fire frequently from a render thread.
+    /// </summary>
+    public async Task SendAudioAsync(ReadOnlyMemory<byte> pcm16, CancellationToken ct)
     {
-        if (_ws is null || _ws.State != WebSocketState.Open) return Task.CompletedTask;
-        return _ws.SendAsync(pcm16, WebSocketMessageType.Binary, true, ct).AsTask();
+        var ws = _ws;
+        if (ws is null || ws.State != WebSocketState.Open) return;
+        await _sendLock.WaitAsync(ct);
+        try
+        {
+            if (ws.State != WebSocketState.Open) return;
+            await ws.SendAsync(pcm16, WebSocketMessageType.Binary, true, ct);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 
     public async IAsyncEnumerable<VoiceFrame> ReadFramesAsync(
@@ -1403,14 +1461,17 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
 
     public async ValueTask DisposeAsync()
     {
-        if (_ws is null) return;
+        var ws = _ws;
+        _ws = null;
+        if (ws is null) return;
         try
         {
-            if (_ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
-                await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+            if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
         }
         catch { }
-        _ws.Dispose();
+        ws.Dispose();
+        _sendLock.Dispose();
     }
 }
 ```
@@ -1504,16 +1565,18 @@ public static class MauiProgram
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>().UseBarcodeReader();
 
-        // Core
+        // Core — credential store and HTTP client are singletons; the WS client owns one ClientWebSocket
+        // per call so it must be transient (one fresh instance per CallViewModel resolution).
         builder.Services.AddSingleton<ICredentialStore, IosKeychainCredentialStore>();
-        builder.Services.AddSingleton<HttpClient>();
-        builder.Services.AddSingleton<IApiClient, ApiClient>();
-        builder.Services.AddSingleton<IVoiceWebSocketClient, VoiceWebSocketClient>();
+        builder.Services.AddHttpClient<IApiClient, ApiClient>();
+        builder.Services.AddTransient<IVoiceWebSocketClient, VoiceWebSocketClient>();
         builder.Services.AddSingleton(sp => new ConversationCache(FileSystem.AppDataDirectory));
 
-        // ViewModels + Pages: registered by file as we write them
+        // ViewModels + Pages
         builder.Services.AddTransient<Pages.OnboardingPage>();
         builder.Services.AddTransient<ViewModels.OnboardingViewModel>();
+        builder.Services.AddTransient<Pages.ManualEntryPage>();
+        builder.Services.AddTransient<ViewModels.ManualEntryViewModel>();
         builder.Services.AddTransient<Pages.ConversationsPage>();
         builder.Services.AddTransient<ViewModels.ConversationsViewModel>();
         builder.Services.AddTransient<Pages.CallPage>();
@@ -1577,6 +1640,8 @@ public partial class App : Application
 `AppShell.xaml.cs`:
 
 ```csharp
+using OpenAgent.App.Core.Services;
+
 namespace OpenAgent.App;
 
 public partial class AppShell : Shell
@@ -1586,6 +1651,36 @@ public partial class AppShell : Shell
         InitializeComponent();
         Routing.RegisterRoute("call", typeof(Pages.CallPage));
         Routing.RegisterRoute("settings", typeof(Pages.SettingsPage));
+        Routing.RegisterRoute("manual-entry", typeof(Pages.ManualEntryPage));
+    }
+
+    /// <summary>Routes the user to onboarding or the conversations list based on stored credentials.
+    /// Called from App.xaml.cs after MainPage is set; uses IPlatformApplication.Current.Services
+    /// rather than this.Handler.MauiContext (which can be null when Loaded fires).</summary>
+    public async Task RouteInitialAsync()
+    {
+        var services = IPlatformApplication.Current?.Services
+                       ?? throw new InvalidOperationException("Service provider not available");
+        var store = services.GetRequiredService<ICredentialStore>();
+        var creds = await store.LoadAsync();
+        await GoToAsync(creds is null ? "//onboarding" : "//conversations");
+    }
+}
+```
+
+Update `App.xaml.cs` to invoke routing after MainPage is set:
+
+```csharp
+namespace OpenAgent.App;
+
+public partial class App : Application
+{
+    public App()
+    {
+        InitializeComponent();
+        var shell = new AppShell();
+        MainPage = shell;
+        Dispatcher.Dispatch(async () => await shell.RouteInitialAsync());
     }
 }
 ```
@@ -1818,9 +1913,11 @@ public sealed class IosCallAudio : ICallAudio
 {
     private AVAudioEngine? _engine;
     private AVAudioPlayerNode? _player;
-    private AVAudioFormat? _ioFormat;
+    private AVAudioFormat? _outFormat;          // 16-bit, mono, target sample rate (e.g. 24 kHz)
+    private AVAudioFormat? _inputNativeFormat;  // mic's natural format (varies by device)
+    private AVAudioConverter? _converter;       // cached — allocating per buffer drops frames
     private bool _muted;
-    private readonly object _lock = new();
+    private readonly object _lifecycleLock = new();
 
     public event Action<byte[]>? OnPcmCaptured;
 
@@ -1832,40 +1929,45 @@ public sealed class IosCallAudio : ICallAudio
         session.SetMode(AVAudioSession.ModeVoiceChat, out _);
         session.SetActive(true, out _);
 
-        _ioFormat = new AVAudioFormat(AVAudioCommonFormat.PCMInt16, sampleRate, 1, false);
+        _outFormat = new AVAudioFormat(AVAudioCommonFormat.PCMInt16, sampleRate, 1, interleaved: true);
 
         _engine = new AVAudioEngine();
         _player = new AVAudioPlayerNode();
         _engine.AttachNode(_player);
-        _engine.Connect(_player, _engine.MainMixerNode, _ioFormat);
+        _engine.Connect(_player, _engine.MainMixerNode, _outFormat);
 
         var input = _engine.InputNode;
-        var inputFormat = input.GetBusOutputFormat(0);
+        _inputNativeFormat = input.GetBusOutputFormat(0);
+        _converter = new AVAudioConverter(_inputNativeFormat, _outFormat);
 
-        // Tap captures at the input node's native format; we convert to PCM16 24 kHz before sending.
-        input.InstallTapOnBus(0, 4096, inputFormat, (buffer, _) =>
+        // Tap captures at the input node's native format; converter resamples to mono PCM16 at target rate.
+        input.InstallTapOnBus(0, 4096, _inputNativeFormat, (buffer, _) =>
         {
             if (_muted) return;
-            var converted = ConvertToInt16Mono(buffer, sampleRate);
-            if (converted is { Length: > 0 }) OnPcmCaptured?.Invoke(converted);
+            var bytes = ConvertToInt16Mono(buffer);
+            if (bytes is { Length: > 0 }) OnPcmCaptured?.Invoke(bytes);
         });
 
         _engine.Prepare();
         _engine.StartAndReturnError(out var err);
-        _player.Play();
         if (err is not null) throw new InvalidOperationException(err.LocalizedDescription);
+        _player.Play();
         await Task.CompletedTask;
     }
 
     public Task StopAsync()
     {
-        lock (_lock)
+        lock (_lifecycleLock)
         {
             _player?.Stop();
-            _engine?.InputNode.RemoveTapOnBus(0);
+            try { _engine?.InputNode.RemoveTapOnBus(0); } catch { }
             _engine?.Stop();
+            _converter?.Dispose();
             _player = null;
             _engine = null;
+            _converter = null;
+            _outFormat = null;
+            _inputNativeFormat = null;
         }
         try { AVAudioSession.SharedInstance().SetActive(false, out _); } catch { }
         return Task.CompletedTask;
@@ -1873,53 +1975,70 @@ public sealed class IosCallAudio : ICallAudio
 
     public void EnqueuePlayback(byte[] pcm16)
     {
-        if (_player is null || _ioFormat is null) return;
+        var player = _player;
+        var format = _outFormat;
+        if (player is null || format is null) return;
 
         var frameCount = (uint)(pcm16.Length / 2);
-        var buffer = new AVAudioPcmBuffer(_ioFormat, frameCount) { FrameLength = frameCount };
+        if (frameCount == 0) return;
+
+        var buffer = new AVAudioPcmBuffer(format, frameCount) { FrameLength = frameCount };
 
         unsafe
         {
+            // Format is interleaved PCM16 mono; channel data 0 is the entire stream.
             var dst = (short*)buffer.Int16ChannelData[0];
             for (var i = 0; i < frameCount; i++)
                 dst[i] = (short)(pcm16[i * 2] | (pcm16[i * 2 + 1] << 8));
         }
 
-        _player.ScheduleBuffer(buffer, () => { });
+        player.ScheduleBuffer(buffer, () => { });
     }
 
     public void FlushPlayback()
     {
+        // Drop anything queued so the assistant's reply is interrupted on user barge-in.
         _player?.Stop();
         _player?.Play();
     }
 
     public void SetMuted(bool muted) => _muted = muted;
 
-    private byte[] ConvertToInt16Mono(AVAudioPcmBuffer src, int targetSampleRate)
+    private byte[] ConvertToInt16Mono(AVAudioPcmBuffer src)
     {
-        if (_ioFormat is null) return Array.Empty<byte>();
-        using var converter = new AVAudioConverter(src.Format, _ioFormat);
-        var frameCapacity = (uint)(src.FrameLength * targetSampleRate / src.Format.SampleRate + 16);
-        var dst = new AVAudioPcmBuffer(_ioFormat, frameCapacity);
-        AVAudioConverterInputStatus status = AVAudioConverterInputStatus.HaveData;
-        var outStatus = converter.ConvertToBuffer(dst, out var error, (AVAudioPacketCount _, out AVAudioConverterInputStatus s) =>
-        {
-            s = status;
-            status = AVAudioConverterInputStatus.NoDataNow;
-            return src;
-        });
-        if (outStatus is AVAudioConverterOutputStatus.Error or AVAudioConverterOutputStatus.EndOfStream && error is not null)
-            return Array.Empty<byte>();
+        var converter = _converter;
+        var outFormat = _outFormat;
+        if (converter is null || outFormat is null) return Array.Empty<byte>();
 
-        var bytes = new byte[dst.FrameLength * 2];
+        // Output capacity: src.FrameLength * (outRate / srcRate), rounded up + safety margin.
+        var ratio = outFormat.SampleRate / src.Format.SampleRate;
+        var frameCapacity = (uint)Math.Ceiling(src.FrameLength * ratio) + 64;
+        var dst = new AVAudioPcmBuffer(outFormat, frameCapacity);
+
+        var consumed = false;
+        var outStatus = converter.ConvertToBuffer(dst, out var error,
+            (AVAudioPacketCount _, out AVAudioConverterInputStatus s) =>
+            {
+                if (consumed) { s = AVAudioConverterInputStatus.NoDataNow; return null!; }
+                consumed = true;
+                s = AVAudioConverterInputStatus.HaveData;
+                return src;
+            });
+
+        if (error is not null) return Array.Empty<byte>();
+        if (outStatus is AVAudioConverterOutputStatus.Error) return Array.Empty<byte>();
+
+        var byteCount = (int)(dst.FrameLength * 2);
+        if (byteCount <= 0) return Array.Empty<byte>();
+        var bytes = new byte[byteCount];
+
         unsafe
         {
             var srcPtr = (short*)dst.Int16ChannelData[0];
             for (var i = 0; i < dst.FrameLength; i++)
             {
                 var s = srcPtr[i];
-                bytes[i * 2] = (byte)(s & 0xFF);
+                bytes[i * 2]     = (byte)(s & 0xFF);          // little-endian PCM16
                 bytes[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
             }
         }
@@ -1938,9 +2057,11 @@ public sealed class IosCallAudio : ICallAudio
 
 ```csharp
 #if IOS
-        builder.Services.AddSingleton<ICallAudio, IosCallAudio>();
+        builder.Services.AddTransient<ICallAudio, IosCallAudio>();
 #endif
 ```
+
+(Transient — the call view-model owns one engine per call.)
 
 **Step 4: Commit.**
 
@@ -1948,19 +2069,31 @@ public sealed class IosCallAudio : ICallAudio
 git commit -am "feat(app-ios): AVAudioEngine capture + playback"
 ```
 
-> Critical caveat: the conversion code above is a sketch. The real device may need format-converter callback wiring different from what shows here. Verify on the first TestFlight build, fix if mic packets are silent or distorted.
+**TestFlight verification rubric (concrete acceptance criteria — replaces "fix if it sounds bad").**
+
+This audio code can't be exercised on Windows. Acceptance for this task is met when, on a TestFlight build:
+
+1. **Capture path.** Open the app, tap into a call. Speak the test phrase "one two three four five". Stop. Inspect the agent's stored `Messages` table: the user transcript line for that turn must contain at least three of the five spoken words (allowing for ASR misrecognition). Failure modes: empty transcript (tap is firing but converter is producing zeros), garbled transcript (sample-rate ratio off → speed/pitch wrong → agent hears nonsense).
+2. **Playback path.** Listen for the agent reply. Acceptance: speech is intelligible — not stuttering, not pitch-shifted, not noticeably delayed beyond ~500ms first-audio. Failure modes: chopped audio (frame ordering broken), high-pitched chipmunk (sample rate mismatch on the player node), silence (player not connected to the mixer).
+3. **Barge-in.** Start agent reply, then speak over it. Acceptance: agent audio cuts immediately on `speech_started`, your speech reaches the agent. Failure: agent keeps talking — `FlushPlayback` is broken.
+4. **Background mode.** Start a call, lock the phone. Acceptance: audio continues, dynamic island shows recording indicator. Failure: audio cuts on lock — `UIBackgroundModes` not honored or session deactivated.
+5. **Mute.** Tap mute mid-call, speak, unmute. Acceptance: agent doesn't react to muted speech, then resumes hearing on unmute. Failure: mute is no-op (the `_muted` flag isn't gating the tap).
+
+Run all five before declaring v1 ready. Failures point at specific code: 1→tap/converter, 2→ScheduleBuffer/format, 3→FlushPlayback, 4→Info.plist + session category, 5→`SetMuted`.
 
 ---
 
 ## Phase 4 — UI
 
-### Task 15: Onboarding page (QR + manual)
+### Task 15: Onboarding pages (QR + manual)
 
 **Files:**
 - Create: `src/app/OpenAgent.App/Pages/OnboardingPage.xaml` + `.xaml.cs`
 - Create: `src/app/OpenAgent.App/ViewModels/OnboardingViewModel.cs`
+- Create: `src/app/OpenAgent.App/Pages/ManualEntryPage.xaml` + `.xaml.cs`
+- Create: `src/app/OpenAgent.App/ViewModels/ManualEntryViewModel.cs`
 
-**Step 1: ViewModel.**
+**Step 1: OnboardingViewModel** — only knows about scanning a QR; the "Enter manually" button just navigates to a separate page.
 
 ```csharp
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -1977,9 +2110,7 @@ public partial class OnboardingViewModel : ObservableObject
     public OnboardingViewModel(ICredentialStore store) => _store = store;
 
     [ObservableProperty] private string? _error;
-    [ObservableProperty] private string _manualUrl = "";
-    [ObservableProperty] private string _manualToken = "";
-    [ObservableProperty] private bool _showManual;
+    [ObservableProperty] private bool _hasError;
 
     [RelayCommand]
     public async Task OnQrScannedAsync(string text)
@@ -1987,6 +2118,7 @@ public partial class OnboardingViewModel : ObservableObject
         if (!QrPayloadParser.TryParse(text, out var payload, out var err))
         {
             Error = err;
+            HasError = true;
             return;
         }
         await _store.SaveAsync(payload!);
@@ -1994,12 +2126,39 @@ public partial class OnboardingViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public async Task SaveManualAsync()
+    public Task OpenManualEntryAsync() => Shell.Current.GoToAsync("manual-entry");
+}
+```
+
+**Step 2: ManualEntryViewModel.**
+
+```csharp
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using OpenAgent.App.Core.Onboarding;
+using OpenAgent.App.Core.Services;
+
+namespace OpenAgent.App.ViewModels;
+
+public partial class ManualEntryViewModel : ObservableObject
+{
+    private readonly ICredentialStore _store;
+
+    public ManualEntryViewModel(ICredentialStore store) => _store = store;
+
+    [ObservableProperty] private string _serverUrl = "";
+    [ObservableProperty] private string _token = "";
+    [ObservableProperty] private string? _error;
+    [ObservableProperty] private bool _hasError;
+
+    [RelayCommand]
+    public async Task SaveAsync()
     {
-        var probe = $"{ManualUrl}?token={ManualToken}";
+        var probe = $"{ServerUrl.TrimEnd('/')}/?token={Token}";
         if (!QrPayloadParser.TryParse(probe, out var payload, out var err))
         {
             Error = err;
+            HasError = true;
             return;
         }
         await _store.SaveAsync(payload!);
@@ -2008,7 +2167,7 @@ public partial class OnboardingViewModel : ObservableObject
 }
 ```
 
-**Step 2: XAML.** `Pages/OnboardingPage.xaml`:
+**Step 3: OnboardingPage.xaml.** Note: `IsVisible="{Binding HasError}"` uses a plain bool — no custom converter needed.
 
 ```xml
 <?xml version="1.0" encoding="utf-8" ?>
@@ -2023,16 +2182,15 @@ public partial class OnboardingViewModel : ObservableObject
   <Grid>
     <zxing:CameraBarcodeReaderView x:Name="Reader" BarcodesDetected="OnBarcodesDetected" />
     <VerticalStackLayout VerticalOptions="End" Padding="24" Spacing="16">
-      <Label Text="{Binding Error}" TextColor="#FF6B6B" IsVisible="{Binding Error, Converter={StaticResource StringNotEmptyConverter}}" HorizontalOptions="Center" />
-      <Button Text="Enter manually" Command="{Binding ToggleManualCommand}" />
+      <Label Text="Point camera at the QR code from the agent" TextColor="White" HorizontalOptions="Center" />
+      <Label Text="{Binding Error}" TextColor="#FF6B6B" IsVisible="{Binding HasError}" HorizontalOptions="Center" />
+      <Button Text="Enter manually" Command="{Binding OpenManualEntryCommand}" />
     </VerticalStackLayout>
   </Grid>
 </ContentPage>
 ```
 
-(Manual entry can be a separate `ContentPage` reached via navigation rather than inline — pragmatic choice. Implement as second page if cleaner.)
-
-**Step 3: Code-behind.**
+**Step 4: OnboardingPage code-behind.**
 
 ```csharp
 using ZXing.Net.Maui;
@@ -2043,6 +2201,7 @@ namespace OpenAgent.App.Pages;
 public partial class OnboardingPage : ContentPage
 {
     private readonly OnboardingViewModel _vm;
+    private bool _handled;
 
     public OnboardingPage(OnboardingViewModel vm)
     {
@@ -2050,31 +2209,61 @@ public partial class OnboardingPage : ContentPage
         BindingContext = _vm = vm;
     }
 
-    private async void OnBarcodesDetected(object sender, BarcodeDetectionEventArgs e)
+    private async void OnBarcodesDetected(object? sender, BarcodeDetectionEventArgs e)
     {
+        if (_handled) return;
         var text = e.Results?.FirstOrDefault()?.Value;
         if (string.IsNullOrEmpty(text)) return;
-        await Dispatcher.DispatchAsync(() => _vm.OnQrScannedCommand.ExecuteAsync(text));
+        _handled = true;
+        await MainThread.InvokeOnMainThreadAsync(() => _vm.OnQrScannedCommand.ExecuteAsync(text));
     }
 }
 ```
 
-**Step 4: On app startup, route to onboarding if no creds.** In `AppShell.xaml.cs` constructor, after `RegisterRoute`:
+> `BarcodesDetected` event name and `BarcodeDetectionEventArgs` shape verified against ZXing.Net.Maui 0.4.0. If installing a different version, adjust to whatever the package exposes. The handler runs on a background thread on iOS — marshal to main thread before touching VM state. The `_handled` latch prevents re-entry from rapid follow-up scans of the same QR.
 
-```csharp
-Loaded += async (_, _) =>
-{
-    var store = Handler!.MauiContext!.Services.GetRequiredService<ICredentialStore>();
-    var creds = await store.LoadAsync();
-    var route = creds is null ? "//onboarding" : "//conversations";
-    await GoToAsync(route);
-};
+**Step 5: ManualEntryPage.xaml.**
+
+```xml
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:OpenAgent.App.ViewModels"
+             x:Class="OpenAgent.App.Pages.ManualEntryPage"
+             x:DataType="vm:ManualEntryViewModel"
+             Title="Enter manually">
+  <VerticalStackLayout Padding="24" Spacing="16">
+    <Label Text="Server URL" />
+    <Entry Text="{Binding ServerUrl}" Placeholder="https://agent.example.com" Keyboard="Url" />
+    <Label Text="API token" />
+    <Entry Text="{Binding Token}" IsPassword="True" />
+    <Label Text="{Binding Error}" TextColor="#FF6B6B" IsVisible="{Binding HasError}" />
+    <Button Text="Save" Command="{Binding SaveCommand}" />
+  </VerticalStackLayout>
+</ContentPage>
 ```
 
-**Step 5: Commit.**
+**Step 6: ManualEntryPage code-behind.**
+
+```csharp
+using OpenAgent.App.ViewModels;
+
+namespace OpenAgent.App.Pages;
+
+public partial class ManualEntryPage : ContentPage
+{
+    public ManualEntryPage(ManualEntryViewModel vm)
+    {
+        InitializeComponent();
+        BindingContext = vm;
+    }
+}
+```
+
+**Step 7: Commit.**
 
 ```bash
-git commit -am "feat(app): OnboardingPage with QR scan + manual fallback"
+git commit -am "feat(app): OnboardingPage (QR) + ManualEntryPage"
 ```
 
 ---
@@ -2152,7 +2341,7 @@ public partial class ConversationsViewModel : ObservableObject
     [RelayCommand]
     public async Task DeleteAsync(ConversationListItem item)
     {
-        var ok = await Shell.Current.DisplayAlert("Delete?", $"Delete \"{item.Intention ?? item.Id}\"?", "Delete", "Cancel");
+        var ok = await Shell.Current.DisplayAlert("Delete?", $"Delete \"{item.Title}\"?", "Delete", "Cancel");
         if (!ok) return;
         try { await _api.DeleteConversationAsync(item.Id); Items.Remove(item); }
         catch { await Shell.Current.DisplayAlert("Failed", "Could not delete.", "OK"); }
@@ -2161,7 +2350,7 @@ public partial class ConversationsViewModel : ObservableObject
     [RelayCommand]
     public async Task RenameAsync(ConversationListItem item)
     {
-        var name = await Shell.Current.DisplayPromptAsync("Rename", "New title", initialValue: item.Intention ?? "");
+        var name = await Shell.Current.DisplayPromptAsync("Rename", "New title", initialValue: item.Intention ?? item.DisplayName ?? "");
         if (string.IsNullOrWhiteSpace(name)) return;
         try { await _api.RenameConversationAsync(item.Id, name); await LoadAsync(); }
         catch { await Shell.Current.DisplayAlert("Failed", "Could not rename.", "OK"); }
@@ -2176,7 +2365,7 @@ public partial class ConversationsViewModel : ObservableObject
 
     [RelayCommand]
     public Task OpenAsync(ConversationListItem item)
-        => Shell.Current.GoToAsync($"call?conversationId={item.Id}&title={Uri.EscapeDataString(item.Intention ?? item.Id)}");
+        => Shell.Current.GoToAsync($"call?conversationId={item.Id}&title={Uri.EscapeDataString(item.Title)}");
 
     [RelayCommand]
     public Task OpenSettingsAsync() => Shell.Current.GoToAsync("settings");
@@ -2184,7 +2373,7 @@ public partial class ConversationsViewModel : ObservableObject
     private void Replace(IEnumerable<ConversationListItem> fresh)
     {
         Items.Clear();
-        foreach (var i in fresh.OrderByDescending(x => x.LastMessageAt ?? x.CreatedAt))
+        foreach (var i in fresh.OrderByDescending(x => x.SortKey))
             Items.Add(i);
     }
 }
@@ -2221,6 +2410,13 @@ public partial class ConversationsViewModel : ObservableObject
         <CollectionView.ItemTemplate>
           <DataTemplate x:DataType="m:ConversationListItem">
             <SwipeView>
+              <SwipeView.LeftItems>
+                <SwipeItems>
+                  <SwipeItem Text="Rename" BackgroundColor="#0A84FF"
+                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ConversationsViewModel}}, Path=RenameCommand}"
+                             CommandParameter="{Binding .}" />
+                </SwipeItems>
+              </SwipeView.LeftItems>
               <SwipeView.RightItems>
                 <SwipeItems>
                   <SwipeItem Text="Delete" BackgroundColor="Red"
@@ -2233,9 +2429,9 @@ public partial class ConversationsViewModel : ObservableObject
                   <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ConversationsViewModel}}, Path=OpenCommand}"
                                         CommandParameter="{Binding .}" />
                 </Grid.GestureRecognizers>
-                <Label Grid.Column="0" Grid.Row="0" Text="{Binding Intention, FallbackValue='Untitled', TargetNullValue='Untitled'}" FontSize="16" />
+                <Label Grid.Column="0" Grid.Row="0" Text="{Binding Title}" FontSize="16" />
                 <Label Grid.Column="0" Grid.Row="1" Text="{Binding Source}" FontSize="11" Opacity="0.6" />
-                <Label Grid.Column="1" Grid.Row="0" Text="{Binding LastMessageAt, Converter={StaticResource RelativeTime}}" FontSize="12" Opacity="0.6" />
+                <Label Grid.Column="1" Grid.Row="0" Text="{Binding SortKey, Converter={StaticResource RelativeTime}}" FontSize="12" Opacity="0.6" />
               </Grid>
             </SwipeView>
           </DataTemplate>
@@ -2274,7 +2470,9 @@ public partial class ConversationsPage : ContentPage
 }
 ```
 
-**Step 4: RelativeTimeConverter** — short impl.
+**Step 4: Converters.** Both `RelativeTimeConverter` and `MuteLabelConverter` go in one file. Register both as resources in `App.xaml`.
+
+`Converters/RelativeTimeConverter.cs`:
 
 ```csharp
 using System.Globalization;
@@ -2295,6 +2493,27 @@ public sealed class RelativeTimeConverter : IValueConverter
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+public sealed class MuteLabelConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => (value is bool muted && muted) ? "Unmute" : "Mute";
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+```
+
+Add to `App.xaml` resource dictionary alongside the merged dictionaries:
+
+```xml
+<ResourceDictionary>
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
+    <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
+  </ResourceDictionary.MergedDictionaries>
+  <converters:RelativeTimeConverter x:Key="RelativeTime" xmlns:converters="clr-namespace:OpenAgent.App.Converters" />
+  <converters:MuteLabelConverter    x:Key="MuteLabel"    xmlns:converters="clr-namespace:OpenAgent.App.Converters" />
+</ResourceDictionary>
 ```
 
 **Step 5: Commit.**
@@ -2311,12 +2530,15 @@ git commit -am "feat(app): ConversationsPage with cache + swipe-delete + rename"
 - Create: `src/app/OpenAgent.App/Pages/CallPage.xaml` + `.xaml.cs`
 - Create: `src/app/OpenAgent.App/ViewModels/CallViewModel.cs`
 
-**Step 1: ViewModel** orchestrating WS + audio + state machine + reconnect:
+**Step 1: ViewModel.** Single owning task drives connect → run → maybe-reconnect → end. UI mutations and Shell calls always marshal to the main thread.
+
+The `IVoiceWebSocketClient` is registered as transient, so each call to `StartSessionAsync` resolves a fresh instance via the service provider — old instances are disposed in `TeardownAsync` before a reconnect.
 
 ```csharp
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 using OpenAgent.App.Core.Voice;
 
 namespace OpenAgent.App.ViewModels;
@@ -2325,12 +2547,16 @@ namespace OpenAgent.App.ViewModels;
 [QueryProperty(nameof(Title), "title")]
 public partial class CallViewModel : ObservableObject, IDisposable
 {
-    private readonly IVoiceWebSocketClient _ws;
+    private readonly IServiceProvider _services;
     private readonly ICallAudio _audio;
     private readonly CallStateMachine _sm = new();
     private readonly ReconnectBackoff _backoff = new();
+
+    private IVoiceWebSocketClient? _ws;
     private CancellationTokenSource? _cts;
     private TranscriptRouter? _transcript;
+    private Task? _runner;
+    private bool _ended;
 
     [ObservableProperty] private string? _conversationId;
     [ObservableProperty] private string? _title;
@@ -2340,89 +2566,138 @@ public partial class CallViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<TranscriptBubble> Bubbles { get; } = new();
 
-    public CallViewModel(IVoiceWebSocketClient ws, ICallAudio audio)
+    public CallViewModel(IServiceProvider services, ICallAudio audio)
     {
-        _ws = ws;
+        _services = services;
         _audio = audio;
         _audio.OnPcmCaptured += pcm =>
         {
-            try { _ = _ws.SendAudioAsync(pcm, _cts?.Token ?? default); } catch { }
+            // Fire-and-forget: SendAudioAsync serializes internally via SemaphoreSlim.
+            var ws = _ws;
+            var token = _cts?.Token ?? CancellationToken.None;
+            if (ws is null || token.IsCancellationRequested) return;
+            _ = ws.SendAudioAsync(pcm, token);
         };
     }
 
     [RelayCommand]
-    public async Task StartAsync()
+    public Task StartAsync()
     {
         _cts = new CancellationTokenSource();
-        State = _sm.State;
-        _sm.OnConnecting();
-        State = _sm.State;
+        _ended = false;
         _transcript = new TranscriptRouter(
-            onAppend: (src, t) => Bubbles.Add(new TranscriptBubble(src, t)),
-            onUpdateLast: (t) => Bubbles[^1] = Bubbles[^1] with { Text = t });
+            onAppend: (src, t) => MainThread.BeginInvokeOnMainThread(() => Bubbles.Add(new TranscriptBubble(src, t))),
+            onUpdateLast: (t) => MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (Bubbles.Count > 0) Bubbles[^1] = Bubbles[^1] with { Text = t };
+            }));
 
-        try
+        _runner = Task.Run(() => RunSessionLoopAsync(_cts.Token));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Owns the entire session: each iteration is one connect → drain → optional reconnect.</summary>
+    private async Task RunSessionLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && !_ended)
         {
-            await _ws.ConnectAsync(ConversationId!, _cts.Token);
-            _ = Task.Run(() => ReceiveLoopAsync(_cts.Token));
-        }
-        catch
-        {
-            _sm.OnEnded();
-            State = _sm.State;
-            await Shell.Current.GoToAsync("..");
+            SetState(CallState.Connecting, viaMachine: sm => sm.OnConnecting());
+
+            try
+            {
+                _ws = _services.GetRequiredService<IVoiceWebSocketClient>();
+                await _ws.ConnectAsync(ConversationId!, ct);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                await TeardownAsync();
+                if (!await TryReconnectOrFinishAsync(ex.Message, authRejected: false, ct)) return;
+                continue;
+            }
+
+            _backoff.Reset();
+            var disconnect = await DrainFramesAsync(ct);
+            await TeardownAsync();
+
+            if (ct.IsCancellationRequested || _ended) return;
+
+            if (disconnect.AuthRejected)
+            {
+                await OnMain(() => Shell.Current.DisplayAlert("Authentication failed",
+                    "Token rejected by agent. Please reconfigure.", "OK"));
+                await OnMain(() => Shell.Current.GoToAsync("//onboarding"));
+                return;
+            }
+
+            if (!await TryReconnectOrFinishAsync(disconnect.Reason ?? "Connection lost", authRejected: false, ct)) return;
         }
     }
 
-    private async Task ReceiveLoopAsync(CancellationToken ct)
+    /// <summary>Reads frames until the WebSocket disconnects. Returns the disconnect frame.</summary>
+    private async Task<VoiceFrame.Disconnected> DrainFramesAsync(CancellationToken ct)
     {
-        await foreach (var frame in _ws.ReadFramesAsync(ct))
+        var ws = _ws!;
+        await foreach (var frame in ws.ReadFramesAsync(ct))
         {
             switch (frame)
             {
-                case VoiceFrame.EventFrame ef when ef.Event is VoiceEvent.SessionReady ready:
-                    if (ready.InputCodec != "pcm16" || ready.InputSampleRate != 24000)
+                case VoiceFrame.EventFrame { Event: VoiceEvent.SessionReady ready }:
+                    if (!string.Equals(ready.InputCodec, "pcm16", StringComparison.OrdinalIgnoreCase)
+                        || !string.Equals(ready.OutputCodec, "pcm16", StringComparison.OrdinalIgnoreCase))
                     {
-                        await Shell.Current.DisplayAlert("Codec mismatch", $"Server announced {ready.InputCodec} {ready.InputSampleRate} Hz", "OK");
-                        await Shell.Current.GoToAsync("..");
-                        return;
+                        await OnMain(() => Shell.Current.DisplayAlert("Codec mismatch",
+                            $"Agent announced {ready.InputCodec}/{ready.OutputCodec}; this client only handles pcm16.", "OK"));
+                        return new VoiceFrame.Disconnected("Unsupported codec", AuthRejected: false);
                     }
                     await _audio.StartAsync(ready.InputSampleRate, ct);
-                    _sm.Apply(ready);
-                    State = _sm.State;
+                    SetState(CallState.Listening, viaMachine: sm => sm.Apply(ready));
                     break;
+
                 case VoiceFrame.EventFrame ef:
                     if (ef.Event is VoiceEvent.SpeechStarted) _audio.FlushPlayback();
                     if (ef.Event is VoiceEvent.TranscriptDelta td) _transcript!.OnDelta(td.Source, td.Text);
                     if (ef.Event is VoiceEvent.TranscriptDone) _transcript!.OnDone();
-                    _sm.Apply(ef.Event);
-                    State = _sm.State;
+                    SetState(_sm.State, viaMachine: sm => sm.Apply(ef.Event));
                     if (ef.Event is VoiceEvent.Error err)
-                        await Shell.Current.DisplayAlert("Voice error", err.Message, "OK");
+                        await OnMain(() => Shell.Current.DisplayAlert("Voice error", err.Message, "OK"));
                     break;
+
                 case VoiceFrame.AudioFrame af:
                     _audio.EnqueuePlayback(af.Pcm16);
-                    _sm.OnAudioReceived();
-                    State = _sm.State;
+                    SetState(CallState.AssistantSpeaking, viaMachine: sm => sm.OnAudioReceived());
                     break;
-                case VoiceFrame.Disconnected d when d.AuthRejected:
-                    await Shell.Current.DisplayAlert("Authentication failed", "Token rejected by agent. Please reconfigure.", "OK");
-                    await Shell.Current.GoToAsync("//onboarding");
-                    return;
+
                 case VoiceFrame.Disconnected d:
-                    if (_backoff.GiveUp)
-                    {
-                        await Shell.Current.DisplayAlert("Disconnected", d.Reason ?? "Connection lost", "OK");
-                        await Shell.Current.GoToAsync("..");
-                        return;
-                    }
-                    _sm.OnReconnecting();
-                    State = _sm.State;
-                    await Task.Delay(_backoff.NextDelay(), ct);
-                    await StartAsync();
-                    return;
+                    return d;
             }
         }
+        return new VoiceFrame.Disconnected("Stream ended", AuthRejected: false);
+    }
+
+    private async Task<bool> TryReconnectOrFinishAsync(string reason, bool authRejected, CancellationToken ct)
+    {
+        if (authRejected) return false;
+        if (_backoff.GiveUp || ct.IsCancellationRequested)
+        {
+            await OnMain(() => Shell.Current.DisplayAlert("Disconnected", reason, "OK"));
+            await OnMain(() => Shell.Current.GoToAsync(".."));
+            return false;
+        }
+        SetState(CallState.Reconnecting, viaMachine: sm => sm.OnReconnecting());
+        try { await Task.Delay(_backoff.NextDelay(), ct); }
+        catch (OperationCanceledException) { return false; }
+        return true;
+    }
+
+    private async Task TeardownAsync()
+    {
+        var ws = _ws;
+        _ws = null;
+        if (ws is not null)
+        {
+            try { await ws.DisposeAsync(); } catch { }
+        }
+        try { await _audio.StopAsync(); } catch { }
     }
 
     [RelayCommand]
@@ -2435,14 +2710,33 @@ public partial class CallViewModel : ObservableObject, IDisposable
     [RelayCommand]
     public async Task EndAsync()
     {
+        _ended = true;
         _cts?.Cancel();
-        await _audio.StopAsync();
-        await _ws.DisposeAsync();
+        await TeardownAsync();
+        if (_runner is not null) { try { await _runner; } catch { } }
         await Shell.Current.GoToAsync("..");
     }
 
     [RelayCommand]
     public void ToggleTranscript() => ShowTranscript = !ShowTranscript;
+
+    private void SetState(CallState newState, Action<CallStateMachine> viaMachine)
+    {
+        viaMachine(_sm);
+        var s = _sm.State;
+        MainThread.BeginInvokeOnMainThread(() => State = s);
+    }
+
+    private static Task OnMain(Func<Task> action)
+    {
+        var tcs = new TaskCompletionSource();
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            try { await action(); tcs.TrySetResult(); }
+            catch (Exception ex) { tcs.TrySetException(ex); }
+        });
+        return tcs.Task;
+    }
 
     public void Dispose()
     {
@@ -2471,11 +2765,14 @@ public sealed record TranscriptBubble(TranscriptSource Source, string Text);
     <Label Grid.Row="0" Text="{Binding Title}" TextColor="White" FontSize="24" HorizontalOptions="Center" Margin="0,40,0,0" />
     <!-- Avatar + state -->
     <VerticalStackLayout Grid.Row="1" VerticalOptions="Center" HorizontalOptions="Center" Spacing="24">
-      <Frame WidthRequest="160" HeightRequest="160" CornerRadius="80" BackgroundColor="#0A84FF" HasShadow="False" Padding="0">
+      <Border WidthRequest="160" HeightRequest="160" Background="#0A84FF" StrokeThickness="0">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="80" />
+        </Border.StrokeShape>
         <Label Text="A" TextColor="White" FontSize="64" HorizontalOptions="Center" VerticalOptions="Center" />
-      </Frame>
+      </Border>
       <Label Text="{Binding State}" TextColor="#CCC" HorizontalOptions="Center" />
-      <Button Text="▼ Transcript" Command="{Binding ToggleTranscriptCommand}" BackgroundColor="Transparent" TextColor="#888" />
+      <Button Text="Transcript" Command="{Binding ToggleTranscriptCommand}" BackgroundColor="Transparent" TextColor="#888" />
       <CollectionView IsVisible="{Binding ShowTranscript}" ItemsSource="{Binding Bubbles}" HeightRequest="200">
         <CollectionView.ItemTemplate>
           <DataTemplate x:DataType="vm:TranscriptBubble">
@@ -2485,11 +2782,12 @@ public sealed record TranscriptBubble(TranscriptSource Source, string Text);
       </CollectionView>
     </VerticalStackLayout>
 
-    <!-- Controls -->
+    <!-- Controls. Mute label flips between "Mute" and "Unmute" via a converter on the bool;
+         no per-state color change to keep the styling single-source (one color per button). -->
     <HorizontalStackLayout Grid.Row="3" HorizontalOptions="Center" Spacing="48" Margin="0,0,0,40">
-      <Button Text="Mute" WidthRequest="72" HeightRequest="72" CornerRadius="36"
-              BackgroundColor="{Binding Muted, Converter={StaticResource MuteButtonColor}}"
-              TextColor="White"
+      <Button Text="{Binding Muted, Converter={StaticResource MuteLabel}}"
+              WidthRequest="72" HeightRequest="72" CornerRadius="36"
+              BackgroundColor="#444" TextColor="White"
               Command="{Binding ToggleMuteCommand}" />
       <Button Text="End" WidthRequest="72" HeightRequest="72" CornerRadius="36"
               BackgroundColor="#FF3B30" TextColor="White"
@@ -2658,11 +2956,19 @@ jobs:
             -p:CodesignKey="Apple Distribution" \
             -p:CodesignProvision="OpenAgent App Store"
 
+      - name: Locate IPA
+        id: ipa
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        run: |
+          IPA=$(find src/app/OpenAgent.App/bin/Release -name 'OpenAgent.App.ipa' | head -n1)
+          if [ -z "$IPA" ]; then echo "No .ipa found under bin/Release"; ls -R src/app/OpenAgent.App/bin/Release; exit 1; fi
+          echo "path=$IPA" >> "$GITHUB_OUTPUT"
+
       - name: Upload to TestFlight
         if: startsWith(github.ref, 'refs/tags/app-v')
         uses: apple-actions/upload-testflight-build@v1
         with:
-          app-path: src/app/OpenAgent.App/bin/Release/net10.0-ios/ios-arm64/publish/OpenAgent.App.ipa
+          app-path: ${{ steps.ipa.outputs.path }}
           issuer-id: ${{ secrets.APPSTORE_API_ISSUER_ID }}
           api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
           api-private-key: ${{ secrets.APPSTORE_API_KEY_P8 }}
@@ -2672,7 +2978,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OpenAgent-App-ipa
-          path: src/app/OpenAgent.App/bin/Release/net10.0-ios/ios-arm64/publish/OpenAgent.App.ipa
+          path: ${{ steps.ipa.outputs.path }}
 ```
 
 **Step 2: Commit.**
