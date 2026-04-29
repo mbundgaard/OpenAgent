@@ -4,12 +4,14 @@
 <dict>
   <key>CFBundleDisplayName</key>
   <string>OpenAgent</string>
+  <key>CFBundleIconName</key>
+  <string>appicon</string>
   <key>CFBundleIdentifier</key>
   <string>sh.comput.openagent</string>
   <key>CFBundleShortVersionString</key>
   <string>1.0</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>2</string>
   <key>LSRequiresIPhoneOS</key>
   <true/>
   <key>MinimumOSVersion</key>
