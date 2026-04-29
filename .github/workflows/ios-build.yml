@@ -67,6 +67,23 @@ jobs:
           if [ -z "$IPA" ]; then echo "No .ipa found under bin/Release"; ls -R src/app/OpenAgent.App/bin/Release; exit 1; fi
           echo "path=$IPA" >> "$GITHUB_OUTPUT"
 
+      - name: Diagnose bundle (Info.plist + icon assets)
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        run: |
+          set -e
+          IPA="${{ steps.ipa.outputs.path }}"
+          WORK=$(mktemp -d)
+          unzip -q "$IPA" -d "$WORK"
+          APP=$(find "$WORK/Payload" -maxdepth 2 -name '*.app' | head -n1)
+          echo "===== Info.plist ====="
+          plutil -p "$APP/Info.plist" | grep -iE 'CFBundleIcon|XSAppIconAssets' || echo "(no icon-related keys)"
+          echo "===== app bundle root .png files ====="
+          ls -la "$APP" | grep -iE '\.png$|AppIcon' || echo "(no .png in app root)"
+          echo "===== Assets.car / asset catalog presence ====="
+          ls -la "$APP" | grep -iE 'Assets\.car|\.xcassets' || echo "(no Assets.car)"
+          echo "===== full app bundle file list ====="
+          ls -la "$APP"
+
       - name: Upload to TestFlight
         if: startsWith(github.ref, 'refs/tags/app-v')
         env:
@@ -97,7 +114,7 @@ jobs:
           fi
 
       - name: Upload IPA artifact
-        if: startsWith(github.ref, 'refs/tags/app-v')
+        if: always() && startsWith(github.ref, 'refs/tags/app-v') && steps.ipa.outputs.path != ''
         uses: actions/upload-artifact@v4
         with:
           name: OpenAgent-App-ipa
