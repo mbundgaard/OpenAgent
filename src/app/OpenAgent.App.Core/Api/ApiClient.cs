@@ -9,7 +9,7 @@ using OpenAgent.App.Core.Services;
 
 namespace OpenAgent.App.Core.Api;
 
-/// <summary>HTTP client to the agent's REST endpoints. Reads BaseUrl + Token from <see cref="ICredentialStore"/> on every call.</summary>
+/// <summary>HTTP client to the agent's REST endpoints. Reads BaseUrl + Token from <see cref="IConnectionStore"/> on every call.</summary>
 public sealed class ApiClient : IApiClient
 {
     // The path of the log-shipping endpoint itself. We must NEVER log the request/response of
@@ -17,14 +17,14 @@ public sealed class ApiClient : IApiClient
     private const string ClientLogsPath = "api/client-logs";
 
     private readonly HttpClient _http;
-    private readonly ICredentialStore _credentials;
+    private readonly IConnectionStore _connections;
     private readonly ILogger<ApiClient> _logger;
 
-    /// <summary>Create the client with a shared <see cref="HttpClient"/> and a credential source.</summary>
-    public ApiClient(HttpClient http, ICredentialStore credentials, ILogger<ApiClient>? logger = null)
+    /// <summary>Create the client with a shared <see cref="HttpClient"/> and a connection store.</summary>
+    public ApiClient(HttpClient http, IConnectionStore connections, ILogger<ApiClient>? logger = null)
     {
         _http = http;
-        _credentials = credentials;
+        _connections = connections;
         _logger = logger ?? NullLogger<ApiClient>.Instance;
     }
 
@@ -72,9 +72,9 @@ public sealed class ApiClient : IApiClient
         var trace = path != ClientLogsPath;
         var sw = trace ? Stopwatch.StartNew() : null;
 
-        var creds = await _credentials.LoadAsync(ct) ?? throw new InvalidOperationException("No credentials");
-        var req = new HttpRequestMessage(method, new Uri(new Uri(creds.BaseUrl), path));
-        req.Headers.Add("X-Api-Key", creds.Token);
+        var conn = await _connections.LoadActiveAsync(ct) ?? throw new InvalidOperationException("No active connection");
+        var req = new HttpRequestMessage(method, new Uri(new Uri(conn.BaseUrl), path));
+        req.Headers.Add("X-Api-Key", conn.Token);
         if (body is not null) req.Content = body;
 
         HttpResponseMessage resp;

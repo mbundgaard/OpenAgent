@@ -1,6 +1,5 @@
 using System.Net;
 using OpenAgent.App.Core.Api;
-using OpenAgent.App.Core.Onboarding;
 using OpenAgent.App.Core.Services;
 
 namespace OpenAgent.App.Tests.Api;
@@ -10,8 +9,8 @@ public class ApiClientTests
     private (ApiClient client, StubHandler stub) Make(
         Func<HttpRequestMessage, HttpResponseMessage>? respond = null)
     {
-        var store = new InMemoryCredentialStore();
-        store.SaveAsync(new QrPayload("https://agent.example/", "tok123")).GetAwaiter().GetResult();
+        var store = new InMemoryConnectionStore();
+        store.SaveAsync(new ServerConnection("c1", "Test", "https://agent.example/", "tok123")).GetAwaiter().GetResult();
         var stub = new StubHandler(respond ?? (_ => new HttpResponseMessage(HttpStatusCode.OK)));
         var http = new HttpClient(stub);
         return (new ApiClient(http, store), stub);

@@ -9,27 +9,27 @@ namespace OpenAgent.App.Core.Voice;
 /// <summary>Owns one ClientWebSocket per call. Registered transient — view-model resolves a fresh instance per session attempt.</summary>
 public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
 {
-    private readonly ICredentialStore _credentials;
+    private readonly IConnectionStore _connections;
     private readonly ILogger<VoiceWebSocketClient> _logger;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _ws;
     private int _sendCount;
     private int _audioRecvCount;
 
-    public VoiceWebSocketClient(ICredentialStore credentials, ILogger<VoiceWebSocketClient>? logger = null)
+    public VoiceWebSocketClient(IConnectionStore connections, ILogger<VoiceWebSocketClient>? logger = null)
     {
-        _credentials = credentials;
+        _connections = connections;
         _logger = logger ?? NullLogger<VoiceWebSocketClient>.Instance;
     }
 
     public async Task ConnectAsync(string conversationId, CancellationToken ct)
     {
-        var creds = await _credentials.LoadAsync(ct) ?? throw new InvalidOperationException("No credentials");
-        var baseUri = new Uri(creds.BaseUrl);
+        var conn = await _connections.LoadActiveAsync(ct) ?? throw new InvalidOperationException("No active connection");
+        var baseUri = new Uri(conn.BaseUrl);
         var scheme = baseUri.Scheme == "https" ? "wss" : "ws";
         var wsUrl = new UriBuilder($"{scheme}://{baseUri.Authority}{baseUri.AbsolutePath.TrimEnd('/')}/ws/conversations/{Uri.EscapeDataString(conversationId)}/voice")
         {
-            Query = $"api_key={Uri.EscapeDataString(creds.Token)}"
+            Query = $"api_key={Uri.EscapeDataString(conn.Token)}"
         }.Uri;
 
         // Log host + conversation only — never the token or the full query string.
