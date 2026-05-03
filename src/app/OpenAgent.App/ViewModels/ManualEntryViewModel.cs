@@ -12,10 +12,10 @@ namespace OpenAgent.App.ViewModels;
 /// </summary>
 public partial class ManualEntryViewModel : ObservableObject
 {
-    private readonly ICredentialStore _store;
+    private readonly IConnectionStore _store;
 
-    /// <summary>Creates a new view model bound to the supplied credential store.</summary>
-    public ManualEntryViewModel(ICredentialStore store) => _store = store;
+    /// <summary>Creates a new view model bound to the supplied connection store.</summary>
+    public ManualEntryViewModel(IConnectionStore store) => _store = store;
 
     [ObservableProperty] private string _serverUrl = "";
     [ObservableProperty] private string _token = "";
@@ -33,7 +33,16 @@ public partial class ManualEntryViewModel : ObservableObject
             HasError = true;
             return;
         }
-        await _store.SaveAsync(payload!);
+
+        var uri = new Uri(payload!.BaseUrl);
+        var conn = new ServerConnection(
+            Id: Guid.NewGuid().ToString(),
+            Name: uri.Host,
+            BaseUrl: payload.BaseUrl,
+            Token: payload.Token);
+
+        await _store.SaveAsync(conn);
+        await _store.SetActiveAsync(conn.Id);
         await Shell.Current.GoToAsync("//conversations");
     }
 }
