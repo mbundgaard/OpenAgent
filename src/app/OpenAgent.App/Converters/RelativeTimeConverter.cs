@@ -39,3 +39,17 @@ public sealed class MuteLabelConverter : IValueConverter
     /// <summary>Not supported — this is a one-way display converter.</summary>
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+/// <summary>
+/// Maps a boolean "speaker on" state to a button label: <c>true</c> -> "Earpiece" (next action),
+/// <c>false</c> -> "Speaker" (next action). Used by the call page route toggle.
+/// </summary>
+public sealed class SpeakerLabelConverter : IValueConverter
+{
+    /// <summary>Converts a boolean speaker-on state to the corresponding action label.</summary>
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => (value is bool speakerOn && speakerOn) ? "Earpiece" : "Speaker";
+
+    /// <summary>Not supported — this is a one-way display converter.</summary>
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}

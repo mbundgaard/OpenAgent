@@ -33,6 +33,7 @@ public partial class CallViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string? _title;
     [ObservableProperty] private CallState _state;
     [ObservableProperty] private bool _muted;
+    [ObservableProperty] private bool _speakerOn;
 
     public CallViewModel(IServiceProvider services, ICallAudio audio, ILogger<CallViewModel>? logger = null)
     {
@@ -185,6 +186,13 @@ public partial class CallViewModel : ObservableObject, IDisposable
     {
         Muted = !Muted;
         _audio.SetMuted(Muted);
+    }
+
+    [RelayCommand]
+    public void ToggleSpeaker()
+    {
+        SpeakerOn = !SpeakerOn;
+        _audio.SetSpeakerOutput(SpeakerOn);
     }
 
     [RelayCommand]

@@ -190,6 +190,29 @@ public sealed class IosCallAudio : ICallAudio
 
     public void SetMuted(bool muted) => _muted = muted;
 
+    public void SetSpeakerOutput(bool useSpeaker)
+    {
+        // OverrideOutputAudioPort flips the playback route on the active session WITHOUT
+        // reconfiguring the engine — the Voice Processing IO unit stays engaged so AEC keeps
+        // working in either route. Speaker mode means the loud bottom speaker; None returns
+        // to the default route (earpiece in PlayAndRecord+VoiceChat).
+        var port = useSpeaker
+            ? AVAudioSessionPortOverride.Speaker
+            : AVAudioSessionPortOverride.None;
+        try
+        {
+            AVAudioSession.SharedInstance().OverrideOutputAudioPort(port, out var err);
+            if (err is not null)
+                _logger.LogWarning("OverrideOutputAudioPort({Port}) failed: {Error}", port, err.LocalizedDescription);
+            else
+                _logger.LogInformation("Audio output route override -> {Port}", port);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "OverrideOutputAudioPort threw");
+        }
+    }
+
     /// <summary>
     /// Fast path: input is already Float32 mono at the target rate. Multiply/clamp/cast inline,
     /// matching the web AudioWorklet's PCM capture. No AVAudioConverter, no resampling.

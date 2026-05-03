@@ -11,6 +11,7 @@
       </ResourceDictionary.MergedDictionaries>
       <converters:RelativeTimeConverter x:Key="RelativeTime" />
       <converters:MuteLabelConverter    x:Key="MuteLabel" />
+      <converters:SpeakerLabelConverter x:Key="SpeakerLabel" />
     </ResourceDictionary>
   </Application.Resources>
 </Application>
