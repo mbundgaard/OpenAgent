@@ -122,6 +122,40 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.NotEmpty(events);
     }
 
+    [Fact]
+    public async Task SendMessage_WithToolCalls_EmitsToolCallStartedAndCompleted()
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll(typeof(ILlmTextProvider));
+                var fake = new FakeToolCallingTextProvider();
+                services.AddKeyedSingleton<ILlmTextProvider>("azure-openai-text", fake);
+                services.AddSingleton<ILlmTextProvider>(fake);
+            });
+        });
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+        var conversationId = Guid.NewGuid().ToString();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/messages",
+            new { Content = "search something" });
+
+        response.EnsureSuccessStatusCode();
+
+        var events = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        Assert.NotNull(events);
+        Assert.Equal(5, events.Length);
+        Assert.Equal("tool_call_started", events[0].GetProperty("type").GetString());
+        Assert.Equal("tool_call", events[1].GetProperty("type").GetString());
+        Assert.Equal("tool_result", events[2].GetProperty("type").GetString());
+        Assert.Equal("tool_call_completed", events[3].GetProperty("type").GetString());
+        Assert.Equal("text", events[4].GetProperty("type").GetString());
+    }
+
     private sealed class FakeTextProvider : ILlmTextProvider
     {
         public string Key => "text-provider";
@@ -142,6 +176,33 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return new TextDelta("fake raw response");
+            await Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeToolCallingTextProvider : ILlmTextProvider
+    {
+        public string Key => "text-provider";
+        public IReadOnlyList<ProviderConfigField> ConfigFields => [];
+        public void Configure(JsonElement configuration) { }
+        public int? GetContextWindow(string model) => null;
+
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new ToolCallStarted();
+            yield return new ToolCallEvent("tc1", "search_web", "{}");
+            yield return new ToolResultEvent("tc1", "search_web", "result1");
+            yield return new ToolCallCompleted();
+            yield return new TextDelta("done");
+            await Task.CompletedTask;
+        }
+
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(IReadOnlyList<Message> messages, string model,
+            CompletionOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new TextDelta("raw");
             await Task.CompletedTask;
         }
     }
