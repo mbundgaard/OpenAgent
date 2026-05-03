@@ -128,11 +128,11 @@ public static class WebSocketTextEndpoints
                             Result = toolResult.Result
                         }, ct);
                         break;
-                    case ToolCallStarted:
-                        await SendJsonAsync(ws, new TextWebSocketToolCallStarted(), ct);
+                    case ThinkingStarted:
+                        await SendJsonAsync(ws, new TextWebSocketThinkingStarted(), ct);
                         break;
-                    case ToolCallCompleted:
-                        await SendJsonAsync(ws, new TextWebSocketToolCallCompleted(), ct);
+                    case ThinkingStopped:
+                        await SendJsonAsync(ws, new TextWebSocketThinkingStopped(), ct);
                         break;
                 }
             }

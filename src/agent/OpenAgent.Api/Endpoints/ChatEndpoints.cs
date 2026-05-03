@@ -64,8 +64,8 @@ public static class ChatEndpoints
                     TextDelta delta => new { type = "text", delta.Content },
                     ToolCallEvent toolCall => new { type = "tool_call", toolCall.ToolCallId, toolCall.Name, toolCall.Arguments },
                     ToolResultEvent toolResult => new { type = "tool_result", toolResult.ToolCallId, toolResult.Name, toolResult.Result },
-                    ToolCallStarted => new { type = "tool_call_started" },
-                    ToolCallCompleted => new { type = "tool_call_completed" },
+                    ThinkingStarted => new { type = "thinking_started" },
+                    ThinkingStopped => new { type = "thinking_stopped" },
                     _ => new { type = "unknown" } as object
                 });
             }

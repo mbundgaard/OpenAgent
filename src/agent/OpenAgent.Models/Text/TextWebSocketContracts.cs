@@ -69,19 +69,19 @@ public sealed class TextWebSocketDone
 }
 
 /// <summary>
-/// Outbound text WebSocket status payload — tool execution is starting for this turn.
+/// Outbound text WebSocket thinking-started payload — the agent is about to execute tools.
 /// </summary>
-public sealed class TextWebSocketToolCallStarted
+public sealed class TextWebSocketThinkingStarted
 {
     [JsonPropertyName("type")]
-    public string Type { get; init; } = "tool_call_started";
+    public string Type { get; init; } = "thinking_started";
 }
 
 /// <summary>
-/// Outbound text WebSocket status payload — all tool execution is done for this turn.
+/// Outbound text WebSocket thinking-stopped payload — all tool execution is done for this turn.
 /// </summary>
-public sealed class TextWebSocketToolCallCompleted
+public sealed class TextWebSocketThinkingStopped
 {
     [JsonPropertyName("type")]
-    public string Type { get; init; } = "tool_call_completed";
+    public string Type { get; init; } = "thinking_stopped";
 }

@@ -231,7 +231,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                 if (!toolCallsStarted)
                 {
                     toolCallsStarted = true;
-                    yield return new ToolCallStarted();
+                    yield return new ThinkingStarted();
                 }
 
                 logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
@@ -326,7 +326,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             logger.LogDebug("Conversation {ConversationId}: {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",
                 conversationId, promptTokens, completionTokens, stopwatch.ElapsedMilliseconds);
             if (toolCallsStarted)
-                yield return new ToolCallCompleted();
+                yield return new ThinkingStopped();
             yield return new AssistantMessageSaved(assistantMessageId);
             yield break;
         }

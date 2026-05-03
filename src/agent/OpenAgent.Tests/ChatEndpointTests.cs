@@ -123,7 +123,7 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task SendMessage_WithToolCalls_EmitsToolCallStartedAndCompleted()
+    public async Task SendMessage_WithToolCalls_EmitsThinkingStartedAndStopped()
     {
         var factory = _factory.WithWebHostBuilder(builder =>
         {
@@ -149,10 +149,10 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         var events = await response.Content.ReadFromJsonAsync<JsonElement[]>();
         Assert.NotNull(events);
         Assert.Equal(5, events.Length);
-        Assert.Equal("tool_call_started", events[0].GetProperty("type").GetString());
+        Assert.Equal("thinking_started", events[0].GetProperty("type").GetString());
         Assert.Equal("tool_call", events[1].GetProperty("type").GetString());
         Assert.Equal("tool_result", events[2].GetProperty("type").GetString());
-        Assert.Equal("tool_call_completed", events[3].GetProperty("type").GetString());
+        Assert.Equal("thinking_stopped", events[3].GetProperty("type").GetString());
         Assert.Equal("text", events[4].GetProperty("type").GetString());
     }
 
@@ -190,10 +190,10 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            yield return new ToolCallStarted();
+            yield return new ThinkingStarted();
             yield return new ToolCallEvent("tc1", "search_web", "{}");
             yield return new ToolResultEvent("tc1", "search_web", "result1");
-            yield return new ToolCallCompleted();
+            yield return new ThinkingStopped();
             yield return new TextDelta("done");
             await Task.CompletedTask;
         }

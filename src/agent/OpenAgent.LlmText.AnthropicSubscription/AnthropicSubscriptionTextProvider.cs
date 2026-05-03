@@ -285,7 +285,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 if (!toolCallsStarted)
                 {
                     toolCallsStarted = true;
-                    yield return new ToolCallStarted();
+                    yield return new ThinkingStarted();
                 }
 
                 logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
@@ -393,7 +393,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             logger.LogDebug("Conversation {ConversationId}: {InputTokens} input, {OutputTokens} output tokens, {ElapsedMs}ms",
                 conversationId, inputTokens, outputTokens, stopwatch.ElapsedMilliseconds);
             if (toolCallsStarted)
-                yield return new ToolCallCompleted();
+                yield return new ThinkingStopped();
             yield return new AssistantMessageSaved(assistantMessageId);
             yield break;
         }
