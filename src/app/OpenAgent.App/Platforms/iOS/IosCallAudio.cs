@@ -8,10 +8,21 @@ using OpenAgent.App.Core.Voice;
 namespace OpenAgent.App;
 
 /// <summary>
-/// iOS implementation of <see cref="ICallAudio"/>. Wraps AVAudioEngine for microphone capture
-/// (with AVAudioConverter resampling to the negotiated sample rate) and AVAudioPlayerNode for
-/// PCM16 playback. Configures the shared AVAudioSession for PlayAndRecord with VoiceChat mode
-/// so iOS applies echo cancellation and routes audio through the Bluetooth/speaker as available.
+/// iOS implementation of <see cref="ICallAudio"/>. Wraps AVAudioEngine for microphone capture and
+/// AVAudioPlayerNode for playback. Configures the shared AVAudioSession for PlayAndRecord with
+/// VoiceChat mode so iOS applies echo cancellation/AGC and routes through the bluetooth/speaker.
+///
+/// Capture path: VoiceChat's Voice Processing IO unit emits Float32 mono. We request 24 kHz via
+/// <see cref="AVAudioSession.SetPreferredSampleRate"/> and verify after activation. When the
+/// session honors it (the common case), the tap delivers Float32 mono at the right rate and we
+/// just multiply/clamp/cast to Int16 in the tap callback — same trick the web's AudioWorklet uses.
+/// AVAudioConverter is only instantiated as a fallback when iOS hands us something off-rate.
+///
+/// Buffer access: <c>Int16ChannelData</c> / <c>Float32ChannelData</c> are <c>const T * const *</c>
+/// (pointer to channel-pointer array), not flat data pointers. Reading them as <c>T*</c> writes
+/// into the channel pointer table, not the samples — silently producing zeros for playback and
+/// garbage for capture. We go through <c>AudioBufferList[0].Data</c>, which is a flat
+/// <c>void*</c> regardless of channel layout.
 /// </summary>
 public sealed class IosCallAudio : ICallAudio
 {
@@ -21,6 +32,7 @@ public sealed class IosCallAudio : ICallAudio
     private AVAudioFormat? _outFormat;
     private AVAudioFormat? _inputNativeFormat;
     private AVAudioConverter? _converter;
+    private bool _useFastFloat32Path;
     private bool _muted;
     private readonly object _lifecycleLock = new();
 
@@ -42,6 +54,12 @@ public sealed class IosCallAudio : ICallAudio
         session.SetPreferredSampleRate(sampleRate, out _);
         session.SetActive(true, out _);
 
+        // What we actually got — VoiceChat normally honors 24 kHz, but log if not so we know
+        // when we're falling back to AVAudioConverter.
+        var actualSessionRate = session.SampleRate;
+        _logger.LogInformation("Audio session active requestedRate={Requested}Hz actualRate={Actual}Hz",
+            sampleRate, actualSessionRate);
+
         lock (_lifecycleLock)
         {
             _outFormat = new AVAudioFormat(AVAudioCommonFormat.PCMInt16, sampleRate, 1, interleaved: true);
@@ -53,20 +71,30 @@ public sealed class IosCallAudio : ICallAudio
 
             var input = _engine.InputNode;
             _inputNativeFormat = input.GetBusOutputFormat(0);
-            var needsConversion = Math.Abs(_inputNativeFormat.SampleRate - sampleRate) > 1
-                                  || _inputNativeFormat.ChannelCount != 1
-                                  || _inputNativeFormat.CommonFormat != AVAudioCommonFormat.PCMInt16;
 
-            if (needsConversion)
+            // Fast path: VoiceChat hands us Float32 mono at the negotiated rate. Skip
+            // AVAudioConverter entirely and inline the Float32→Int16 conversion (same as the
+            // web's AudioWorklet). Falls back to AVAudioConverter only when the rate is wrong
+            // or the channel count is unexpected.
+            var rateMatches = Math.Abs(_inputNativeFormat.SampleRate - sampleRate) < 1.0;
+            var monoFloat32 = _inputNativeFormat.ChannelCount == 1
+                              && _inputNativeFormat.CommonFormat == AVAudioCommonFormat.PCMFloat32;
+            _useFastFloat32Path = rateMatches && monoFloat32;
+
+            if (!_useFastFloat32Path)
                 _converter = new AVAudioConverter(_inputNativeFormat, _outFormat);
 
-            _logger.LogInformation("Audio input={InRate}Hz/{InCh}ch out={OutRate}Hz/1ch resampling={Resampling}",
-                _inputNativeFormat.SampleRate, _inputNativeFormat.ChannelCount, sampleRate, needsConversion);
+            _logger.LogInformation(
+                "Audio input native={InRate}Hz/{InCh}ch/{InFmt} target={OutRate}Hz fastPath={Fast}",
+                _inputNativeFormat.SampleRate, _inputNativeFormat.ChannelCount,
+                _inputNativeFormat.CommonFormat, sampleRate, _useFastFloat32Path);
 
-            input.InstallTapOnBus(0, 4096, _inputNativeFormat, (buffer, _) =>
+            input.InstallTapOnBus(0, 1024, _inputNativeFormat, (buffer, _) =>
             {
                 if (_muted) return;
-                var bytes = _converter is not null ? ConvertToInt16Mono(buffer) : CopyInt16Mono(buffer);
+                var bytes = _useFastFloat32Path
+                    ? Float32ToPcm16(buffer)
+                    : ConvertToPcm16Mono(buffer);
                 if (bytes is { Length: > 0 }) OnPcmCaptured?.Invoke(bytes);
             });
 
@@ -97,6 +125,7 @@ public sealed class IosCallAudio : ICallAudio
             _converter = null;
             _outFormat = null;
             _inputNativeFormat = null;
+            _useFastFloat32Path = false;
         }
         try { AVAudioSession.SharedInstance().SetActive(false, out _); } catch { }
         return Task.CompletedTask;
@@ -113,9 +142,13 @@ public sealed class IosCallAudio : ICallAudio
 
         var buffer = new AVAudioPcmBuffer(format, frameCount) { FrameLength = frameCount };
 
+        // AudioBufferList[0].Data is a flat void* into the actual sample storage —
+        // works for both interleaved and non-interleaved layouts. The Int16ChannelData
+        // property is a pointer-to-pointer-array; casting it to short* is wrong.
         unsafe
         {
-            var dst = (short*)buffer.Int16ChannelData;
+            var ab = buffer.AudioBufferList[0];
+            var dst = (short*)ab.Data;
             for (var i = 0; i < frameCount; i++)
                 dst[i] = (short)(pcm16[i * 2] | (pcm16[i * 2 + 1] << 8));
         }
@@ -131,17 +164,26 @@ public sealed class IosCallAudio : ICallAudio
 
     public void SetMuted(bool muted) => _muted = muted;
 
-    private static byte[] CopyInt16Mono(AVAudioPcmBuffer src)
+    /// <summary>
+    /// Fast path: input is already Float32 mono at the target rate. Multiply/clamp/cast inline,
+    /// matching the web AudioWorklet's PCM capture. No AVAudioConverter, no resampling.
+    /// </summary>
+    private static byte[] Float32ToPcm16(AVAudioPcmBuffer src)
     {
-        var byteCount = (int)(src.FrameLength * 2);
-        if (byteCount <= 0) return Array.Empty<byte>();
-        var bytes = new byte[byteCount];
+        var frames = (int)src.FrameLength;
+        if (frames <= 0) return Array.Empty<byte>();
+
+        var bytes = new byte[frames * 2];
         unsafe
         {
-            var srcPtr = (short*)src.Int16ChannelData;
-            for (var i = 0; i < src.FrameLength; i++)
+            var ab = src.AudioBufferList[0];
+            var srcPtr = (float*)ab.Data;
+            for (var i = 0; i < frames; i++)
             {
-                var s = srcPtr[i];
+                var f = srcPtr[i];
+                if (f >  1f) f =  1f;
+                if (f < -1f) f = -1f;
+                var s = (short)(f < 0 ? f * 0x8000 : f * 0x7FFF);
                 bytes[i * 2]     = (byte)(s & 0xFF);
                 bytes[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
             }
@@ -149,7 +191,11 @@ public sealed class IosCallAudio : ICallAudio
         return bytes;
     }
 
-    private byte[] ConvertToInt16Mono(AVAudioPcmBuffer src)
+    /// <summary>
+    /// Fallback: input format/rate doesn't match. Run through AVAudioConverter, then read the
+    /// resulting PCM16 from the dst buffer's flat data pointer.
+    /// </summary>
+    private byte[] ConvertToPcm16Mono(AVAudioPcmBuffer src)
     {
         var converter = _converter;
         var outFormat = _outFormat;
@@ -172,14 +218,15 @@ public sealed class IosCallAudio : ICallAudio
         if (error is not null) return Array.Empty<byte>();
         if (outStatus is AVAudioConverterOutputStatus.Error) return Array.Empty<byte>();
 
-        var byteCount = (int)(dst.FrameLength * 2);
-        if (byteCount <= 0) return Array.Empty<byte>();
-        var bytes = new byte[byteCount];
+        var frames = (int)dst.FrameLength;
+        if (frames <= 0) return Array.Empty<byte>();
+        var bytes = new byte[frames * 2];
 
         unsafe
         {
-            var srcPtr = (short*)dst.Int16ChannelData;
-            for (var i = 0; i < dst.FrameLength; i++)
+            var ab = dst.AudioBufferList[0];
+            var srcPtr = (short*)ab.Data;
+            for (var i = 0; i < frames; i++)
             {
                 var s = srcPtr[i];
                 bytes[i * 2]     = (byte)(s & 0xFF);

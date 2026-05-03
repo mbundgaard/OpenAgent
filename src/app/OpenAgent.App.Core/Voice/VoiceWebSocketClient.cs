@@ -14,6 +14,7 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _ws;
     private int _sendCount;
+    private int _audioRecvCount;
 
     public VoiceWebSocketClient(ICredentialStore credentials, ILogger<VoiceWebSocketClient>? logger = null)
     {
@@ -118,6 +119,11 @@ public sealed class VoiceWebSocketClient : IVoiceWebSocketClient
 
             if (result.MessageType == WebSocketMessageType.Binary)
             {
+                // Heartbeat-style audio receive log so TestFlight can confirm whether the
+                // assistant audio is reaching the device at all (silent calls vs. silent player).
+                var n = Interlocked.Increment(ref _audioRecvCount);
+                if (n == 1 || n % 100 == 0)
+                    _logger.LogDebug("WS audio frames received: {Count} lastBytes={Bytes}", n, bytes.Length);
                 yield return new VoiceFrame.AudioFrame(bytes);
             }
             else
