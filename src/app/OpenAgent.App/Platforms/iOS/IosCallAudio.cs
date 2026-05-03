@@ -48,17 +48,25 @@ public sealed class IosCallAudio : ICallAudio
         _logger.LogInformation("Audio start requested sampleRate={SampleRate}", sampleRate);
 
         var session = AVAudioSession.SharedInstance();
+        // Drop DefaultToSpeaker — let iOS route to the earpiece, where the Voice Processing IO
+        // unit's AEC works best. A speaker-toggle UI can override per-call later.
         session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
-            AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.DefaultToSpeaker);
-        session.SetMode(AVAudioSessionMode.VoiceChat, out _);
-        session.SetPreferredSampleRate(sampleRate, out _);
-        session.SetActive(true, out _);
+            AVAudioSessionCategoryOptions.AllowBluetooth);
+        session.SetMode(AVAudioSessionMode.VoiceChat, out var modeErr);
+        if (modeErr is not null)
+            _logger.LogWarning("AVAudioSession SetMode(VoiceChat) failed: {Error}", modeErr.LocalizedDescription);
+        session.SetPreferredSampleRate(sampleRate, out var rateErr);
+        if (rateErr is not null)
+            _logger.LogWarning("SetPreferredSampleRate({Rate}) failed: {Error}", sampleRate, rateErr.LocalizedDescription);
+        session.SetActive(true, out var activateErr);
+        if (activateErr is not null)
+            _logger.LogWarning("AVAudioSession SetActive(true) failed: {Error}", activateErr.LocalizedDescription);
 
         // What we actually got — VoiceChat normally honors 24 kHz, but log if not so we know
         // when we're falling back to AVAudioConverter.
         var actualSessionRate = session.SampleRate;
-        _logger.LogInformation("Audio session active requestedRate={Requested}Hz actualRate={Actual}Hz",
-            sampleRate, actualSessionRate);
+        _logger.LogInformation("Audio session active requestedRate={Requested}Hz actualRate={Actual}Hz mode={Mode} category={Category}",
+            sampleRate, actualSessionRate, session.Mode, session.Category);
 
         lock (_lifecycleLock)
         {
@@ -70,6 +78,24 @@ public sealed class IosCallAudio : ICallAudio
             _engine.Connect(_player, _engine.MainMixerNode, _outFormat);
 
             var input = _engine.InputNode;
+
+            // Engage the Voice Processing IO unit explicitly. AVAudioSession.SetMode(VoiceChat)
+            // alone is a session-level hint; the engine's nodes still default to the regular
+            // RemoteIO unit which has no echo cancellation. Without VPIO the speaker output
+            // bleeds into the mic, OpenAI's server-side VAD treats it as user speech, and every
+            // assistant response is barge-in-cancelled within a few hundred ms. Both nodes need
+            // it: input for capture+AEC, output to provide the AEC reference signal.
+            var inOk = input.SetVoiceProcessingEnabled(true, out var inVpErr);
+            if (!inOk || inVpErr is not null)
+                _logger.LogWarning("InputNode.SetVoiceProcessingEnabled returned ok={Ok} err={Error}",
+                    inOk, inVpErr?.LocalizedDescription ?? "(none)");
+            var outOk = _engine.OutputNode.SetVoiceProcessingEnabled(true, out var outVpErr);
+            if (!outOk || outVpErr is not null)
+                _logger.LogWarning("OutputNode.SetVoiceProcessingEnabled returned ok={Ok} err={Error}",
+                    outOk, outVpErr?.LocalizedDescription ?? "(none)");
+            _logger.LogInformation("Voice processing requested input={In} output={Out}", inOk, outOk);
+
+            // Read native format AFTER enabling voice processing — VPIO changes the bus format.
             _inputNativeFormat = input.GetBusOutputFormat(0);
 
             // Fast path: VoiceChat hands us Float32 mono at the negotiated rate. Skip
