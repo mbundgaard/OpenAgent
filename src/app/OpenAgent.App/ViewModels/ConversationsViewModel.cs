@@ -8,58 +8,92 @@ using OpenAgent.App.Core.Services;
 namespace OpenAgent.App.ViewModels;
 
 /// <summary>
-/// View model for the conversations list page. Performs cache-first refresh from
-/// <see cref="ConversationCache"/>, then re-fetches via <see cref="IApiClient"/>.
-/// On 401 the user is redirected back to onboarding; on transport failures the
-/// page falls back to the cached snapshot (offline mode). Also exposes commands
-/// for swipe-to-delete, rename, FAB-driven new call, and tap-to-open.
+/// Conversations list with a top-bar connection picker. Loads conversations for the active
+/// connection, supports switching via the picker, and provides swipe actions.
 /// </summary>
 public partial class ConversationsViewModel : ObservableObject
 {
     private readonly IApiClient _api;
+    private readonly IConnectionStore _connectionStore;
     private readonly ConversationCache _cache;
+    private bool _suppressPickerChange;
 
-    /// <summary>Conversation rows bound to the page's CollectionView.</summary>
+    /// <summary>Conversation rows bound to the CollectionView.</summary>
     public ObservableCollection<ConversationListItem> Items { get; } = new();
 
-    /// <summary>True when the agent could not be reached and the list is showing cached data.</summary>
-    [ObservableProperty] private bool _isOffline;
+    /// <summary>Available connections for the top-bar picker.</summary>
+    public ObservableCollection<ServerConnection> Connections { get; } = new();
 
-    /// <summary>Drives the RefreshView spinner.</summary>
+    /// <summary>Currently selected connection in the picker.</summary>
+    [ObservableProperty] private ServerConnection? _selectedConnection;
+
+    [ObservableProperty] private bool _isOffline;
     [ObservableProperty] private bool _isRefreshing;
 
-    /// <summary>Creates a new view model bound to the supplied API client and on-disk cache.</summary>
-    public ConversationsViewModel(IApiClient api, ConversationCache cache)
+    public ConversationsViewModel(IApiClient api, IConnectionStore connectionStore, ConversationCache cache)
     {
         _api = api;
+        _connectionStore = connectionStore;
         _cache = cache;
     }
 
-    /// <summary>Cache-first refresh: paint cached rows immediately, then fetch fresh data and reconcile.
-    /// On 401 the user is sent back to the onboarding flow; transport failures fall back to the cache.</summary>
+    /// <summary>Loads connections into the picker and refreshes conversations for the active one.</summary>
     [RelayCommand]
     public async Task LoadAsync()
     {
         IsRefreshing = true;
 
-        var cached = await _cache.ReadAsync();
-        if (cached is not null)
+        var all = await _connectionStore.LoadAllAsync();
+        var active = await _connectionStore.LoadActiveAsync();
+
+        _suppressPickerChange = true;
+        Connections.Clear();
+        foreach (var c in all) Connections.Add(c);
+        SelectedConnection = active is not null ? Connections.FirstOrDefault(c => c.Id == active.Id) : Connections.FirstOrDefault();
+        _suppressPickerChange = false;
+
+        if (active is null)
         {
-            Replace(cached);
+            IsRefreshing = false;
+            return;
         }
+
+        await RefreshConversationsAsync(active.Id);
+        IsRefreshing = false;
+    }
+
+    /// <summary>Called when the picker selection changes. Switches active connection and reloads.</summary>
+    partial void OnSelectedConnectionChanged(ServerConnection? value)
+    {
+        if (_suppressPickerChange || value is null) return;
+        _ = SwitchConnectionAsync(value);
+    }
+
+    private async Task SwitchConnectionAsync(ServerConnection connection)
+    {
+        await _connectionStore.SetActiveAsync(connection.Id);
+        IsRefreshing = true;
+        await RefreshConversationsAsync(connection.Id);
+        IsRefreshing = false;
+    }
+
+    private async Task RefreshConversationsAsync(string connectionId)
+    {
+        var cached = await _cache.ReadAsync(connectionId);
+        if (cached is not null) Replace(cached);
 
         try
         {
             var fresh = await _api.GetConversationsAsync();
-            await _cache.WriteAsync(fresh);
+            await _cache.WriteAsync(connectionId, fresh);
             Replace(fresh);
             IsOffline = false;
         }
         catch (AuthRejectedException)
         {
             await Shell.Current.DisplayAlert("Authentication failed",
-                "The agent rejected the API token. Please reconfigure.", "Reconfigure");
-            await Shell.Current.GoToAsync("//onboarding");
+                "The agent rejected the API token. Please reconfigure.", "OK");
+            await Shell.Current.GoToAsync("settings");
         }
         catch
         {
@@ -67,13 +101,8 @@ public partial class ConversationsViewModel : ObservableObject
             if (cached is null)
                 await Shell.Current.DisplayAlert("Offline", "Couldn't reach agent.", "OK");
         }
-        finally
-        {
-            IsRefreshing = false;
-        }
     }
 
-    /// <summary>Confirms and deletes a conversation via the API, removing it from the list on success.</summary>
     [RelayCommand]
     public async Task DeleteAsync(ConversationListItem item)
     {
@@ -83,7 +112,6 @@ public partial class ConversationsViewModel : ObservableObject
         catch { await Shell.Current.DisplayAlert("Failed", "Could not delete.", "OK"); }
     }
 
-    /// <summary>Prompts for a new title and renames the conversation (intention) via the API, then refreshes.</summary>
     [RelayCommand]
     public async Task RenameAsync(ConversationListItem item)
     {
@@ -93,7 +121,6 @@ public partial class ConversationsViewModel : ObservableObject
         catch { await Shell.Current.DisplayAlert("Failed", "Could not rename.", "OK"); }
     }
 
-    /// <summary>Starts a new conversation by generating a fresh GUID and navigating to the call page.</summary>
     [RelayCommand]
     public Task NewCallAsync()
     {
@@ -101,12 +128,10 @@ public partial class ConversationsViewModel : ObservableObject
         return Shell.Current.GoToAsync($"call?conversationId={id}&title=New+conversation");
     }
 
-    /// <summary>Opens an existing conversation in the call page.</summary>
     [RelayCommand]
     public Task OpenAsync(ConversationListItem item)
         => Shell.Current.GoToAsync($"call?conversationId={item.Id}&title={Uri.EscapeDataString(item.Title)}");
 
-    /// <summary>Navigates to the settings page.</summary>
     [RelayCommand]
     public Task OpenSettingsAsync() => Shell.Current.GoToAsync("settings");
 

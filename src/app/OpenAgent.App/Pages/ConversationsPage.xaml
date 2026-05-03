@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:OpenAgent.App.ViewModels"
              xmlns:m="clr-namespace:OpenAgent.App.Core.Models;assembly=OpenAgent.App.Core"
+             xmlns:svc="clr-namespace:OpenAgent.App.Core.Services;assembly=OpenAgent.App.Core"
              xmlns:c="clr-namespace:OpenAgent.App.Converters"
              x:Class="OpenAgent.App.Pages.ConversationsPage"
              x:DataType="vm:ConversationsViewModel"
@@ -14,8 +15,15 @@
     <ToolbarItem Text="Settings" Command="{Binding OpenSettingsCommand}" />
   </ContentPage.ToolbarItems>
 
-  <Grid>
-    <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding LoadCommand}">
+  <Grid RowDefinitions="Auto,*">
+    <!-- Connection picker -->
+    <Picker Grid.Row="0" Margin="16,8"
+            ItemsSource="{Binding Connections}"
+            SelectedItem="{Binding SelectedConnection}"
+            ItemDisplayBinding="{Binding Name}"
+            Title="Connection" />
+
+    <RefreshView Grid.Row="1" IsRefreshing="{Binding IsRefreshing}" Command="{Binding LoadCommand}">
       <CollectionView ItemsSource="{Binding Items}" SelectionMode="None">
         <CollectionView.EmptyView>
           <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
@@ -55,7 +63,7 @@
       </CollectionView>
     </RefreshView>
 
-    <Button Text="+" Command="{Binding NewCallCommand}"
+    <Button Grid.Row="1" Text="+" Command="{Binding NewCallCommand}"
             BackgroundColor="#0A84FF" TextColor="White"
             CornerRadius="28" WidthRequest="56" HeightRequest="56"
             HorizontalOptions="End" VerticalOptions="End" Margin="0,0,24,24" />
