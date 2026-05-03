@@ -31,8 +31,11 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
     private bool _pendingHangup;
     private bool _audioObservedSinceFlag;
     private CancellationTokenSource? _hangupTimerCts;
-    // Thinking-sound pump state (currently disabled — re-enable with per-turn status events).
+    // Thinking-sound pump state. Active count is incremented on VoiceToolCallStarted and
+    // decremented on VoiceToolCallCompleted — ref-counting ensures the pump runs for the
+    // full duration of overlapping tool calls and produces one start/stop per turn.
     // WriteLoopAsync owns these — no lock needed, all mutation is on the same task.
+    private int _activeToolCalls;
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
 
@@ -246,12 +249,17 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
                         // the model stops generating into a user that's already talking over it.
                         // Also stop the thinking pump in case it was running.
                         StopPump();
+                        _activeToolCalls = 0;
                         await SendTextAsync(TelnyxMediaFrame.ComposeClear(), ct);
                         await _session!.CancelResponseAsync(ct);
                         break;
-                    // Thinking pump disabled — re-enable once per-turn status events land on Telnyx.
                     case VoiceToolCallStarted:
+                        if (_activeToolCalls++ == 0)
+                            StartPump();
+                        break;
                     case VoiceToolCallCompleted:
+                        if (_activeToolCalls > 0 && --_activeToolCalls == 0)
+                            StopPump();
                         break;
                 }
             }
