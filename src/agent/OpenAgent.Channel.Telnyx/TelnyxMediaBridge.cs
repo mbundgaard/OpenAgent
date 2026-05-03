@@ -31,11 +31,8 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
     private bool _pendingHangup;
     private bool _audioObservedSinceFlag;
     private CancellationTokenSource? _hangupTimerCts;
-    // Thinking-sound pump state. Active count is incremented on VoiceToolCallStarted and
-    // decremented on VoiceToolCallCompleted; the pump runs while the count is non-zero so
-    // overlapping tool calls don't cut the audio short. WriteLoopAsync owns these — no lock
-    // needed, all mutation is on the same task.
-    private int _activeToolCalls;
+    // Thinking-sound pump state (currently disabled — re-enable with per-turn status events).
+    // WriteLoopAsync owns these — no lock needed, all mutation is on the same task.
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
 
@@ -247,24 +244,14 @@ public sealed class TelnyxMediaBridge : IAsyncDisposable, ITelnyxBridge
                     case SpeechStarted:
                         // Barge-in: flush any buffered TTS at Telnyx and cancel the LLM response so
                         // the model stops generating into a user that's already talking over it.
-                        // Also stop the thinking pump (a barge-in implicitly aborts any in-flight tool work).
+                        // Also stop the thinking pump in case it was running.
                         StopPump();
-                        _activeToolCalls = 0;
                         await SendTextAsync(TelnyxMediaFrame.ComposeClear(), ct);
                         await _session!.CancelResponseAsync(ct);
                         break;
+                    // Thinking pump disabled — re-enable once per-turn status events land on Telnyx.
                     case VoiceToolCallStarted:
-                        // Start the thinking-sound pump on the first concurrent tool call so the
-                        // caller hears something while the tool runs (HTTP, shell, etc. can take
-                        // seconds). Subsequent overlapping calls just bump the counter.
-                        if (_activeToolCalls++ == 0)
-                            StartPump();
-                        break;
                     case VoiceToolCallCompleted:
-                        // Last tool finishes → pump stops. Guarded so spurious Completed events
-                        // (e.g. from a cancelled tool) can't drive the counter below zero.
-                        if (_activeToolCalls > 0 && --_activeToolCalls == 0)
-                            StopPump();
                         break;
                 }
             }
