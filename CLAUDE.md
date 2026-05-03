@@ -58,10 +58,10 @@ src/web/                                  React frontend — desktop UI with win
   src/apps/explorer/                      File explorer — browse dataPath, open files
     viewers/                              Format-specific viewers: TextViewer (line numbers), MarkdownViewer (frontmatter + rendered md), JsonlViewer (structured log entries)
 src/app/                                  iOS MAUI app — voice/conversation client (TestFlight)
-  OpenAgent.App/                          MAUI head — Pages (Onboarding, Conversations, Call, Settings, ManualEntry), Shell, Platforms/iOS/{IosCallAudio, IosKeychainCredentialStore, AppDelegate, Program}
+  OpenAgent.App/                          MAUI head — Pages (Onboarding, Conversations, Call, Settings, ManualEntry), Shell, Platforms/iOS/{IosCallAudio, IosKeychainConnectionStore, AppDelegate, Program}
     Converters/                           MuteLabel, SpeakerLabel, RelativeTime — value→string converters for XAML binding
     ViewModels/                           Call, Conversations, Onboarding, Settings, ManualEntry — ObservableObject + RelayCommand pattern (CommunityToolkit.Mvvm)
-  OpenAgent.App.Core/                     Platform-agnostic — IApiClient, IVoiceWebSocketClient, ICallAudio, ConversationCache, QrPayloadParser, CallStateMachine, ReconnectBackoff
+  OpenAgent.App.Core/                     Platform-agnostic — IApiClient, IConnectionStore, IVoiceWebSocketClient, ICallAudio, ConversationCache, QrPayloadParser, CallStateMachine, ReconnectBackoff
   OpenAgent.App.Tests/                    xUnit — covers QR parsing, voice event parsing, call state machine, reconnect backoff, conversation cache, REST client
 docs/plans/                               Design docs and implementation plans
 ```
@@ -387,6 +387,16 @@ New MAUI head under `src/app/`. Tag `app-v*` triggers `.github/workflows/ios-bui
 - **Speaker route override is safe with VPIO engaged.** `AVAudioSession.OverrideOutputAudioPort(Speaker | None)` flips the playback route on a live session without reconfiguring the engine — VPIO stays engaged so AEC keeps working in either route. CallPage has a Speaker/Earpiece toggle (defaults to earpiece for best AEC; speaker mode adds acoustic coupling but VPIO can usually still cancel it).
 - **DON'T set `AVAudioSessionCategoryOptions.DefaultToSpeaker`.** It pre-routes to the loudspeaker before AEC is engaged; route via `OverrideOutputAudioPort` after the session is active instead. Earlier builds had `DefaultToSpeaker` and it contributed to the cancellation symptom alongside the missing VPIO call.
 - **Client logs ship to the agent.** `AgentLoggerProvider` POSTs to `/api/client-logs` every ~5s. Search the agent log with `search=[client]` to debug remote installs without needing TestFlight Console output.
+
+### Multi-Connection Support (shipped 2026-05-03, app-v1.0.8)
+Replaced single `QrPayload`/`ICredentialStore` with `ServerConnection`/`IConnectionStore` supporting multiple named server connections.
+- **Data model:** `ServerConnection(Id, Name, BaseUrl, Token)` — Id is GUID, Name defaults to hostname from QR, editable later.
+- **Storage:** iOS Keychain stores all connections as a JSON array (`Service=OpenAgent, Account=connections`). Active connection ID in `Preferences`. `InMemoryConnectionStore` for tests.
+- **Migration:** `IosKeychainConnectionStore.MigrateFromLegacyIfNeeded` reads old `Account=default` QrPayload entry, creates a ServerConnection, saves in new format, deletes old entry. Runs once on first `ReadList()` call.
+- **ConversationCache:** Per-connection files (`conversations-{connectionId}.cache.json`). `DeleteCache(connectionId)` removes the file when a connection is deleted.
+- **UI:** Conversations page has a `Picker` in the top bar bound to `Connections`/`SelectedConnection`. Settings page shows connections list with tap-to-rename, swipe-to-delete, "Add connection" button. Adding reuses QR scan page via `onboarding-add?isAddMode=true` route.
+- **Switching:** `OnSelectedConnectionChanged` calls `SetActiveAsync` then refreshes conversations. `ApiClient`/`VoiceWebSocketClient` call `LoadActiveAsync()` per request — switching is immediate.
+- **Delete active:** Store promotes `list[0]` as new active. If none remain, navigates to onboarding.
 
 ### User Preferences
 - Prefers design discussions before implementation — brainstorm first, then plan, then build
