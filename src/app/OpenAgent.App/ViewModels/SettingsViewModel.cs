@@ -21,7 +21,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string? _activeConnectionId;
 
     /// <summary>Current MAUI app version.</summary>
-    [ObservableProperty] private string _appVersion = AppInfo.Current.VersionString;
+    [ObservableProperty] private string _appVersion = $"{AppInfo.Current.VersionString} ({AppInfo.Current.BuildString})";
 
     /// <summary>Creates a new settings view-model.</summary>
     public SettingsViewModel(IConnectionStore store, ConversationCache cache)

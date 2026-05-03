@@ -14,6 +14,13 @@
         <CollectionView.ItemTemplate>
           <DataTemplate x:DataType="svc:ServerConnection">
             <SwipeView>
+              <SwipeView.LeftItems>
+                <SwipeItems>
+                  <SwipeItem Text="Rename" BackgroundColor="#0A84FF"
+                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SettingsViewModel}}, Path=RenameConnectionCommand}"
+                             CommandParameter="{Binding .}" />
+                </SwipeItems>
+              </SwipeView.LeftItems>
               <SwipeView.RightItems>
                 <SwipeItems>
                   <SwipeItem Text="Delete" BackgroundColor="Red"
@@ -22,10 +29,6 @@
                 </SwipeItems>
               </SwipeView.RightItems>
               <Grid Padding="16,12" ColumnDefinitions="*,Auto">
-                <Grid.GestureRecognizers>
-                  <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SettingsViewModel}}, Path=RenameConnectionCommand}"
-                                        CommandParameter="{Binding .}" />
-                </Grid.GestureRecognizers>
                 <VerticalStackLayout Grid.Column="0" Spacing="2">
                   <Label Text="{Binding Name}" FontSize="16" />
                   <Label Text="{Binding BaseUrl}" FontSize="12" Opacity="0.6" />
