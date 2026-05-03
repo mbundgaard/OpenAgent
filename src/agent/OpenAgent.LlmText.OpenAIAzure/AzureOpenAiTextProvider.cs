@@ -120,6 +120,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
         // Completion loop (handles tool calls across streaming rounds — cap configurable via AgentConfig.MaxToolRounds)
         var maxToolRounds = agentConfig.MaxToolRounds;
         var overflowRetried = false;
+        var toolCallsStarted = false;
         for (var round = 0; round < maxToolRounds; round++)
         {
             // Inner loop lets us retry ONCE on a context-length error by running compaction
@@ -227,6 +228,12 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             // If the model requested tool calls, execute them and loop
             if (finishReason == "tool_calls" && toolCallAccumulator.Count > 0)
             {
+                if (!toolCallsStarted)
+                {
+                    toolCallsStarted = true;
+                    yield return new ToolCallStarted();
+                }
+
                 logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
                     conversationId, string.Join(", ", toolCallAccumulator.Values.Select(t => t.Name)));
 
@@ -318,6 +325,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
 
             logger.LogDebug("Conversation {ConversationId}: {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",
                 conversationId, promptTokens, completionTokens, stopwatch.ElapsedMilliseconds);
+            if (toolCallsStarted)
+                yield return new ToolCallCompleted();
             yield return new AssistantMessageSaved(assistantMessageId);
             yield break;
         }
