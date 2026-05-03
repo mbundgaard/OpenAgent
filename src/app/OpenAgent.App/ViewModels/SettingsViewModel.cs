@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OpenAgent.App.Core.Services;
@@ -5,54 +6,77 @@ using OpenAgent.App.Core.Services;
 namespace OpenAgent.App.ViewModels;
 
 /// <summary>
-/// Settings screen view-model: shows the persisted server URL, a masked-by-default API token,
-/// and the app version, plus a reconfigure escape hatch that clears credentials and routes
-/// the user back to the QR-scan onboarding flow.
+/// Settings page with connections management: lists all server connections with name + URL,
+/// supports rename (tap), delete (swipe), and add (navigates to QR scan). Also shows app version.
 /// </summary>
 public partial class SettingsViewModel : ObservableObject
 {
-    private readonly ICredentialStore _store;
+    private readonly IConnectionStore _store;
+    private readonly ConversationCache _cache;
 
-    /// <summary>Persisted agent base URL loaded from <see cref="ICredentialStore"/>.</summary>
-    [ObservableProperty] private string _serverUrl = "";
+    /// <summary>All stored server connections.</summary>
+    public ObservableCollection<ServerConnection> Connections { get; } = new();
 
-    /// <summary>Raw API token loaded from <see cref="ICredentialStore"/>. Bound via <see cref="TokenDisplay"/>.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TokenDisplay))]
-    private string _token = "";
+    /// <summary>Id of the currently active connection, used for visual highlight.</summary>
+    [ObservableProperty] private string? _activeConnectionId;
 
-    /// <summary>When true, <see cref="TokenDisplay"/> returns the raw token; otherwise a fixed-width mask.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TokenDisplay))]
-    private bool _showToken;
-
-    /// <summary>Current MAUI app version, sourced from <see cref="AppInfo"/> at construction time.</summary>
+    /// <summary>Current MAUI app version.</summary>
     [ObservableProperty] private string _appVersion = AppInfo.Current.VersionString;
 
-    /// <summary>Computed token-cell text: raw token when revealed, otherwise a length-clamped bullet mask.</summary>
-    public string TokenDisplay => ShowToken ? Token : new string('•', Math.Max(8, Math.Min(Token.Length, 24)));
+    /// <summary>Creates a new settings view-model.</summary>
+    public SettingsViewModel(IConnectionStore store, ConversationCache cache)
+    {
+        _store = store;
+        _cache = cache;
+    }
 
-    /// <summary>Creates a new settings view-model bound to the supplied credential store.</summary>
-    public SettingsViewModel(ICredentialStore store) => _store = store;
-
-    /// <summary>Loads the persisted credentials and populates <see cref="ServerUrl"/> + <see cref="Token"/>.</summary>
+    /// <summary>Loads all connections and the active Id.</summary>
     [RelayCommand]
     public async Task LoadAsync()
     {
-        var c = await _store.LoadAsync();
-        ServerUrl = c?.BaseUrl ?? "";
-        Token = c?.Token ?? "";
+        var all = await _store.LoadAllAsync();
+        ActiveConnectionId = await _store.GetActiveIdAsync();
+        Connections.Clear();
+        foreach (var c in all) Connections.Add(c);
     }
 
-    /// <summary>Clears all stored credentials and navigates back to the onboarding flow.</summary>
+    /// <summary>Prompts for a new name and renames the connection.</summary>
     [RelayCommand]
-    public async Task ReconfigureAsync()
+    public async Task RenameConnectionAsync(ServerConnection connection)
     {
-        await _store.ClearAsync();
-        await Shell.Current.GoToAsync("//onboarding");
+        var name = await Shell.Current.DisplayPromptAsync("Rename connection", "Name", initialValue: connection.Name);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var updated = connection with { Name = name.Trim() };
+        await _store.SaveAsync(updated);
+        await LoadAsync();
     }
 
-    /// <summary>Toggles whether the token is shown in plain text or masked.</summary>
+    /// <summary>Confirms and deletes a connection. If active, switches to next. If none left, goes to onboarding.</summary>
     [RelayCommand]
-    public void ToggleReveal() => ShowToken = !ShowToken;
+    public async Task DeleteConnectionAsync(ServerConnection connection)
+    {
+        var ok = await Shell.Current.DisplayAlert("Delete connection?",
+            $"Delete \"{connection.Name}\"? This cannot be undone.", "Delete", "Cancel");
+        if (!ok) return;
+
+        var remaining = await _store.DeleteAsync(connection.Id);
+        _cache.DeleteCache(connection.Id);
+
+        if (remaining == 0)
+        {
+            await Shell.Current.GoToAsync("//onboarding");
+            return;
+        }
+
+        await LoadAsync();
+
+        if (connection.Id == ActiveConnectionId)
+        {
+            await Shell.Current.GoToAsync("//conversations");
+        }
+    }
+
+    /// <summary>Navigates to the QR scan page in add-connection mode.</summary>
+    [RelayCommand]
+    public Task AddConnectionAsync() => Shell.Current.GoToAsync("onboarding-add?isAddMode=true");
 }

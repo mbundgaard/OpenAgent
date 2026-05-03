@@ -1,26 +1,36 @@
+using System.Globalization;
 using OpenAgent.App.ViewModels;
 
 namespace OpenAgent.App.Pages;
 
-/// <summary>
-/// Read-only display of the agent's server URL, masked API token, and app version, with a
-/// destructive reconfigure button that clears credentials and routes back to onboarding.
-/// </summary>
+/// <summary>Settings page with connections management.</summary>
 public partial class SettingsPage : ContentPage
 {
     private readonly SettingsViewModel _vm;
 
-    /// <summary>Creates the page and binds it to the supplied view model.</summary>
     public SettingsPage(SettingsViewModel vm)
     {
         InitializeComponent();
         BindingContext = _vm = vm;
+        Resources.Add("IsActiveConverter", new IsActiveConnectionConverter(_vm));
     }
 
-    /// <summary>Reloads credentials every time the page becomes visible so freshly-saved values appear.</summary>
     protected override async void OnAppearing()
     {
         base.OnAppearing();
         await _vm.LoadCommand.ExecuteAsync(null);
     }
+}
+
+/// <summary>Returns true when the bound connection Id matches the active connection Id on the view model.</summary>
+internal sealed class IsActiveConnectionConverter : IValueConverter
+{
+    private readonly SettingsViewModel _vm;
+    public IsActiveConnectionConverter(SettingsViewModel vm) => _vm = vm;
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is string id && id == _vm.ActiveConnectionId;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
 }

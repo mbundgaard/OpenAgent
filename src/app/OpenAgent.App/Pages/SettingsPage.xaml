@@ -2,23 +2,50 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:OpenAgent.App.ViewModels"
+             xmlns:svc="clr-namespace:OpenAgent.App.Core.Services;assembly=OpenAgent.App.Core"
              x:Class="OpenAgent.App.Pages.SettingsPage"
              x:DataType="vm:SettingsViewModel"
              Title="Settings">
-  <VerticalStackLayout Padding="24" Spacing="20">
-    <Label Text="Server URL" FontAttributes="Bold" />
-    <Label Text="{Binding ServerUrl}" />
+  <ScrollView>
+    <VerticalStackLayout Padding="24" Spacing="20">
 
-    <Label Text="API token" FontAttributes="Bold" Margin="0,12,0,0" />
-    <Label Text="{Binding TokenDisplay}" />
-    <Button Text="Show / Hide" Command="{Binding ToggleRevealCommand}" />
+      <Label Text="Connections" FontAttributes="Bold" FontSize="18" />
+      <CollectionView ItemsSource="{Binding Connections}" SelectionMode="None">
+        <CollectionView.ItemTemplate>
+          <DataTemplate x:DataType="svc:ServerConnection">
+            <SwipeView>
+              <SwipeView.RightItems>
+                <SwipeItems>
+                  <SwipeItem Text="Delete" BackgroundColor="Red"
+                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SettingsViewModel}}, Path=DeleteConnectionCommand}"
+                             CommandParameter="{Binding .}" />
+                </SwipeItems>
+              </SwipeView.RightItems>
+              <Grid Padding="16,12" ColumnDefinitions="*,Auto">
+                <Grid.GestureRecognizers>
+                  <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SettingsViewModel}}, Path=RenameConnectionCommand}"
+                                        CommandParameter="{Binding .}" />
+                </Grid.GestureRecognizers>
+                <VerticalStackLayout Grid.Column="0" Spacing="2">
+                  <Label Text="{Binding Name}" FontSize="16" />
+                  <Label Text="{Binding BaseUrl}" FontSize="12" Opacity="0.6" />
+                </VerticalStackLayout>
+                <Label Grid.Column="1" Text="Active" FontSize="12" TextColor="#0A84FF" VerticalOptions="Center"
+                       IsVisible="{Binding Id, Converter={StaticResource IsActiveConverter}}" />
+              </Grid>
+            </SwipeView>
+          </DataTemplate>
+        </CollectionView.ItemTemplate>
+        <CollectionView.EmptyView>
+          <Label Text="No connections" Opacity="0.6" HorizontalOptions="Center" />
+        </CollectionView.EmptyView>
+      </CollectionView>
 
-    <Label Text="App version" FontAttributes="Bold" Margin="0,12,0,0" />
-    <Label Text="{Binding AppVersion}" />
+      <Button Text="Add connection" Command="{Binding AddConnectionCommand}" />
 
-    <Button Text="Reconfigure agent connection"
-            Command="{Binding ReconfigureCommand}"
-            BackgroundColor="#FF3B30" TextColor="White"
-            Margin="0,24,0,0" />
-  </VerticalStackLayout>
+      <Label Text="App version" FontAttributes="Bold" Margin="0,12,0,0" />
+      <Label Text="{Binding AppVersion}" />
+
+    </VerticalStackLayout>
+  </ScrollView>
 </ContentPage>
