@@ -4,16 +4,18 @@ using OpenAgent.App.ViewModels;
 namespace OpenAgent.App.Pages;
 
 /// <summary>
-/// QR-scan onboarding page. Wires the ZXing camera reader's BarcodesDetected event
-/// to <see cref="OnboardingViewModel.OnQrScannedCommand"/>, marshalling the callback
-/// to the main thread and using a one-shot latch to guard against rapid re-detection.
+/// QR-scan page. Used for first-time onboarding (navigated via //onboarding) and for adding
+/// connections (navigated via "onboarding-add" from settings). The view model's IsAddMode
+/// flag controls post-scan navigation.
 /// </summary>
+[QueryProperty(nameof(IsAddMode), "isAddMode")]
 public partial class OnboardingPage : ContentPage
 {
     private readonly OnboardingViewModel _vm;
     private bool _handled;
 
-    /// <summary>Creates the page and binds it to the supplied view model.</summary>
+    public string? IsAddMode { get; set; }
+
     public OnboardingPage(OnboardingViewModel vm)
     {
         InitializeComponent();
@@ -24,6 +26,7 @@ public partial class OnboardingPage : ContentPage
     {
         base.OnAppearing();
         _handled = false;
+        _vm.IsAddMode = string.Equals(IsAddMode, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     private async void OnBarcodesDetected(object? sender, BarcodeDetectionEventArgs e)

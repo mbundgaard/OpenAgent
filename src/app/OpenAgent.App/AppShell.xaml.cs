@@ -10,17 +10,16 @@ public partial class AppShell : Shell
         Routing.RegisterRoute("call", typeof(Pages.CallPage));
         Routing.RegisterRoute("settings", typeof(Pages.SettingsPage));
         Routing.RegisterRoute("manual-entry", typeof(Pages.ManualEntryPage));
+        Routing.RegisterRoute("onboarding-add", typeof(Pages.OnboardingPage));
     }
 
-    /// <summary>Routes the user to onboarding or the conversations list based on stored credentials.
-    /// Called from App.xaml.cs after MainPage is set; uses IPlatformApplication.Current.Services
-    /// rather than this.Handler.MauiContext (which can be null when Loaded fires).</summary>
+    /// <summary>Routes the user to onboarding or conversations based on stored connections.</summary>
     public async Task RouteInitialAsync()
     {
         var services = IPlatformApplication.Current?.Services
                        ?? throw new InvalidOperationException("Service provider not available");
-        var store = services.GetRequiredService<ICredentialStore>();
-        var creds = await store.LoadAsync();
-        await GoToAsync(creds is null ? "//onboarding" : "//conversations");
+        var store = services.GetRequiredService<IConnectionStore>();
+        var active = await store.LoadActiveAsync();
+        await GoToAsync(active is null ? "//onboarding" : "//conversations");
     }
 }

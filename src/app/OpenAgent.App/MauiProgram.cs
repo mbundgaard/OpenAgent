@@ -16,7 +16,7 @@ public static class MauiProgram
 
         // Core — credential store and HTTP client are singletons; the WS client owns one ClientWebSocket
         // per call so it must be transient (one fresh instance per CallViewModel resolution).
-        builder.Services.AddSingleton<ICredentialStore, IosKeychainCredentialStore>();
+        builder.Services.AddSingleton<IConnectionStore, IosKeychainConnectionStore>();
         builder.Services.AddHttpClient<IApiClient, ApiClient>();
         builder.Services.AddTransient<IVoiceWebSocketClient, VoiceWebSocketClient>();
         builder.Services.AddSingleton(sp => new ConversationCache(FileSystem.AppDataDirectory));
