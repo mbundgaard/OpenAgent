@@ -67,3 +67,21 @@ public sealed class TextWebSocketDone
     [JsonPropertyName("type")]
     public string Type { get; init; } = "done";
 }
+
+/// <summary>
+/// Outbound text WebSocket status payload — tool execution is starting for this turn.
+/// </summary>
+public sealed class TextWebSocketToolCallStarted
+{
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "tool_call_started";
+}
+
+/// <summary>
+/// Outbound text WebSocket status payload — all tool execution is done for this turn.
+/// </summary>
+public sealed class TextWebSocketToolCallCompleted
+{
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "tool_call_completed";
+}
