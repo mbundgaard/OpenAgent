@@ -142,6 +142,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
         // Completion loop (handles tool call rounds — cap configurable via AgentConfig.MaxToolRounds)
         var maxToolRounds = agentConfig.MaxToolRounds;
         var overflowRetried = false;
+        var toolCallsStarted = false;
         for (var round = 0; round < maxToolRounds; round++)
         {
             // Inner loop allows a single context-overflow retry: compact + rebuild messages.
@@ -281,6 +282,12 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             // Tool call round — execute tools and loop
             if (stopReason == "tool_use" && toolCallAccumulator.Count > 0)
             {
+                if (!toolCallsStarted)
+                {
+                    toolCallsStarted = true;
+                    yield return new ToolCallStarted();
+                }
+
                 logger.LogDebug("Tool calls requested in conversation {ConversationId}: {ToolNames}",
                     conversationId, string.Join(", ", toolCallAccumulator.Values.Select(t => t.Name)));
 
@@ -385,6 +392,8 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
 
             logger.LogDebug("Conversation {ConversationId}: {InputTokens} input, {OutputTokens} output tokens, {ElapsedMs}ms",
                 conversationId, inputTokens, outputTokens, stopwatch.ElapsedMilliseconds);
+            if (toolCallsStarted)
+                yield return new ToolCallCompleted();
             yield return new AssistantMessageSaved(assistantMessageId);
             yield break;
         }
