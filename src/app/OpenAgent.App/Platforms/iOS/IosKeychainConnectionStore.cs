@@ -12,6 +12,8 @@ public sealed class IosKeychainConnectionStore : IConnectionStore
     private const string Account = "connections";
     private const string ActiveIdKey = "active_connection_id";
 
+    private bool _migrationChecked;
+
     public Task<List<ServerConnection>> LoadAllAsync(CancellationToken ct = default)
     {
         var list = ReadList();
@@ -67,8 +69,36 @@ public sealed class IosKeychainConnectionStore : IConnectionStore
         return Task.FromResult(id);
     }
 
+    private void MigrateFromLegacyIfNeeded()
+    {
+        if (_migrationChecked) return;
+        _migrationChecked = true;
+
+        var legacyQuery = new SecRecord(SecKind.GenericPassword) { Service = Service, Account = "default" };
+        var result = SecKeyChain.QueryAsData(legacyQuery, false, out var status);
+        if (status != SecStatusCode.Success || result is null) return;
+
+        var json = NSString.FromData(result, NSStringEncoding.UTF8)?.ToString();
+        if (string.IsNullOrEmpty(json)) return;
+
+        try
+        {
+            var legacy = JsonSerializer.Deserialize<LegacyQrPayload>(json);
+            if (legacy?.BaseUrl is null || legacy.Token is null) return;
+
+            var uri = new Uri(legacy.BaseUrl);
+            var conn = new ServerConnection(Guid.NewGuid().ToString(), uri.Host, legacy.BaseUrl, legacy.Token);
+            var list = new List<ServerConnection> { conn };
+            WriteList(list);
+            Preferences.Default.Set(ActiveIdKey, conn.Id);
+            SecKeyChain.Remove(legacyQuery);
+        }
+        catch { }
+    }
+
     private List<ServerConnection> ReadList()
     {
+        MigrateFromLegacyIfNeeded();
         var query = NewQuery();
         var result = SecKeyChain.QueryAsData(query, false, out var status);
         if (status != SecStatusCode.Success || result is null) return new List<ServerConnection>();
@@ -103,4 +133,8 @@ public sealed class IosKeychainConnectionStore : IConnectionStore
         Service = Service,
         Account = Account
     };
+
+    private sealed record LegacyQrPayload(
+        [property: JsonPropertyName("BaseUrl")] string? BaseUrl,
+        [property: JsonPropertyName("Token")] string? Token);
 }
