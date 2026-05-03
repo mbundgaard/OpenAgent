@@ -25,19 +25,8 @@ public static class VoiceEventParser
             "audio_done" => new VoiceEvent.AudioDone(),
             "thinking_started" => new VoiceEvent.ThinkingStarted(),
             "thinking_stopped" => new VoiceEvent.ThinkingStopped(),
-            "transcript_delta" => new VoiceEvent.TranscriptDelta(
-                root.GetProperty("text").GetString() ?? "",
-                ParseSource(root.GetProperty("source").GetString())),
-            "transcript_done" => new VoiceEvent.TranscriptDone(
-                root.GetProperty("text").GetString() ?? "",
-                ParseSource(root.GetProperty("source").GetString())),
             "error" => new VoiceEvent.Error(root.GetProperty("message").GetString() ?? ""),
             _ => null
         };
     }
-
-    private static TranscriptSource ParseSource(string? s) =>
-        string.Equals(s, "user", StringComparison.OrdinalIgnoreCase)
-            ? TranscriptSource.User
-            : TranscriptSource.Assistant;
 }

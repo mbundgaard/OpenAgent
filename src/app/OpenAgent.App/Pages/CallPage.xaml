@@ -2,7 +2,6 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:OpenAgent.App.ViewModels"
-             xmlns:v="clr-namespace:OpenAgent.App.Core.Voice;assembly=OpenAgent.App.Core"
              x:Class="OpenAgent.App.Pages.CallPage"
              x:DataType="vm:CallViewModel"
              Shell.PresentationMode="ModalAnimated"
@@ -19,14 +18,6 @@
         <Label Text="A" TextColor="White" FontSize="64" HorizontalOptions="Center" VerticalOptions="Center" />
       </Border>
       <Label Text="{Binding State}" TextColor="#CCC" HorizontalOptions="Center" />
-      <Button Text="Transcript" Command="{Binding ToggleTranscriptCommand}" BackgroundColor="Transparent" TextColor="#888" />
-      <CollectionView IsVisible="{Binding ShowTranscript}" ItemsSource="{Binding Bubbles}" HeightRequest="200">
-        <CollectionView.ItemTemplate>
-          <DataTemplate x:DataType="vm:TranscriptBubble">
-            <Label Text="{Binding Text}" TextColor="White" Margin="8,4" />
-          </DataTemplate>
-        </CollectionView.ItemTemplate>
-      </CollectionView>
     </VerticalStackLayout>
 
     <!-- Controls. Mute label flips between "Mute" and "Unmute" via a converter on the bool;

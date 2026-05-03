@@ -1,8 +1,5 @@
 namespace OpenAgent.App.Core.Voice;
 
-/// <summary>Source of a transcript fragment emitted by the voice WebSocket.</summary>
-public enum TranscriptSource { User, Assistant }
-
 /// <summary>Closed union of voice WebSocket text-frame events.</summary>
 public abstract record VoiceEvent
 {
@@ -23,12 +20,6 @@ public abstract record VoiceEvent
 
     /// <summary>Agent's tool call completed; thinking placeholder should stop.</summary>
     public sealed record ThinkingStopped : VoiceEvent;
-
-    /// <summary>Incremental transcript fragment.</summary>
-    public sealed record TranscriptDelta(string Text, TranscriptSource Source) : VoiceEvent;
-
-    /// <summary>Final transcript for a single utterance.</summary>
-    public sealed record TranscriptDone(string Text, TranscriptSource Source) : VoiceEvent;
 
     /// <summary>Server-side error reported on the voice channel.</summary>
     public sealed record Error(string Message) : VoiceEvent;

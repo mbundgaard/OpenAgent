@@ -27,26 +27,6 @@ public class VoiceEventParserTests
     }
 
     [Fact]
-    public void Parses_transcript_delta()
-    {
-        var json = """{"type":"transcript_delta","text":"hello","source":"user"}""";
-        var evt = VoiceEventParser.Parse(json);
-        var t = Assert.IsType<VoiceEvent.TranscriptDelta>(evt);
-        Assert.Equal("hello", t.Text);
-        Assert.Equal(TranscriptSource.User, t.Source);
-    }
-
-    [Fact]
-    public void Parses_transcript_done()
-    {
-        var json = """{"type":"transcript_done","text":"goodbye","source":"assistant"}""";
-        var evt = VoiceEventParser.Parse(json);
-        var t = Assert.IsType<VoiceEvent.TranscriptDone>(evt);
-        Assert.Equal("goodbye", t.Text);
-        Assert.Equal(TranscriptSource.Assistant, t.Source);
-    }
-
-    [Fact]
     public void Parses_error()
     {
         var evt = VoiceEventParser.Parse("""{"type":"error","message":"boom"}""");

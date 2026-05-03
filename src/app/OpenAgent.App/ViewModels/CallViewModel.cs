@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,10 +9,10 @@ namespace OpenAgent.App.ViewModels;
 
 /// <summary>
 /// Drives the active call: owns the WebSocket session loop, the audio capture/playback pipeline,
-/// the call state machine, and the transcript router. A single owning task (<see cref="RunSessionLoopAsync"/>)
-/// handles connect → drain → reconnect linearly so flow is never recursive. All UI mutations
-/// (<see cref="State"/>, <see cref="Bubbles"/>, Shell navigation/dialogs) marshal to the main thread
-/// via <see cref="MainThread.BeginInvokeOnMainThread"/> or the <c>OnMain</c> helper.
+/// and the call state machine. A single owning task (<see cref="RunSessionLoopAsync"/>) handles
+/// connect → drain → reconnect linearly so flow is never recursive. All UI mutations
+/// (<see cref="State"/>, Shell navigation/dialogs) marshal to the main thread via
+/// <see cref="MainThread.BeginInvokeOnMainThread"/> or the <c>OnMain</c> helper.
 /// </summary>
 [QueryProperty(nameof(ConversationId), "conversationId")]
 [QueryProperty(nameof(Title), "title")]
@@ -27,7 +26,6 @@ public partial class CallViewModel : ObservableObject, IDisposable
 
     private IVoiceWebSocketClient? _ws;
     private CancellationTokenSource? _cts;
-    private TranscriptRouter? _transcript;
     private Task? _runner;
     private bool _ended;
 
@@ -35,9 +33,6 @@ public partial class CallViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string? _title;
     [ObservableProperty] private CallState _state;
     [ObservableProperty] private bool _muted;
-    [ObservableProperty] private bool _showTranscript;
-
-    public ObservableCollection<TranscriptBubble> Bubbles { get; } = new();
 
     public CallViewModel(IServiceProvider services, ICallAudio audio, ILogger<CallViewModel>? logger = null)
     {
@@ -59,13 +54,6 @@ public partial class CallViewModel : ObservableObject, IDisposable
         _logger.LogInformation("Call start convo={ConversationId} title={Title}", ConversationId, Title);
         _cts = new CancellationTokenSource();
         _ended = false;
-        _transcript = new TranscriptRouter(
-            onAppend: (src, t) => MainThread.BeginInvokeOnMainThread(() => Bubbles.Add(new TranscriptBubble(src, t))),
-            onUpdateLast: (t) => MainThread.BeginInvokeOnMainThread(() =>
-            {
-                if (Bubbles.Count > 0) Bubbles[^1] = Bubbles[^1] with { Text = t };
-            }));
-
         _runner = Task.Run(() => RunSessionLoopAsync(_cts.Token));
         return Task.CompletedTask;
     }
@@ -146,8 +134,6 @@ public partial class CallViewModel : ObservableObject, IDisposable
 
                 case VoiceFrame.EventFrame ef:
                     if (ef.Event is VoiceEvent.SpeechStarted) _audio.FlushPlayback();
-                    if (ef.Event is VoiceEvent.TranscriptDelta td) _transcript!.OnDelta(td.Source, td.Text);
-                    if (ef.Event is VoiceEvent.TranscriptDone) _transcript!.OnDone();
                     SetState(_sm.State, viaMachine: sm => sm.Apply(ef.Event));
                     if (ef.Event is VoiceEvent.Error err)
                     {
@@ -211,9 +197,6 @@ public partial class CallViewModel : ObservableObject, IDisposable
         await Shell.Current.GoToAsync("..");
     }
 
-    [RelayCommand]
-    public void ToggleTranscript() => ShowTranscript = !ShowTranscript;
-
     private async Task SendAudioSafe(IVoiceWebSocketClient ws, byte[] pcm, CancellationToken ct)
     {
         try { await ws.SendAudioAsync(pcm, ct); }
@@ -247,10 +230,3 @@ public partial class CallViewModel : ObservableObject, IDisposable
         _cts?.Dispose();
     }
 }
-
-/// <summary>
-/// One entry in the live transcript pane. <paramref name="Source"/> distinguishes user vs assistant
-/// for styling; <paramref name="Text"/> is the (possibly partial) utterance and is replaced via
-/// <c>with</c>-expression as the agent streams deltas.
-/// </summary>
-public sealed record TranscriptBubble(TranscriptSource Source, string Text);

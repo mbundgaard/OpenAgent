@@ -14,7 +14,7 @@ dotnet build OpenAgent.App.Core/OpenAgent.App.Core.csproj
 dotnet test OpenAgent.App.Tests/OpenAgent.App.Tests.csproj
 ```
 
-60+ tests covering QR parsing, voice event parsing, transcript routing, call state machine, reconnect backoff, conversation cache, and the REST API client.
+Tests cover QR parsing, voice event parsing, call state machine, reconnect backoff, conversation cache, and the REST API client.
 
 ## Build the iOS head
 
@@ -58,7 +58,7 @@ The following has no automated test coverage and is verified manually on TestFli
 
 ## Manual TestFlight smoke checklist (v1 acceptance)
 
-1. Capture: speak "one two three four five", verify >=3 of 5 words appear in the agent's stored transcript.
+1. Capture: speak "one two three four five", verify the agent's audio reply acknowledges what you said.
 2. Playback: agent reply is intelligible, no chipmunk pitch, no chopping.
 3. Barge-in: speaking over the agent cuts its audio immediately.
 4. Background: lock the phone mid-call; audio continues, dynamic island shows recording.
