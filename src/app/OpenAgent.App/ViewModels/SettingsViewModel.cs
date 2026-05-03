@@ -40,6 +40,15 @@ public partial class SettingsViewModel : ObservableObject
         foreach (var c in all) Connections.Add(c);
     }
 
+    /// <summary>Shows an action sheet for a tapped connection.</summary>
+    [RelayCommand]
+    public async Task ConnectionTappedAsync(ServerConnection connection)
+    {
+        var action = await Shell.Current.DisplayActionSheet(connection.Name, "Cancel", "Delete", "Rename");
+        if (action == "Rename") await RenameConnectionAsync(connection);
+        else if (action == "Delete") await DeleteConnectionAsync(connection);
+    }
+
     /// <summary>Prompts for a new name and renames the connection.</summary>
     [RelayCommand]
     public async Task RenameConnectionAsync(ServerConnection connection)

@@ -13,21 +13,17 @@
       <CollectionView ItemsSource="{Binding Connections}" SelectionMode="None">
         <CollectionView.ItemTemplate>
           <DataTemplate x:DataType="svc:ServerConnection">
-            <Grid Padding="16,12" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
+            <Grid Padding="16,12" ColumnDefinitions="*,Auto">
+              <Grid.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SettingsViewModel}}, Path=ConnectionTappedCommand}"
+                                      CommandParameter="{Binding .}" />
+              </Grid.GestureRecognizers>
               <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
                 <Label Text="{Binding Name}" FontSize="16" />
                 <Label Text="{Binding BaseUrl}" FontSize="12" Opacity="0.6" />
               </VerticalStackLayout>
               <Label Grid.Column="1" Text="Active" FontSize="12" TextColor="#0A84FF" VerticalOptions="Center"
                      IsVisible="{Binding Id, Converter={StaticResource IsActiveConverter}}" />
-              <ImageButton Grid.Column="2" Source="pencil.png" WidthRequest="28" HeightRequest="28"
-                           VerticalOptions="Center" Opacity="0.6"
-                           Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SettingsViewModel}}, Path=RenameConnectionCommand}"
-                           CommandParameter="{Binding .}" />
-              <ImageButton Grid.Column="3" Source="trash.png" WidthRequest="28" HeightRequest="28"
-                           VerticalOptions="Center" Opacity="0.6"
-                           Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SettingsViewModel}}, Path=DeleteConnectionCommand}"
-                           CommandParameter="{Binding .}" />
             </Grid>
           </DataTemplate>
         </CollectionView.ItemTemplate>
