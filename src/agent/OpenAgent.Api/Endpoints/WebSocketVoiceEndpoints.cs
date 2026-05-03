@@ -118,6 +118,7 @@ public static class WebSocketVoiceEndpoints
 
     private static async Task WriteLoopAsync(WebSocket ws, IVoiceSession session, CancellationToken ct)
     {
+        var activeToolCalls = 0;
         await foreach (var evt in session.ReceiveEventsAsync(ct))
         {
             if (ws.State != WebSocketState.Open)
@@ -179,11 +180,13 @@ public static class WebSocketVoiceEndpoints
                     break;
 
                 case VoiceToolCallStarted:
-                    await SendJsonAsync(ws, new VoiceThinkingStartedEvent(), ct);
+                    if (activeToolCalls++ == 0)
+                        await SendJsonAsync(ws, new VoiceThinkingStartedEvent(), ct);
                     break;
 
                 case VoiceToolCallCompleted:
-                    await SendJsonAsync(ws, new VoiceThinkingStoppedEvent(), ct);
+                    if (activeToolCalls > 0 && --activeToolCalls == 0)
+                        await SendJsonAsync(ws, new VoiceThinkingStoppedEvent(), ct);
                     break;
             }
         }
