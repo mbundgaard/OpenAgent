@@ -15,5 +15,11 @@ public interface ICallAudio : IAsyncDisposable
     /// </summary>
     void SetSpeakerOutput(bool useSpeaker);
 
+    /// <summary>Starts looping a thinking sound (e.g. during tool calls). No-op if already playing.</summary>
+    void PlayThinkingLoop();
+
+    /// <summary>Stops the thinking sound loop. Safe to call when not playing.</summary>
+    void StopThinkingLoop();
+
     event Action<byte[]>? OnPcmCaptured;
 }

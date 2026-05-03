@@ -134,7 +134,9 @@ public partial class CallViewModel : ObservableObject, IDisposable
                     break;
 
                 case VoiceFrame.EventFrame ef:
-                    if (ef.Event is VoiceEvent.SpeechStarted) _audio.FlushPlayback();
+                    if (ef.Event is VoiceEvent.SpeechStarted) { _audio.StopThinkingLoop(); _audio.FlushPlayback(); }
+                    if (ef.Event is VoiceEvent.ThinkingStarted) _audio.PlayThinkingLoop();
+                    if (ef.Event is VoiceEvent.ThinkingStopped) _audio.StopThinkingLoop();
                     SetState(_sm.State, viaMachine: sm => sm.Apply(ef.Event));
                     if (ef.Event is VoiceEvent.Error err)
                     {
