@@ -34,6 +34,7 @@ public sealed class IosCallAudio : ICallAudio
     private AVAudioConverter? _converter;
     private bool _useFastFloat32Path;
     private AVAudioPlayer? _thinkingPlayer;
+    private NSData? _thinkingData;
     private bool _muted;
     private readonly object _lifecycleLock = new();
 
@@ -195,18 +196,33 @@ public sealed class IosCallAudio : ICallAudio
     public void PlayThinkingLoop()
     {
         StopThinkingLoop();
-        var path = NSBundle.MainBundle.PathForResource("thinking", "m4a");
-        if (path is null) { _logger.LogWarning("thinking.m4a not found in app bundle"); return; }
-        _thinkingPlayer = AVAudioPlayer.FromUrl(NSUrl.FromFilename(path));
+        if (_thinkingData is null)
+        {
+            try
+            {
+                using var stream = FileSystem.OpenAppPackageFileAsync("thinking.m4a").GetAwaiter().GetResult();
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                _thinkingData = NSData.FromArray(ms.ToArray());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Failed to load thinking.m4a: {Error}", ex.Message);
+                return;
+            }
+        }
+        _thinkingPlayer = AVAudioPlayer.FromData(_thinkingData);
         if (_thinkingPlayer is null) { _logger.LogWarning("Failed to create AVAudioPlayer for thinking sound"); return; }
         _thinkingPlayer.NumberOfLoops = -1;
-        _thinkingPlayer.Volume = 0.4f;
+        _thinkingPlayer.Volume = 0.6f;
         _thinkingPlayer.PrepareToPlay();
         _thinkingPlayer.Play();
+        _logger.LogInformation("Thinking sound started");
     }
 
     public void StopThinkingLoop()
     {
+        if (_thinkingPlayer is not null) _logger.LogInformation("Thinking sound stopped");
         _thinkingPlayer?.Stop();
         _thinkingPlayer?.Dispose();
         _thinkingPlayer = null;
