@@ -68,4 +68,14 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("embeddingModel")]
     public string EmbeddingModel { get; set; } = "multilingual-e5-base";
+
+    /// <summary>
+    /// Safety cap on tool-call rounds within a single LLM completion. Each round is one
+    /// LLM call followed by zero or more tool executions. The cap prevents runaway loops
+    /// when an LLM keeps requesting tools without converging on a final answer; legitimate
+    /// workflows (e.g. processing several queued downloads in one turn) can need more
+    /// rounds than the historical default of 10.
+    /// </summary>
+    [JsonPropertyName("maxToolRounds")]
+    public int MaxToolRounds { get; set; } = 20;
 }

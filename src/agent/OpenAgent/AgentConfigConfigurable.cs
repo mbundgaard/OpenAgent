@@ -24,7 +24,8 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
         new() { Key = "memoryDays", Label = "Memory Days", Type = "String", Required = false },
         new() { Key = "mainConversationId", Label = "Main Conversation", Type = "String", Required = false },
         new() { Key = "embeddingProvider", Label = "Embedding Provider", Type = "String", Required = false },
-        new() { Key = "embeddingModel", Label = "Embedding Model", Type = "String", Required = false }
+        new() { Key = "embeddingModel", Label = "Embedding Model", Type = "String", Required = false },
+        new() { Key = "maxToolRounds", Label = "Max Tool Rounds", Type = "String", Required = false }
     ];
 
     public void Configure(JsonElement configuration)
@@ -61,6 +62,14 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
             var value = em.GetString();
             if (!string.IsNullOrEmpty(value))
                 agentConfig.EmbeddingModel = value;
+        }
+        if (configuration.TryGetProperty("maxToolRounds", out var mtr))
+        {
+            // Accept both string and number — the admin UI sends strings
+            if (mtr.ValueKind == JsonValueKind.String && int.TryParse(mtr.GetString(), out var mtrInt))
+                agentConfig.MaxToolRounds = mtrInt;
+            else if (mtr.ValueKind == JsonValueKind.Number)
+                agentConfig.MaxToolRounds = mtr.GetInt32();
         }
     }
 }

@@ -5,12 +5,13 @@ using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.LlmText.OpenAIAzure.Models;
 using OpenAgent.Models.Common;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 
 namespace OpenAgent.LlmText.OpenAIAzure;
 
-public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<AzureOpenAiTextProvider> logger) : ILlmTextProvider, IDisposable
+public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig agentConfig, ILogger<AzureOpenAiTextProvider> logger) : ILlmTextProvider, IDisposable
 {
     private AzureOpenAiTextConfig? _config;
     private HttpClient? _httpClient;
@@ -116,8 +117,8 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, ILogger<Azur
 
         var url = $"openai/deployments/{conversation.TextModel}/chat/completions?api-version={_config.ApiVersion}";
 
-        // Completion loop (handles tool calls across streaming rounds)
-        const int maxToolRounds = 10;
+        // Completion loop (handles tool calls across streaming rounds — cap configurable via AgentConfig.MaxToolRounds)
+        var maxToolRounds = agentConfig.MaxToolRounds;
         var overflowRetried = false;
         for (var round = 0; round < maxToolRounds; round++)
         {

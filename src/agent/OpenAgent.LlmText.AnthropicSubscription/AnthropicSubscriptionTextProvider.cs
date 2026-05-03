@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.LlmText.AnthropicSubscription.Models;
 using OpenAgent.Models.Common;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 
@@ -15,7 +16,7 @@ namespace OpenAgent.LlmText.AnthropicSubscription;
 /// LLM text provider that calls the Anthropic Messages API using a setup-token (OAuth bearer)
 /// from a Claude subscription. Supports streaming, tool calls, and adaptive thinking.
 /// </summary>
-public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, ILogger<AnthropicSubscriptionTextProvider> logger) : ILlmTextProvider, IDisposable
+public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, AgentConfig agentConfig, ILogger<AnthropicSubscriptionTextProvider> logger) : ILlmTextProvider, IDisposable
 {
     private AnthropicConfig? _config;
     private HttpClient? _httpClient;
@@ -138,8 +139,8 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, IL
         var tools = BuildTools();
         var useThinking = conversation.TextModel.Contains("4-6", StringComparison.OrdinalIgnoreCase);
 
-        // Completion loop (handles tool call rounds, up to 10)
-        const int maxToolRounds = 10;
+        // Completion loop (handles tool call rounds — cap configurable via AgentConfig.MaxToolRounds)
+        var maxToolRounds = agentConfig.MaxToolRounds;
         var overflowRetried = false;
         for (var round = 0; round < maxToolRounds; round++)
         {

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.LlmText.OpenAISubscription.Models;
 using OpenAgent.Models.Common;
+using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
 using OpenAgent.Models.Providers;
 
@@ -18,7 +19,7 @@ namespace OpenAgent.LlmText.OpenAISubscription;
 /// <summary>
 /// ChatGPT subscription-backed text provider using the chatgpt.com Codex responses endpoint.
 /// </summary>
-public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConfigStore configStore, ILogger<OpenAiSubscriptionTextProvider> logger) : ILlmTextProvider, IDisposable
+public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConfigStore configStore, AgentConfig agentConfig, ILogger<OpenAiSubscriptionTextProvider> logger) : ILlmTextProvider, IDisposable
 {
     private OpenAiSubscriptionConfig? _config;
     private HttpClient? _httpClient;
@@ -342,7 +343,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
         var input = BuildInput(conversation);
         var tools = BuildTools();
 
-        const int maxToolRounds = 10;
+        var maxToolRounds = agentConfig.MaxToolRounds;
         for (var round = 0; round < maxToolRounds; round++)
         {
             var requestBody = new
