@@ -41,8 +41,9 @@ public static class WebhookEndpoints
             if (conversation is null)
                 return Results.NotFound();
 
-            if (!MentionMatcher.ShouldAccept(conversation, body))
-                return Results.Accepted();
+            // Webhooks are gated by the unguessable conversation-GUID in the URL —
+            // they're trusted system events (file-mover, scheduled tasks, etc.), not
+            // human chat traffic. The conversation's mention filter does not apply.
 
             var userMessage = new Message
             {
