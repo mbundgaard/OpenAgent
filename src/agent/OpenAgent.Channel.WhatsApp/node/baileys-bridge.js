@@ -109,8 +109,12 @@ async function extractSender(sock, key) {
   if (!jid) {
     return undefined;
   }
+  // Strip ":device" suffix — same person on phone (`:0`) vs Web/Desktop (`:N`)
+  // should produce one canonical sender id.
+  const stripDevice = (user) => user.split(":")[0];
+
   if (jid.endsWith("@s.whatsapp.net")) {
-    return "+" + jid.slice(0, -"@s.whatsapp.net".length);
+    return "+" + stripDevice(jid.slice(0, -"@s.whatsapp.net".length));
   }
   if (jid.endsWith("@lid")) {
     // Try to resolve LID -> phone JID via Baileys' signalRepository (works when
@@ -121,13 +125,13 @@ async function extractSender(sock, key) {
       if (lidMapping?.getPNForLID) {
         const pnJid = await lidMapping.getPNForLID(jid);
         if (pnJid && pnJid.endsWith("@s.whatsapp.net")) {
-          return "+" + pnJid.slice(0, -"@s.whatsapp.net".length);
+          return "+" + stripDevice(pnJid.slice(0, -"@s.whatsapp.net".length));
         }
       }
     } catch (err) {
       console.error("LID->PN resolution failed for", jid, err);
     }
-    return "lid:" + jid.slice(0, -"@lid".length);
+    return "lid:" + stripDevice(jid.slice(0, -"@lid".length));
   }
   return jid;
 }
