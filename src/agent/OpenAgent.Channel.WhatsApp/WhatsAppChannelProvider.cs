@@ -519,6 +519,10 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
         public Task SendComposingAsync(string chatId) =>
             _process.WriteAsync(WhatsAppNodeProcess.FormatComposingCommand(chatId));
 
+        /// <summary>Sends a paused indicator to the specified chat — clears composing state on the recipient.</summary>
+        public Task SendPausedAsync(string chatId) =>
+            _process.WriteAsync(WhatsAppNodeProcess.FormatPausedCommand(chatId));
+
         /// <summary>Sends a text message to the specified chat and returns the Baileys stanza ID.</summary>
         public Task<string?> SendTextAsync(string chatId, string text) =>
             _process.SendTextAndWaitAsync(chatId, text, CancellationToken.None);

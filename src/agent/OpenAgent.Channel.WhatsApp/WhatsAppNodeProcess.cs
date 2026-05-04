@@ -163,6 +163,16 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
     }
 
     /// <summary>
+    /// Formats a paused (stop-typing indicator) command as a JSON line.
+    /// </summary>
+    /// <param name="chatId">Target chat JID.</param>
+    /// <returns>JSON string ready to write to stdin.</returns>
+    public static string FormatPausedCommand(string chatId)
+    {
+        return JsonSerializer.Serialize(new { type = "paused", chatId }, WriteOptions);
+    }
+
+    /// <summary>
     /// Formats a ping command as a JSON line.
     /// </summary>
     /// <returns>JSON string ready to write to stdin.</returns>

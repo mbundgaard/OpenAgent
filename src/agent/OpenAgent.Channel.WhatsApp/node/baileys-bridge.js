@@ -299,6 +299,10 @@ async function main() {
           await sock.sendPresenceUpdate("composing", cmd.chatId);
           break;
 
+        case "paused":
+          await sock.sendPresenceUpdate("paused", cmd.chatId);
+          break;
+
         case "ping":
           emit({ type: "pong" });
           break;

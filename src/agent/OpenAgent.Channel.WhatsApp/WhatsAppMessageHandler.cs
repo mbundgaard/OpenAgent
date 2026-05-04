@@ -115,6 +115,12 @@ public sealed class WhatsAppMessageHandler
 
         _logger?.LogInformation("Message from chat {ChatId}: {Text}", chatId, message.Text);
 
+        // Keep the composing indicator alive across the LLM completion. WhatsApp's
+        // composing presence decays on the recipient client, so a long tool-heavy turn
+        // would otherwise go dark. Mirrors Telegram's KeepTypingAsync pump.
+        using var composingCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var composingTask = KeepComposingAsync(sender, chatId, composingCts.Token);
+
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.TextProvider);
 
@@ -168,6 +174,22 @@ public sealed class WhatsAppMessageHandler
             _logger?.LogError(ex, "LLM completion failed for chat {ChatId}", chatId);
             replyText = $"Something went wrong: {ex.Message}";
         }
+        finally
+        {
+            await composingCts.CancelAsync();
+            try { await composingTask; } catch (OperationCanceledException) { }
+        }
+
+        // Explicit "paused" presence so the recipient client clears the composing
+        // state immediately instead of holding it briefly under the new message.
+        try
+        {
+            await sender.SendPausedAsync(chatId);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Failed to send paused indicator to chat {ChatId}", chatId);
+        }
 
         // Suppress sentinel: agent returns "[]" to signal "nothing worth sending".
         // Used by silent webhook flows (wishlist daily recheck on a miss, etc.) so the
@@ -200,6 +222,25 @@ public sealed class WhatsAppMessageHandler
         }
 
         _logger?.LogInformation("Reply sent to chat {ChatId}, {ChunkCount} chunk(s)", chatId, chunks.Count);
+    }
+
+    /// <summary>
+    /// Re-sends the composing presence every 8 seconds until cancelled.
+    /// WhatsApp's composing indicator decays on the recipient side, so we
+    /// keep it alive across long tool-heavy completions.
+    /// </summary>
+    private async Task KeepComposingAsync(IWhatsAppSender sender, string chatId, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(8000, ct);
+                await sender.SendComposingAsync(chatId);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { /* best-effort */ }
     }
 
     /// <summary>
