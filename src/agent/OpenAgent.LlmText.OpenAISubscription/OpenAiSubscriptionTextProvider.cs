@@ -381,7 +381,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
             using var reader = new StreamReader(stream);
 
             var text = new StringBuilder();
-            var toolCalls = new Dictionary<string, PendingToolCall>();
+            var toolCalls = new List<PendingToolCall>();
             int? promptTokens = null;
             int? completionTokens = null;
 
@@ -401,7 +401,13 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                     if (!root.TryGetProperty("type", out var typeProp)) continue;
                     var type = typeProp.GetString();
 
-                    if (type == "response.output_item.added")
+                    // We listen on response.output_item.done (not .added + .delta) because
+                    // the Responses API streams argument deltas keyed by item_id, not call_id.
+                    // The .done event carries the full canonical arguments string in
+                    // item.arguments alongside both ids and the function name — one
+                    // event, all the data, no per-delta accumulation needed.
+                    // https://platform.openai.com/docs/api-reference/responses-streaming
+                    if (type == "response.output_item.done")
                     {
                         if (root.TryGetProperty("item", out var item)
                             && item.TryGetProperty("type", out var itemType)
@@ -410,22 +416,15 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                             var callId = item.TryGetProperty("call_id", out var callIdProp) ? callIdProp.GetString() : null;
                             var itemId = item.TryGetProperty("id", out var itemIdProp) ? itemIdProp.GetString() : null;
                             var name = item.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
-                            var key = callId ?? Guid.NewGuid().ToString();
-                            toolCalls[key] = new PendingToolCall
+                            var arguments = item.TryGetProperty("arguments", out var argsProp) ? argsProp.GetString() ?? "" : "";
+                            toolCalls.Add(new PendingToolCall
                             {
-                                CallId = callId ?? key,
+                                CallId = callId ?? Guid.NewGuid().ToString(),
                                 ItemId = itemId,
                                 Name = name ?? "",
-                                Arguments = item.TryGetProperty("arguments", out var argsProp) ? argsProp.GetString() ?? "" : ""
-                            };
+                                Arguments = arguments
+                            });
                         }
-                    }
-                    else if (type == "response.function_call_arguments.delta")
-                    {
-                        var callId = root.TryGetProperty("call_id", out var callIdProp) ? callIdProp.GetString() : null;
-                        var delta = root.TryGetProperty("delta", out var deltaProp) ? deltaProp.GetString() : null;
-                        if (callId is not null && delta is not null && toolCalls.TryGetValue(callId, out var pending))
-                            pending.Arguments += delta;
                     }
                     else if (type == "response.output_text.delta")
                     {
@@ -457,7 +456,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
 
             if (toolCalls.Count > 0)
             {
-                var storedCalls = toolCalls.Values.Select(tc => new StoredToolCall
+                var storedCalls = toolCalls.Select(tc => new StoredToolCall
                 {
                     Id = tc.StoredId,
                     Type = "function",
@@ -477,7 +476,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                     Modality = MessageModality.Text
                 });
 
-                foreach (var tc in toolCalls.Values)
+                foreach (var tc in toolCalls)
                 {
                     yield return new ToolCallEvent(tc.StoredId, tc.Name, tc.Arguments);
                     var result = await agentLogic.ExecuteToolAsync(conversationId, tc.Name, tc.Arguments, ct);
