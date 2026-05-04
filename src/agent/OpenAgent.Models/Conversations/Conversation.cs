@@ -61,6 +61,16 @@ public sealed class Conversation
     public string? Context { get; set; }
 
     /// <summary>
+    /// One-deep backup of <see cref="Context"/> as it stood immediately before the most
+    /// recent compaction overwrote it. Lets us inspect what the prior summary looked like
+    /// when a compaction looks suspect. Null on a fresh conversation or before any
+    /// compaction has rotated.
+    /// </summary>
+    [JsonPropertyName("previous_context")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PreviousContext { get; set; }
+
+    /// <summary>
     /// SQLite rowid of the last message included in the compaction summary.
     /// Messages with rowid > this value are live; messages up to and including it are compacted.
     /// Null means no compaction has occurred.

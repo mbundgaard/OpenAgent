@@ -106,6 +106,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         TryAddColumn(connection, "Messages", "ReplyToChannelMessageId", "TEXT");
         TryAddColumn(connection, "Conversations", "LastPromptTokens", "INTEGER");
         TryAddColumn(connection, "Conversations", "Context", "TEXT");
+        TryAddColumn(connection, "Conversations", "PreviousContext", "TEXT");
         TryAddColumn(connection, "Conversations", "CompactedUpToRowId", "INTEGER");
         TryAddColumn(connection, "Conversations", "CompactionRunning", "INTEGER NOT NULL DEFAULT 0");
         TryAddColumn(connection, "Conversations", "Provider", "TEXT NOT NULL DEFAULT ''");
@@ -220,7 +221,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, TextProvider, TextModel, VoiceProvider, VoiceModel, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations
+            SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, PreviousContext, CompactedUpToRowId, CompactionRunning, TextProvider, TextModel, VoiceProvider, VoiceModel, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations
             WHERE ChannelType = @channelType AND ConnectionId = @connectionId AND ChannelChatId = @channelChatId
             LIMIT 1
             """;
@@ -297,7 +298,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, TextProvider, TextModel, VoiceProvider, VoiceModel, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations ORDER BY COALESCE(LastActivity, CreatedAt) DESC";
+        cmd.CommandText = "SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, PreviousContext, CompactedUpToRowId, CompactionRunning, TextProvider, TextModel, VoiceProvider, VoiceModel, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations ORDER BY COALESCE(LastActivity, CreatedAt) DESC";
 
         using var reader = cmd.ExecuteReader();
         var list = new List<Conversation>();
@@ -311,7 +312,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, CompactedUpToRowId, CompactionRunning, TextProvider, TextModel, VoiceProvider, VoiceModel, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations WHERE Id = @id";
+        cmd.CommandText = "SELECT Id, Source, CreatedAt, VoiceSessionId, VoiceSessionOpen, LastPromptTokens, Context, PreviousContext, CompactedUpToRowId, CompactionRunning, TextProvider, TextModel, VoiceProvider, VoiceModel, TotalPromptTokens, TotalCompletionTokens, TurnCount, LastActivity, ActiveSkills, ChannelType, ConnectionId, ChannelChatId, DisplayName, Intention, ContextWindowTokens, MentionFilter FROM Conversations WHERE Id = @id";
         cmd.Parameters.AddWithValue("@id", conversationId);
 
         using var reader = cmd.ExecuteReader();
@@ -734,7 +735,9 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             UpdateCompactionState(conversationId,
                 compactionRunning: false,
                 context: result.Context,
-                compactedUpToRowId: newCutoffRowId);
+                compactedUpToRowId: newCutoffRowId,
+                rotatePreviousContext: true,
+                previousContext: conversation.Context);
 
             sw.Stop();
             _logger.LogInformation(
@@ -782,7 +785,13 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
 
 
     /// <summary>Updates compaction-related fields on a conversation. Null values mean "don't change".</summary>
-    private void UpdateCompactionState(string conversationId, bool compactionRunning, string? context, long? compactedUpToRowId)
+    private void UpdateCompactionState(
+        string conversationId,
+        bool compactionRunning,
+        string? context,
+        long? compactedUpToRowId,
+        bool rotatePreviousContext = false,
+        string? previousContext = null)
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
@@ -800,6 +809,15 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         {
             setClauses.Add("CompactedUpToRowId = @cutoff");
             cmd.Parameters.AddWithValue("@cutoff", compactedUpToRowId.Value);
+        }
+
+        // Snapshot the prior summary into PreviousContext as part of the same UPDATE so
+        // we always have one step of undo. Null is a meaningful value here (first
+        // compaction had no prior summary), so we set the column to NULL explicitly.
+        if (rotatePreviousContext)
+        {
+            setClauses.Add("PreviousContext = @previousContext");
+            cmd.Parameters.AddWithValue("@previousContext", (object?)previousContext ?? DBNull.Value);
         }
 
         cmd.CommandText = $"UPDATE Conversations SET {string.Join(", ", setClauses)} WHERE Id = @id";
@@ -873,24 +891,25 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             VoiceSessionOpen = reader.GetInt32(4) != 0,
             LastPromptTokens = reader.IsDBNull(5) ? null : reader.GetInt32(5),
             Context = reader.IsDBNull(6) ? null : reader.GetString(6),
-            CompactedUpToRowId = reader.IsDBNull(7) ? null : reader.GetInt64(7),
-            CompactionRunning = !reader.IsDBNull(8) && reader.GetInt32(8) != 0,
-            TextProvider = reader.GetString(9),
-            TextModel = reader.GetString(10),
-            VoiceProvider = reader.GetString(11),
-            VoiceModel = reader.GetString(12),
-            TotalPromptTokens = reader.GetInt64(13),
-            TotalCompletionTokens = reader.GetInt64(14),
-            TurnCount = reader.GetInt32(15),
-            LastActivity = reader.IsDBNull(16) ? null : DateTimeOffset.Parse(reader.GetString(16)),
-            ActiveSkills = reader.IsDBNull(17) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(17)),
-            ChannelType = reader.IsDBNull(18) ? null : reader.GetString(18),
-            ConnectionId = reader.IsDBNull(19) ? null : reader.GetString(19),
-            ChannelChatId = reader.IsDBNull(20) ? null : reader.GetString(20),
-            DisplayName = reader.IsDBNull(21) ? null : reader.GetString(21),
-            Intention = reader.IsDBNull(22) ? null : reader.GetString(22),
-            ContextWindowTokens = reader.IsDBNull(23) ? null : reader.GetInt32(23),
-            MentionFilter = reader.IsDBNull(24) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(24))
+            PreviousContext = reader.IsDBNull(7) ? null : reader.GetString(7),
+            CompactedUpToRowId = reader.IsDBNull(8) ? null : reader.GetInt64(8),
+            CompactionRunning = !reader.IsDBNull(9) && reader.GetInt32(9) != 0,
+            TextProvider = reader.GetString(10),
+            TextModel = reader.GetString(11),
+            VoiceProvider = reader.GetString(12),
+            VoiceModel = reader.GetString(13),
+            TotalPromptTokens = reader.GetInt64(14),
+            TotalCompletionTokens = reader.GetInt64(15),
+            TurnCount = reader.GetInt32(16),
+            LastActivity = reader.IsDBNull(17) ? null : DateTimeOffset.Parse(reader.GetString(17)),
+            ActiveSkills = reader.IsDBNull(18) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(18)),
+            ChannelType = reader.IsDBNull(19) ? null : reader.GetString(19),
+            ConnectionId = reader.IsDBNull(20) ? null : reader.GetString(20),
+            ChannelChatId = reader.IsDBNull(21) ? null : reader.GetString(21),
+            DisplayName = reader.IsDBNull(22) ? null : reader.GetString(22),
+            Intention = reader.IsDBNull(23) ? null : reader.GetString(23),
+            ContextWindowTokens = reader.IsDBNull(24) ? null : reader.GetInt32(24),
+            MentionFilter = reader.IsDBNull(25) ? null : JsonSerializer.Deserialize<List<string>>(reader.GetString(25))
         };
     }
 
