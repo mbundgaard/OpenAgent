@@ -39,6 +39,9 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
     private readonly ILogger<WhatsAppChannelProvider> _logger;
 
     private readonly object _lock = new();
+    // Serializes Start/Stop/Pairing/Reconnect so concurrent HTTP calls and stderr-driven
+    // reconnects can't spawn racing bridge processes that fight over the same auth dir.
+    private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
     private WhatsAppConnectionState _state = WhatsAppConnectionState.Unpaired;
     private WhatsAppNodeProcess? _nodeProcess;
     private readonly WhatsAppMessageHandler _handler;
@@ -50,6 +53,8 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
     private int _reconnectAttempts;
     private DateTime? _lastConnectedAt;
     private string? _lastError;
+    // Set to true when an external StopAsync/DisposeAsync runs; suppresses pending reconnects.
+    private bool _stopped;
 
     /// <summary>Current connection state.</summary>
     public WhatsAppConnectionState State
@@ -91,21 +96,31 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
     /// </summary>
     public async Task StartAsync(CancellationToken ct)
     {
-        // Ensure auth directory exists
-        Directory.CreateDirectory(_authDir);
-
-        // Check if credentials exist (any files in the auth dir)
-        var hasCredentials = Directory.EnumerateFiles(_authDir).Any();
-
-        if (hasCredentials)
+        await _lifecycleLock.WaitAsync(ct);
+        try
         {
-            _logger.LogInformation("WhatsApp [{ConnectionId}]: credentials found, starting bridge", _connectionId);
-            await StartNodeProcessAsync(ct);
+            _stopped = false;
+
+            // Ensure auth directory exists
+            Directory.CreateDirectory(_authDir);
+
+            // Check if credentials exist (any files in the auth dir)
+            var hasCredentials = Directory.EnumerateFiles(_authDir).Any();
+
+            if (hasCredentials)
+            {
+                _logger.LogInformation("WhatsApp [{ConnectionId}]: credentials found, starting bridge", _connectionId);
+                await StartNodeProcessLockedAsync(ct);
+            }
+            else
+            {
+                _logger.LogInformation("WhatsApp [{ConnectionId}]: no credentials, waiting for QR pairing", _connectionId);
+                lock (_lock) _state = WhatsAppConnectionState.Unpaired;
+            }
         }
-        else
+        finally
         {
-            _logger.LogInformation("WhatsApp [{ConnectionId}]: no credentials, waiting for QR pairing", _connectionId);
-            lock (_lock) _state = WhatsAppConnectionState.Unpaired;
+            _lifecycleLock.Release();
         }
     }
 
@@ -114,15 +129,28 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
     /// </summary>
     public async Task StopAsync(CancellationToken ct)
     {
-        _pingTimer?.Dispose();
-        _pingTimer = null;
-
-        if (_nodeProcess is not null)
+        await _lifecycleLock.WaitAsync(ct);
+        try
         {
-            await _nodeProcess.StopAsync();
-        }
+            _stopped = true;
+            _pingTimer?.Dispose();
+            _pingTimer = null;
 
-        _logger.LogInformation("WhatsApp [{ConnectionId}]: stopped", _connectionId);
+            var process = _nodeProcess;
+            _nodeProcess = null;
+            _sender = null;
+
+            if (process is not null)
+            {
+                await process.StopAsync();
+            }
+
+            _logger.LogInformation("WhatsApp [{ConnectionId}]: stopped", _connectionId);
+        }
+        finally
+        {
+            _lifecycleLock.Release();
+        }
     }
 
     /// <summary>
@@ -131,17 +159,26 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
     /// </summary>
     public async Task StartPairingAsync()
     {
-        lock (_lock)
+        await _lifecycleLock.WaitAsync();
+        try
         {
-            if (_state is WhatsAppConnectionState.Pairing or WhatsAppConnectionState.Connected)
-                return;
+            lock (_lock)
+            {
+                if (_state is WhatsAppConnectionState.Pairing or WhatsAppConnectionState.Connected)
+                    return;
 
-            _qrReady = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _state = WhatsAppConnectionState.Pairing;
+                _qrReady = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _state = WhatsAppConnectionState.Pairing;
+            }
+
+            _stopped = false;
+            _logger.LogInformation("WhatsApp [{ConnectionId}]: starting pairing", _connectionId);
+            await StartNodeProcessLockedAsync(CancellationToken.None);
         }
-
-        _logger.LogInformation("WhatsApp [{ConnectionId}]: starting pairing", _connectionId);
-        await StartNodeProcessAsync(CancellationToken.None);
+        finally
+        {
+            _lifecycleLock.Release();
+        }
     }
 
     /// <summary>
@@ -215,24 +252,44 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
     /// </summary>
     public async ValueTask DisposeAsync()
     {
+        _stopped = true;
         _pingTimer?.Dispose();
         if (_nodeProcess is not null)
             await _nodeProcess.DisposeAsync();
+        _lifecycleLock.Dispose();
     }
 
     /// <summary>
-    /// Starts the Node.js Baileys bridge child process and wires up event handling and ping timer.
+    /// Starts a fresh Node.js Baileys bridge child process. Stops any previously running
+    /// process first so we never leak orphan node children fighting over the same auth dir.
+    /// MUST be called with <see cref="_lifecycleLock"/> held.
     /// </summary>
-    private async Task StartNodeProcessAsync(CancellationToken ct)
+    private async Task StartNodeProcessLockedAsync(CancellationToken ct)
     {
+        // Stop and clear the previous process before starting a new one.
+        var oldProcess = _nodeProcess;
+        _nodeProcess = null;
+        _sender = null;
+        if (oldProcess is not null)
+        {
+            try { await oldProcess.StopAsync(); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "WhatsApp [{ConnectionId}]: error stopping previous bridge", _connectionId);
+            }
+        }
+
         var scriptPath = Path.Combine(AppContext.BaseDirectory, "node", "baileys-bridge.js");
+        var newProcess = new WhatsAppNodeProcess(scriptPath, _loggerFactory.CreateLogger<WhatsAppNodeProcess>());
+        var newSender = new WhatsAppNodeProcessSender(newProcess);
+        // Closure captures the specific process reference so the handler can ignore
+        // events that arrive late from a bridge that has since been replaced.
+        newProcess.OnEvent = evt => HandleNodeEvent(newProcess, newSender, evt);
 
-        _nodeProcess = new WhatsAppNodeProcess(scriptPath, _loggerFactory.CreateLogger<WhatsAppNodeProcess>());
-        _nodeProcess.OnEvent = HandleNodeEvent;
-        await _nodeProcess.StartAsync(_authDir, ct);
+        await newProcess.StartAsync(_authDir, ct);
 
-        // Create sender backed by the node process
-        _sender = new WhatsAppNodeProcessSender(_nodeProcess);
+        _nodeProcess = newProcess;
+        _sender = newSender;
 
         // Start ping timer -- fires every 60 seconds
         _pingTimer?.Dispose();
@@ -243,9 +300,18 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
 
     /// <summary>
     /// Handles events from the Node.js bridge: QR codes, connection state, messages, errors.
+    /// Stale events (from a bridge that has been replaced) are ignored — otherwise an old
+    /// bridge's death would trigger reconnect logic against the current live bridge.
     /// </summary>
-    private void HandleNodeEvent(NodeEvent evt)
+    private void HandleNodeEvent(WhatsAppNodeProcess source, IWhatsAppSender sender, NodeEvent evt)
     {
+        if (!ReferenceEquals(source, _nodeProcess))
+        {
+            _logger.LogDebug("WhatsApp [{ConnectionId}]: ignoring {EventType} from stale bridge",
+                _connectionId, evt.Type);
+            return;
+        }
+
         switch (evt.Type)
         {
             case "qr":
@@ -277,12 +343,14 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
                 break;
 
             case "message":
-                // Fire-and-forget -- don't block the event loop
+                // Fire-and-forget -- don't block the event loop. Use the sender captured in
+                // the closure so a long-running handler can complete its send even if the
+                // current bridge gets replaced mid-handle.
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await _handler.HandleMessageAsync(_sender!, evt, CancellationToken.None);
+                        await _handler.HandleMessageAsync(sender, evt, CancellationToken.None);
                     }
                     catch (Exception ex)
                     {
@@ -346,9 +414,12 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
     /// <summary>
     /// Reconnects with exponential backoff: 2s base, 1.5x multiplier, capped at 30s, max 10 attempts.
     /// Resets attempt counter if the previous session was connected for more than 60 seconds.
+    /// Bails out if the provider has been externally stopped.
     /// </summary>
     private async Task ScheduleReconnectAsync()
     {
+        if (_stopped) return;
+
         // If we were connected long enough, reset attempt counter
         lock (_lock)
         {
@@ -379,22 +450,23 @@ public sealed class WhatsAppChannelProvider : IChannelProvider, IOutboundSender,
 
         await Task.Delay(delayMs);
 
+        if (_stopped) return;
+
+        await _lifecycleLock.WaitAsync();
         try
         {
-            // Stop old process if still around
-            if (_nodeProcess is not null)
-            {
-                try { await _nodeProcess.StopAsync(); }
-                catch { /* best effort */ }
-            }
-
-            await StartNodeProcessAsync(CancellationToken.None);
+            if (_stopped) return;
+            await StartNodeProcessLockedAsync(CancellationToken.None);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "WhatsApp [{ConnectionId}]: reconnect failed", _connectionId);
             // Schedule another attempt
             _ = Task.Run(ScheduleReconnectAsync);
+        }
+        finally
+        {
+            _lifecycleLock.Release();
         }
     }
 
