@@ -280,7 +280,10 @@ export function ConversationsApp() {
                 .map(msg => (
                 <div key={msg.id} className={`${styles.message} ${styles[msg.role] ?? ''}`}>
                   <div className={styles.messageHeader}>
-                    <span className={styles.role}>{msg.role}</span>
+                    <span className={styles.headerLeft}>
+                      <span className={styles.role}>{msg.role}</span>
+                      {msg.sender && <span className={styles.sender}>{msg.sender}</span>}
+                    </span>
                     <span className={styles.time}>
                       {new Date(msg.created_at).toLocaleTimeString()}
                       {msg.elapsed_ms != null && <span className={styles.elapsed}> {msg.elapsed_ms}ms</span>}
