@@ -33,6 +33,7 @@ export function ConversationsApp() {
   const [editVoiceProvider, setEditVoiceProvider] = useState('');
   const [editVoiceModel, setEditVoiceModel] = useState('');
   const [editIntention, setEditIntention] = useState('');
+  const [editMentionFilter, setEditMentionFilter] = useState('');
   const [textProviders, setTextProviders] = useState<string[]>([]);
   const [voiceProviders, setVoiceProviders] = useState<string[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
@@ -91,6 +92,7 @@ export function ConversationsApp() {
     setEditVoiceProvider(detail.voice_provider);
     setEditVoiceModel(detail.voice_model);
     setEditIntention(detail.intention ?? '');
+    setEditMentionFilter((detail.mention_filter ?? []).join(', '));
     setEditing(true);
   };
 
@@ -101,6 +103,14 @@ export function ConversationsApp() {
     setSaving(true);
     const currentIntention = detail.intention ?? '';
     const nextIntention = editIntention.trim();
+    const currentMentionFilter = detail.mention_filter ?? [];
+    const nextMentionFilter = editMentionFilter
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+    const mentionFilterChanged =
+      nextMentionFilter.length !== currentMentionFilter.length ||
+      nextMentionFilter.some((v, i) => v !== currentMentionFilter[i]);
     const updated = await updateConversation(selected, {
       source: editSource !== detail.source ? editSource : undefined,
       text_provider: editTextProvider !== detail.text_provider ? editTextProvider : undefined,
@@ -109,6 +119,8 @@ export function ConversationsApp() {
       voice_model: editVoiceModel !== detail.voice_model ? editVoiceModel : undefined,
       // Empty string clears the intention; undefined leaves it unchanged.
       intention: nextIntention !== currentIntention ? nextIntention : undefined,
+      // Empty array clears the mention filter; undefined leaves it unchanged.
+      mention_filter: mentionFilterChanged ? nextMentionFilter : undefined,
     });
     setDetail(updated);
     setEditing(false);
@@ -161,40 +173,55 @@ export function ConversationsApp() {
               <div className={styles.detailRow}>
                 {editing ? (
                   <>
-                    <select className={styles.editSelect} value={editTextProvider}
-                      onChange={e => { setEditTextProvider(e.target.value); setEditTextModel(''); }}>
-                      <option value="">-- text provider --</option>
-                      {textProviders.filter(p => modelsByProvider[p]?.length).map(p => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </select>
-                    <select className={styles.editSelect} value={editTextModel}
-                      onChange={e => setEditTextModel(e.target.value)} disabled={!availableTextModels.length}>
-                      <option value="">-- text model --</option>
-                      {availableTextModels.map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    <select className={styles.editSelect} value={editVoiceProvider}
-                      onChange={e => { setEditVoiceProvider(e.target.value); setEditVoiceModel(''); }}>
-                      <option value="">-- voice provider --</option>
-                      {voiceProviders.filter(p => modelsByProvider[p]?.length).map(p => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </select>
-                    <select className={styles.editSelect} value={editVoiceModel}
-                      onChange={e => setEditVoiceModel(e.target.value)} disabled={!availableVoiceModels.length}>
-                      <option value="">-- voice model --</option>
-                      {availableVoiceModels.map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    <input
-                      className={styles.editInput}
-                      value={editSource}
-                      onChange={e => setEditSource(e.target.value)}
-                      placeholder="Name"
-                    />
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Text Provider</span>
+                      <select className={styles.editSelect} value={editTextProvider}
+                        onChange={e => { setEditTextProvider(e.target.value); setEditTextModel(''); }}>
+                        <option value="">-- text provider --</option>
+                        {textProviders.filter(p => modelsByProvider[p]?.length).map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Text Model</span>
+                      <select className={styles.editSelect} value={editTextModel}
+                        onChange={e => setEditTextModel(e.target.value)} disabled={!availableTextModels.length}>
+                        <option value="">-- text model --</option>
+                        {availableTextModels.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Voice Provider</span>
+                      <select className={styles.editSelect} value={editVoiceProvider}
+                        onChange={e => { setEditVoiceProvider(e.target.value); setEditVoiceModel(''); }}>
+                        <option value="">-- voice provider --</option>
+                        {voiceProviders.filter(p => modelsByProvider[p]?.length).map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Voice Model</span>
+                      <select className={styles.editSelect} value={editVoiceModel}
+                        onChange={e => setEditVoiceModel(e.target.value)} disabled={!availableVoiceModels.length}>
+                        <option value="">-- voice model --</option>
+                        {availableVoiceModels.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Name</span>
+                      <input
+                        className={styles.editInput}
+                        value={editSource}
+                        onChange={e => setEditSource(e.target.value)}
+                        placeholder="Name"
+                      />
+                    </label>
                     <div className={styles.detailActions}>
                       <button className={styles.saveButton} onClick={saveEditing} disabled={saving}>
                         {saving ? '...' : 'Save'}
@@ -211,6 +238,7 @@ export function ConversationsApp() {
                         {detail.voice_provider} / {detail.voice_model}
                         {' · '}
                         {detail.source}
+                        {detail.display_name ? ` · ${detail.display_name}` : ''}
                       </span>
                       <div className={styles.detailId}>{detail.id}</div>
                     </div>
@@ -221,6 +249,25 @@ export function ConversationsApp() {
                   </>
                 )}
               </div>
+
+              {/* Mention filter — names that gate which messages wake the agent */}
+              {editing ? (
+                <div className={styles.intentionRow}>
+                  <span className={styles.intentionLabel}>Mentions</span>
+                  <input
+                    className={styles.editInput}
+                    style={{ flex: 1 }}
+                    value={editMentionFilter}
+                    onChange={e => setEditMentionFilter(e.target.value)}
+                    placeholder="Comma-separated names (empty = no filter, agent replies to everything)"
+                  />
+                </div>
+              ) : detail.mention_filter && detail.mention_filter.length > 0 ? (
+                <div className={styles.intentionRow}>
+                  <span className={styles.intentionLabel}>Mentions</span>
+                  <span className={styles.intentionText}>{detail.mention_filter.join(', ')}</span>
+                </div>
+              ) : null}
 
               {/* Intention — topic/scope for this conversation */}
               {editing ? (

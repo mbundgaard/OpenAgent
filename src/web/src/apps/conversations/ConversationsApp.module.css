@@ -280,6 +280,18 @@
   border-color: var(--color-accent);
 }
 
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fieldLabel {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+
 .editInput {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--color-border);

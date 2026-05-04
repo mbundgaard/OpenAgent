@@ -18,6 +18,7 @@ export interface ConversationSummary {
   channel_chat_id?: string | null;
   display_name?: string | null;
   intention?: string | null;
+  mention_filter?: string[] | null;
 }
 
 export interface ConversationDetail extends ConversationSummary {
@@ -69,6 +70,8 @@ export async function updateConversation(conversationId: string, data: {
   voice_provider?: string;
   voice_model?: string;
   intention?: string;
+  display_name?: string;
+  mention_filter?: string[];
 }): Promise<ConversationDetail> {
   const res = await apiFetch(`/api/conversations/${conversationId}`, {
     method: 'PATCH',
