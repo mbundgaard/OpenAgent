@@ -122,6 +122,11 @@ public static class ConversationEndpoints
             // Empty list explicitly clears the mention filter; null leaves it unchanged.
             if (request.MentionFilter is not null)
                 conversation.MentionFilter = request.MentionFilter.Count == 0 ? null : request.MentionFilter;
+            // Empty string explicitly clears the display name; null leaves it unchanged.
+            // Channel handlers may overwrite this on the next inbound message if their derived
+            // chat name differs — that's a known limitation of letting users edit it here.
+            if (request.DisplayName is not null)
+                conversation.DisplayName = request.DisplayName.Length == 0 ? null : request.DisplayName;
 
             store.Update(conversation);
 

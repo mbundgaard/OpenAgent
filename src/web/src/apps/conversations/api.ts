@@ -64,7 +64,6 @@ export async function getMessages(conversationId: string): Promise<ConversationM
 }
 
 export async function updateConversation(conversationId: string, data: {
-  source?: string;
   text_provider?: string;
   text_model?: string;
   voice_provider?: string;

@@ -163,4 +163,7 @@ public sealed class UpdateConversationRequest
 
     [JsonPropertyName("mention_filter")]
     public List<string>? MentionFilter { get; init; }
+
+    [JsonPropertyName("display_name")]
+    public string? DisplayName { get; init; }
 }

@@ -27,7 +27,7 @@ export function ConversationsApp() {
 
   // Editing state
   const [editing, setEditing] = useState(false);
-  const [editSource, setEditSource] = useState('');
+  const [editDisplayName, setEditDisplayName] = useState('');
   const [editTextProvider, setEditTextProvider] = useState('');
   const [editTextModel, setEditTextModel] = useState('');
   const [editVoiceProvider, setEditVoiceProvider] = useState('');
@@ -86,7 +86,7 @@ export function ConversationsApp() {
 
   const startEditing = () => {
     if (!detail) return;
-    setEditSource(detail.source);
+    setEditDisplayName(detail.display_name ?? '');
     setEditTextProvider(detail.text_provider);
     setEditTextModel(detail.text_model);
     setEditVoiceProvider(detail.voice_provider);
@@ -103,6 +103,8 @@ export function ConversationsApp() {
     setSaving(true);
     const currentIntention = detail.intention ?? '';
     const nextIntention = editIntention.trim();
+    const currentDisplayName = detail.display_name ?? '';
+    const nextDisplayName = editDisplayName.trim();
     const currentMentionFilter = detail.mention_filter ?? [];
     const nextMentionFilter = editMentionFilter
       .split(',')
@@ -112,13 +114,14 @@ export function ConversationsApp() {
       nextMentionFilter.length !== currentMentionFilter.length ||
       nextMentionFilter.some((v, i) => v !== currentMentionFilter[i]);
     const updated = await updateConversation(selected, {
-      source: editSource !== detail.source ? editSource : undefined,
       text_provider: editTextProvider !== detail.text_provider ? editTextProvider : undefined,
       text_model: editTextModel !== detail.text_model ? editTextModel : undefined,
       voice_provider: editVoiceProvider !== detail.voice_provider ? editVoiceProvider : undefined,
       voice_model: editVoiceModel !== detail.voice_model ? editVoiceModel : undefined,
       // Empty string clears the intention; undefined leaves it unchanged.
       intention: nextIntention !== currentIntention ? nextIntention : undefined,
+      // Empty string clears the display name; undefined leaves it unchanged.
+      display_name: nextDisplayName !== currentDisplayName ? nextDisplayName : undefined,
       // Empty array clears the mention filter; undefined leaves it unchanged.
       mention_filter: mentionFilterChanged ? nextMentionFilter : undefined,
     });
@@ -214,12 +217,12 @@ export function ConversationsApp() {
                       </select>
                     </label>
                     <label className={styles.fieldGroup}>
-                      <span className={styles.fieldLabel}>Name</span>
+                      <span className={styles.fieldLabel}>Display Name</span>
                       <input
                         className={styles.editInput}
-                        value={editSource}
-                        onChange={e => setEditSource(e.target.value)}
-                        placeholder="Name"
+                        value={editDisplayName}
+                        onChange={e => setEditDisplayName(e.target.value)}
+                        placeholder="Display name"
                       />
                     </label>
                     <div className={styles.detailActions}>
