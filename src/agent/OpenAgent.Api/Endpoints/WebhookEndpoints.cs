@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
+using OpenAgent.ScheduledTasks;
 
 namespace OpenAgent.Api.Endpoints;
 
@@ -27,6 +28,7 @@ public static class WebhookEndpoints
             HttpRequest request,
             IConversationStore store,
             IServiceProvider services,
+            DeliveryRouter deliveryRouter,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -60,17 +62,52 @@ public static class WebhookEndpoints
             // Fire-and-forget — intentionally use CancellationToken.None so the completion
             // survives the HTTP response being sent. Safe because IConversationStore and
             // the provider are singletons, not request-scoped.
+            //
+            // We accumulate TextDelta events into the assistant's reply and route it through
+            // DeliveryRouter so a webhook-driven completion in a channel-bound conversation
+            // (e.g. file-mover library notifications on a WhatsApp group) actually surfaces in
+            // the chat. Without this delivery hop the reply only lands in conversation history.
             _ = Task.Run(async () =>
             {
+                var sb = new StringBuilder();
                 try
                 {
-                    await foreach (var _ in textProvider.CompleteAsync(conversation, userMessage, CancellationToken.None))
+                    await foreach (var evt in textProvider.CompleteAsync(conversation, userMessage, CancellationToken.None))
                     {
+                        if (evt is TextDelta delta)
+                            sb.Append(delta.Content);
                     }
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Webhook completion failed for conversation {ConversationId}", conversationId);
+                    return;
+                }
+
+                var response = sb.ToString();
+
+                // [] sentinel — agent signalled "nothing worth sending" (silent background flow).
+                if (response.Trim() == "[]")
+                {
+                    logger.LogInformation("Webhook reply suppressed by [] sentinel for conversation {ConversationId}", conversationId);
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(response))
+                {
+                    logger.LogDebug("Webhook completion produced no text for conversation {ConversationId}; nothing to deliver", conversationId);
+                    return;
+                }
+
+                try
+                {
+                    // Re-fetch in case channel binding shifted during completion.
+                    var current = store.Get(conversationId) ?? conversation;
+                    await deliveryRouter.DeliverAsync(current, response, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Webhook delivery failed for conversation {ConversationId}", conversationId);
                 }
             });
 

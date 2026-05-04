@@ -17,7 +17,7 @@ namespace OpenAgent.ScheduledTasks;
 /// (the LLM completion ran). The distinction matters for ConsecutiveErrors — we don't want
 /// transient delivery flakiness to mark the task run as failed.
 /// </summary>
-internal sealed class DeliveryRouter(
+public sealed class DeliveryRouter(
     IConnectionManager connectionManager,
     IWebSocketRegistry webSocketRegistry,
     ILogger<DeliveryRouter> logger)
