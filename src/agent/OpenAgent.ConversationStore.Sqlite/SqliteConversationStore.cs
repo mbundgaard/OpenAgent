@@ -335,7 +335,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 TurnCount = @turnCount, LastActivity = @lastActivity, ActiveSkills = @activeSkills,
                 ChannelType = @channelType, ConnectionId = @connectionId, ChannelChatId = @channelChatId,
                 Intention = @intention, ContextWindowTokens = @contextWindowTokens,
-                MentionFilter = @mentionFilter
+                MentionFilter = @mentionFilter, DisplayName = @displayName
             WHERE Id = @id
             """;
         cmd.Parameters.AddWithValue("@id", conversation.Id);
@@ -367,6 +367,7 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
             conversation.MentionFilter is { Count: > 0 }
                 ? (object)JsonSerializer.Serialize(conversation.MentionFilter)
                 : DBNull.Value);
+        cmd.Parameters.AddWithValue("@displayName", (object?)conversation.DisplayName ?? DBNull.Value);
         cmd.ExecuteNonQuery();
 
         TryStartCompaction(conversation);
