@@ -106,14 +106,126 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
                 fullContent.Append(delta.Content);
         }
 
-        // Parse the JSON response
-        using var doc = JsonDocument.Parse(fullContent.ToString());
-        var context = doc.RootElement.GetProperty("context").GetString()!;
+        // Anthropic doesn't honor the json_object response format the way OpenAI does, so the
+        // model sometimes returns the raw markdown summary instead of `{"context": "..."}`.
+        // Be tolerant: try clean JSON, then code-fenced JSON, then a balanced {...} block,
+        // and finally fall back to treating the entire response as the context string.
+        var raw = fullContent.ToString();
+        var context = ExtractContext(raw);
 
         _logger.LogInformation("Compaction summary generated: {Length} chars (mode: {Mode})",
             context.Length, existingContext is null ? "initial" : "update");
 
         return new CompactionResult { Context = context };
+    }
+
+    /// <summary>
+    /// Recover the summary text from the LLM response. Tries (in order): the response as JSON
+    /// with a `context` property, a ```json fenced block, the first balanced `{...}` block,
+    /// and finally the whole response as plain text.
+    /// </summary>
+    private string ExtractContext(string raw)
+    {
+        var trimmed = raw.Trim();
+        if (trimmed.Length == 0)
+            return "";
+
+        if (TryParseContextJson(trimmed, out var fromDirect))
+            return fromDirect;
+
+        var fenced = StripCodeFence(trimmed);
+        if (fenced is not null && TryParseContextJson(fenced, out var fromFenced))
+            return fromFenced;
+
+        var firstBrace = trimmed.IndexOf('{');
+        if (firstBrace >= 0)
+        {
+            var candidate = ExtractBalancedJsonObject(trimmed, firstBrace);
+            if (candidate is not null && TryParseContextJson(candidate, out var fromBalanced))
+                return fromBalanced;
+        }
+
+        // Fallback: the model gave us the summary directly without the JSON wrapper.
+        // Use the raw text as the context — better than throwing away an otherwise-good summary.
+        _logger.LogWarning("Compaction response was not valid JSON; using raw text as context. First 60 chars: {Preview}",
+            trimmed.Length <= 60 ? trimmed : trimmed[..60] + "…");
+        return trimmed;
+    }
+
+    private static bool TryParseContextJson(string json, out string context)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("context", out var prop)
+                && prop.ValueKind == JsonValueKind.String)
+            {
+                context = prop.GetString() ?? "";
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        context = "";
+        return false;
+    }
+
+    private static string? StripCodeFence(string text)
+    {
+        // Handle ```json ... ``` and bare ``` ... ``` fences. Anthropic likes wrapping JSON in
+        // code fences when it does follow the instruction.
+        if (!text.StartsWith("```")) return null;
+
+        var firstNewline = text.IndexOf('\n');
+        if (firstNewline < 0) return null;
+
+        var closingFence = text.LastIndexOf("```", StringComparison.Ordinal);
+        if (closingFence <= firstNewline) return null;
+
+        return text[(firstNewline + 1)..closingFence].Trim();
+    }
+
+    private static string? ExtractBalancedJsonObject(string text, int startIndex)
+    {
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+
+        for (var i = startIndex; i < text.Length; i++)
+        {
+            var ch = text[i];
+
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (inString)
+            {
+                if (ch == '\\') escaped = true;
+                else if (ch == '"') inString = false;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                inString = true;
+                continue;
+            }
+
+            if (ch == '{') depth++;
+            else if (ch == '}')
+            {
+                depth--;
+                if (depth == 0) return text[startIndex..(i + 1)];
+            }
+        }
+
+        return null;
     }
 
     private static string TruncateForSummary(string text, int maxChars)
