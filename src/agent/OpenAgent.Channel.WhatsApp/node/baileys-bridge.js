@@ -91,16 +91,45 @@ function extractReplyTo(message) {
 }
 
 /**
- * Extract the sender phone number from a message key.
+ * Extract the sender's canonical identifier from a message key.
  * For group messages the sender is key.participant; for DMs it is key.remoteJid.
- * Strips the @s.whatsapp.net suffix.
+ *
+ * Returns the final canonical form (no further formatting on the .NET side):
+ *   - "+E164PHONE" for @s.whatsapp.net JIDs (real phone numbers, leading +)
+ *   - "+E164PHONE" for @lid JIDs that Baileys can resolve via signalRepository.lidMapping
+ *   - "lid:NUMBER" for @lid JIDs that cannot be resolved (privacy-mode, no PN ever shared)
+ *   - the raw JID otherwise (groups, broadcasts — caller decides what to do)
+ *
+ * Async because lid->phone resolution hits the SignalKeyStore. Pass the live `sock` so we
+ * can use sock.signalRepository.lidMapping.getPNForLID. If sock is null/undefined we skip
+ * resolution and fall back to "lid:NUMBER".
  */
-function extractSender(key) {
+async function extractSender(sock, key) {
   const jid = key.participant || key.remoteJid;
   if (!jid) {
     return undefined;
   }
-  return jid.replace(/@s\.whatsapp\.net$/, "");
+  if (jid.endsWith("@s.whatsapp.net")) {
+    return "+" + jid.slice(0, -"@s.whatsapp.net".length);
+  }
+  if (jid.endsWith("@lid")) {
+    // Try to resolve LID -> phone JID via Baileys' signalRepository (works when
+    // Baileys has previously seen a LID/PN pair for this user, e.g. via a prior DM
+    // or shared metadata).
+    try {
+      const lidMapping = sock?.signalRepository?.lidMapping;
+      if (lidMapping?.getPNForLID) {
+        const pnJid = await lidMapping.getPNForLID(jid);
+        if (pnJid && pnJid.endsWith("@s.whatsapp.net")) {
+          return "+" + pnJid.slice(0, -"@s.whatsapp.net".length);
+        }
+      }
+    } catch (err) {
+      console.error("LID->PN resolution failed for", jid, err);
+    }
+    return "lid:" + jid.slice(0, -"@lid".length);
+  }
+  return jid;
 }
 
 // --- Uncaught error handler ---
@@ -183,7 +212,7 @@ async function main() {
 
   // --- Inbound messages ---
 
-  sock.ev.on("messages.upsert", (upsert) => {
+  sock.ev.on("messages.upsert", async (upsert) => {
     try {
       if (upsert.type !== "notify") {
         return;
@@ -209,7 +238,7 @@ async function main() {
           continue;
         }
 
-        const from = extractSender(key);
+        const from = await extractSender(sock, key);
         const timestamp = msg.messageTimestamp
           ? Number(msg.messageTimestamp)
           : Math.floor(Date.now() / 1000);

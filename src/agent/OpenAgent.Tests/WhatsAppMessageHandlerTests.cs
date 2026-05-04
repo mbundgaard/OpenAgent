@@ -89,16 +89,16 @@ public class WhatsAppMessageHandlerTests
     }
 
     [Fact]
-    public async Task GroupMessage_SetsSenderToParticipantE164()
+    public async Task GroupMessage_StoresBridgeSenderVerbatim()
     {
         var store = new InMemoryConversationStore();
         var provider = new CapturingTextProvider("reply");
         var options = CreateOptions(GroupChatId);
         var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, new AgentConfig { TextProvider = "azure-openai-text", TextModel = "gpt-5.2-chat" });
         var sender = new FakeWhatsAppSender();
-        // In groups, `from` is the participant's bare phone number (the bridge strips
-        // @s.whatsapp.net). Handler should normalize to E.164 and store it on Message.Sender.
-        var message = CreateTextMessage(GroupChatId, "Hello group", pushName: "Bob", from: "4591234567");
+        // The bridge now returns sender in canonical form ("+E164" for resolved phone JIDs,
+        // "lid:NUMBER" for unresolvable LIDs). Handler stores it verbatim.
+        var message = CreateTextMessage(GroupChatId, "Hello group", pushName: "Bob", from: "+4591234567");
 
         await handler.HandleMessageAsync(sender, message, CancellationToken.None);
 

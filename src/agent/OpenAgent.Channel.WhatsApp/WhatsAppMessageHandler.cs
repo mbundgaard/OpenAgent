@@ -118,9 +118,10 @@ public sealed class WhatsAppMessageHandler
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.TextProvider);
 
-        // Normalize sender to E.164 (the bridge strips the @s.whatsapp.net suffix and
-        // returns bare digits; prepend '+' so it matches the Telnyx caller-ID shape).
-        var senderId = string.IsNullOrEmpty(message.From) ? null : $"+{message.From}";
+        // The bridge returns sender already in canonical form: "+E164" for phone JIDs
+        // (including @lid resolved through signalRepository.lidMapping), or "lid:NUMBER"
+        // for unresolvable @lid JIDs. Pass through.
+        var senderId = string.IsNullOrEmpty(message.From) ? null : message.From;
 
         // Build user message. ReplyToChannelMessageId comes from Baileys
         // contextInfo.stanzaId — when set, the LLM-context builder will render the
