@@ -479,7 +479,23 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                 foreach (var tc in toolCalls)
                 {
                     yield return new ToolCallEvent(tc.StoredId, tc.Name, tc.Arguments);
-                    var result = await agentLogic.ExecuteToolAsync(conversationId, tc.Name, tc.Arguments, ct);
+                    string result;
+                    try
+                    {
+                        result = await agentLogic.ExecuteToolAsync(conversationId, tc.Name, tc.Arguments, ct);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Surface tool failures as a result the LLM can read instead of
+                        // killing the whole turn — otherwise one bad tool-call (e.g. the
+                        // model emitting empty arguments) loses all the rest of the work.
+                        logger.LogError(ex, "Tool {ToolName} failed in conversation {ConversationId}", tc.Name, conversationId);
+                        result = JsonSerializer.Serialize(new { error = ex.Message });
+                    }
                     yield return new ToolResultEvent(tc.StoredId, tc.Name, result);
 
                     agentLogic.AddMessage(conversationId, new Message
