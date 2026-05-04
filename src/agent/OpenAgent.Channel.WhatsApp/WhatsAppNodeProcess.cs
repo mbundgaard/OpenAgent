@@ -202,7 +202,9 @@ public sealed class WhatsAppNodeProcess : IAsyncDisposable
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
-            StandardInputEncoding = Encoding.UTF8,
+            // UTF-8 *without* BOM — Encoding.UTF8 (the static) emits a BOM on the first
+            // write, and the bridge's JSON.parse chokes on the leading U+FEFF.
+            StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };
