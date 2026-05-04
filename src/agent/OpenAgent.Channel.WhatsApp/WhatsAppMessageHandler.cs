@@ -169,6 +169,15 @@ public sealed class WhatsAppMessageHandler
             replyText = $"Something went wrong: {ex.Message}";
         }
 
+        // Suppress sentinel: agent returns "[]" to signal "nothing worth sending".
+        // Used by silent webhook flows (wishlist daily recheck on a miss, etc.) so the
+        // agent doesn't leak courtesy text. Distinct from a crash — logged explicitly.
+        if (replyText.Trim() == "[]")
+        {
+            _logger?.LogInformation("Reply suppressed by [] sentinel for chat {ChatId}", chatId);
+            return;
+        }
+
         // Convert markdown to WhatsApp formatting
         var whatsAppText = WhatsAppMarkdownConverter.ToWhatsApp(replyText);
 

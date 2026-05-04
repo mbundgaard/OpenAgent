@@ -520,6 +520,15 @@ public sealed class TelegramMessageHandler
     private async Task SendFinalResponseAsync(
         ITelegramSender sender, long chatId, string replyText, string? assistantMessageId, CancellationToken ct)
     {
+        // Suppress sentinel: agent returns "[]" to signal "nothing worth sending".
+        // Used by silent webhook flows so the agent doesn't leak courtesy text.
+        // Distinct from a crash — logged explicitly.
+        if (replyText.Trim() == "[]")
+        {
+            _logger?.LogInformation("Reply suppressed by [] sentinel for chat {ChatId}", chatId);
+            return;
+        }
+
         // Guard against empty responses — tool-only turns can produce no text
         if (string.IsNullOrWhiteSpace(replyText))
             replyText = "OK!";
