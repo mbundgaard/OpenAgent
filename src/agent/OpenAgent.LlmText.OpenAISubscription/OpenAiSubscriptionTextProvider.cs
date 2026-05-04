@@ -648,7 +648,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
             input.Add(new
             {
                 role = msg.Role,
-                content = msg.Content ?? ""
+                content = FromTagFormatter.Wrap(msg.Sender, msg.Content)
             });
         }
 

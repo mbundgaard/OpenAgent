@@ -22,12 +22,14 @@ public class WhatsAppMessageHandlerTests
         AllowedChatIds = [..allowedChatIds]
     };
 
-    private static NodeEvent CreateTextMessage(string chatId, string text, string? pushName = "Alice", string? messageId = null) => new()
+    private static NodeEvent CreateTextMessage(string chatId, string text, string? pushName = "Alice", string? messageId = null, string? from = null) => new()
     {
         Type = "message",
         Id = messageId ?? Guid.NewGuid().ToString(),
         ChatId = chatId,
-        From = chatId,
+        // For DMs, default from = chatId (same person). For groups, callers pass an explicit
+        // participant number — the bridge populates `from` from key.participant in groups.
+        From = from ?? chatId,
         PushName = pushName,
         Text = text,
         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
@@ -87,20 +89,25 @@ public class WhatsAppMessageHandlerTests
     }
 
     [Fact]
-    public async Task GroupMessage_PrefixesSenderName()
+    public async Task GroupMessage_SetsSenderToParticipantE164()
     {
         var store = new InMemoryConversationStore();
         var provider = new CapturingTextProvider("reply");
         var options = CreateOptions(GroupChatId);
         var handler = new WhatsAppMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, new AgentConfig { TextProvider = "azure-openai-text", TextModel = "gpt-5.2-chat" });
         var sender = new FakeWhatsAppSender();
-        var message = CreateTextMessage(GroupChatId, "Hello group", pushName: "Bob");
+        // In groups, `from` is the participant's bare phone number (the bridge strips
+        // @s.whatsapp.net). Handler should normalize to E.164 and store it on Message.Sender.
+        var message = CreateTextMessage(GroupChatId, "Hello group", pushName: "Bob", from: "4591234567");
 
         await handler.HandleMessageAsync(sender, message, CancellationToken.None);
 
-        // Verify the user message passed to the provider has the [PushName] prefix
         Assert.Single(provider.CapturedMessages);
-        Assert.StartsWith("[Bob] ", provider.CapturedMessages[0].Content!);
+        var captured = provider.CapturedMessages[0];
+        // Content stays clean — no inline [PushName] prefix; the agent gets identity via the
+        // <from id="..."> tag rendered at LLM-context-build time.
+        Assert.Equal("Hello group", captured.Content);
+        Assert.Equal("+4591234567", captured.Sender);
     }
 
     [Fact]

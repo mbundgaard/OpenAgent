@@ -502,6 +502,10 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             {
                 content = msg.Content;
             }
+            // Group-chat speaker tag — only set for inbound user messages where the channel
+            // exposes a stable sender identifier; null on tool / assistant / single-user paths.
+            if (msg.Role != "tool" && !string.IsNullOrEmpty(msg.Sender))
+                content = FromTagFormatter.Wrap(msg.Sender, content);
             var chatMsg = new ChatMessage { Role = msg.Role, Content = content, Name = ChannelMessageName(msg) };
             if (msg.ToolCallId is not null)
                 chatMsg.ToolCallId = msg.ToolCallId;

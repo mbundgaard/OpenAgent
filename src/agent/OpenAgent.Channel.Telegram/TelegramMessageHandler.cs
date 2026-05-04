@@ -139,7 +139,8 @@ public sealed class TelegramMessageHandler
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.TextProvider);
 
-        // Build user message with Telegram message ID and optional reply-to reference
+        // Build user message with Telegram message ID and optional reply-to reference.
+        // Sender = Telegram numeric user ID; lets the LLM disambiguate speakers in groups.
         var userMessage = new Models.Conversations.Message
         {
             Id = Guid.NewGuid().ToString(),
@@ -147,7 +148,8 @@ public sealed class TelegramMessageHandler
             Role = "user",
             Content = userText,
             ChannelMessageId = message.MessageId.ToString(),
-            ReplyToChannelMessageId = message.ReplyToMessage?.MessageId.ToString()
+            ReplyToChannelMessageId = message.ReplyToMessage?.MessageId.ToString(),
+            Sender = userId.ToString()
         };
 
         // Get LLM completion events

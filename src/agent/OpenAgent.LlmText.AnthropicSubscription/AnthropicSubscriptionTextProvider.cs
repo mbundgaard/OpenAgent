@@ -596,7 +596,9 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
 
             // Regular user or assistant message. When ReplyToChannelMessageId resolves to
             // a known earlier message, render an inline blockquote so the LLM can
-            // disambiguate which earlier message is being replied to.
+            // disambiguate which earlier message is being replied to. When Sender is set
+            // (group-chat user message), wrap the result with a <from id="..."> tag so the
+            // LLM knows who is speaking.
             string content;
             if (msg.ReplyToChannelMessageId is { } replyId
                 && channelMessageLookup.TryGetValue(replyId, out var quoted))
@@ -607,6 +609,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             {
                 content = msg.Content ?? "";
             }
+            content = FromTagFormatter.Wrap(msg.Sender, content);
             result.Add(new AnthropicMessage { Role = msg.Role, Content = content });
         }
 

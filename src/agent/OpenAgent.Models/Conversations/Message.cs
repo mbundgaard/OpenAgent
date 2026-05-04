@@ -63,6 +63,18 @@ public sealed class Message
     public string? ReplyToChannelMessageId { get; init; }
 
     /// <summary>
+    /// Identifier of the user who sent this message — phone number for WhatsApp / Telnyx,
+    /// numeric Telegram user ID for Telegram, etc. Channel-namespaced is unnecessary because
+    /// the conversation already encodes the channel context. Null for assistant / tool messages
+    /// and for inbound paths that have no per-user identity (REST, webhook, scheduled tasks).
+    /// At LLM-context build time, providers wrap user content with a &lt;from id="…"&gt; tag when
+    /// this field is non-null, so the agent can disambiguate speakers in group chats.
+    /// </summary>
+    [JsonPropertyName("sender")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Sender { get; init; }
+
+    /// <summary>
     /// SQLite rowid — populated by the store, not persisted via INSERT.
     /// Used for compaction boundary tracking.
     /// </summary>

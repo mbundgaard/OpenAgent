@@ -118,24 +118,26 @@ public sealed class WhatsAppMessageHandler
         // Resolve provider from the conversation, not from agent config — existing conversations keep their provider
         var textProvider = _textProviderResolver(conversation.TextProvider);
 
-        // For group messages, prefix user text with sender name
-        var userText = message.Text;
-        if (chatId.EndsWith("@g.us", StringComparison.Ordinal) && message.PushName is not null)
-        {
-            userText = $"[{message.PushName}] {userText}";
-        }
+        // Normalize sender to E.164 (the bridge strips the @s.whatsapp.net suffix and
+        // returns bare digits; prepend '+' so it matches the Telnyx caller-ID shape).
+        var senderId = string.IsNullOrEmpty(message.From) ? null : $"+{message.From}";
 
         // Build user message. ReplyToChannelMessageId comes from Baileys
         // contextInfo.stanzaId — when set, the LLM-context builder will render the
         // replied-to message inline as a markdown blockquote.
+        // Sender carries the speaker's phone number; the LLM-context builder wraps
+        // group-chat user messages with a <from id="..."> tag so the LLM knows who
+        // is speaking. PushName / inline name prefix is intentionally dropped — the
+        // tag is the authoritative identity, not the user's chosen display name.
         var userMessage = new Message
         {
             Id = Guid.NewGuid().ToString(),
             ConversationId = conversation.Id,
             Role = "user",
-            Content = userText,
+            Content = message.Text,
             ChannelMessageId = message.Id,
-            ReplyToChannelMessageId = message.ReplyTo
+            ReplyToChannelMessageId = message.ReplyTo,
+            Sender = senderId
         };
 
         // Call LLM and collect response
