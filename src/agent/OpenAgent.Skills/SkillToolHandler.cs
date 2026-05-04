@@ -66,7 +66,7 @@ internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore
             return Task.FromResult(JsonSerializer.Serialize(new { error = "Conversation not found" }));
         }
 
-        const int maxActiveSkills = 5;
+        const int maxActiveSkills = 8;
 
         conversation.ActiveSkills ??= [];
         var alreadyActive = conversation.ActiveSkills.Contains(name, StringComparer.OrdinalIgnoreCase);
