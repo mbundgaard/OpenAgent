@@ -94,7 +94,7 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
     }
 
     [Fact]
-    public async Task PostWebhook_NoMentionMatch_DropsAndDoesNotTriggerCompletion()
+    public async Task PostWebhook_MentionFilter_DoesNotApply_CompletionStillFires()
     {
         var store = _factory.Services.GetRequiredService<IConversationStore>();
         var conversationId = Guid.NewGuid().ToString();
@@ -111,9 +111,9 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // Give the background task a chance to (incorrectly) run.
+        // Webhooks bypass the mention filter — completion should still fire.
         await Task.Delay(200);
-        Assert.Equal(callCountBefore, _capturingProvider.CallCount);
+        Assert.Equal(callCountBefore + 1, _capturingProvider.CallCount);
     }
 
     private sealed class CapturingTextProvider : ILlmTextProvider
