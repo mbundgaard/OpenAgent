@@ -10,11 +10,18 @@ public class FakeWhatsAppSender : IWhatsAppSender
     private int _nextSendId;
 
     public List<string> ComposingCalls { get; } = [];
+    public List<string> PausedCalls { get; } = [];
     public List<(string ChatId, string Text, string StanzaId)> TextCalls { get; } = [];
 
     public Task SendComposingAsync(string chatId)
     {
         ComposingCalls.Add(chatId);
+        return Task.CompletedTask;
+    }
+
+    public Task SendPausedAsync(string chatId)
+    {
+        PausedCalls.Add(chatId);
         return Task.CompletedTask;
     }
 
