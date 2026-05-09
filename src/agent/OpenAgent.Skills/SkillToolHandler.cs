@@ -89,7 +89,7 @@ internal sealed class ActivateSkillTool(SkillCatalog catalog, IConversationStore
         // rebuild on the next turn won't reach the live session. Deliver the skill body in the
         // tool result instead — it lands in the realtime conversation buffer and the model
         // attends to it like any other fresh turn. Text channels rebuild the system prompt every
-        // turn, so the thin status JSON is enough.
+        // round (re-fetching ActiveSkills from the store), so the thin status JSON is enough.
         var hasVoiceSession = voiceSessionManager.TryGetSession(conversationId, out _);
         if (hasVoiceSession)
         {

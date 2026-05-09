@@ -123,6 +123,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
         var toolCallsStarted = false;
         for (var round = 0; round < maxToolRounds; round++)
         {
+            // Refresh the system message at the top of each round so mid-turn
+            // mutations (activate_skill, set_intention, etc.) take effect on the
+            // next LLM call. store.Get returns a fresh row — the parameter
+            // `conversation` doesn't see those mutations. The tool/assistant
+            // messages already accumulated in request.Messages are kept as-is.
+            var freshConversation = agentLogic.GetConversation(conversationId) ?? conversation;
+            var refreshedSystemPrompt = agentLogic.GetSystemPrompt(freshConversation.Id, freshConversation.Source, voice: false, freshConversation.ActiveSkills, freshConversation.Intention);
+            if (request.Messages.Count > 0 && request.Messages[0].Role == "system")
+                request.Messages[0] = new ChatMessage { Role = "system", Content = refreshedSystemPrompt };
+
             // Inner loop lets us retry ONCE on a context-length error by running compaction
             // and rebuilding the request. overflowRetried is scoped to this CompleteAsync
             // call — at most one recovery attempt per turn.

@@ -132,9 +132,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
         // Persist the caller-supplied user message
         agentLogic.AddMessage(conversationId, userMessage);
 
-        // Build the system prompt blocks and initial message list
-        var systemPrompt = agentLogic.GetSystemPrompt(conversation.Id, conversation.Source, voice: false, conversation.ActiveSkills, conversation.Intention);
-        var systemBlocks = BuildSystemBlocks(systemPrompt);
+        // Build the initial message list and tools — system prompt is rebuilt per round
         var messages = BuildMessages(conversation);
         var tools = BuildTools();
         var useThinking = conversation.TextModel.Contains("4-6", StringComparison.OrdinalIgnoreCase);
@@ -145,6 +143,14 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
         var toolCallsStarted = false;
         for (var round = 0; round < maxToolRounds; round++)
         {
+            // Re-derive system prompt at the top of each round so that mid-turn
+            // mutations (activate_skill, set_intention, etc.) take effect on the
+            // very next LLM call. store.Get returns a fresh row, so the parameter
+            // `conversation` doesn't see those mutations.
+            var freshConversation = agentLogic.GetConversation(conversationId) ?? conversation;
+            var systemPrompt = agentLogic.GetSystemPrompt(freshConversation.Id, freshConversation.Source, voice: false, freshConversation.ActiveSkills, freshConversation.Intention);
+            var systemBlocks = BuildSystemBlocks(systemPrompt);
+
             // Inner loop allows a single context-overflow retry: compact + rebuild messages.
             HttpResponseMessage httpResponse;
             while (true)

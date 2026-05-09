@@ -346,12 +346,18 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
         var maxToolRounds = agentConfig.MaxToolRounds;
         for (var round = 0; round < maxToolRounds; round++)
         {
+            // Re-fetch conversation so mid-turn tool mutations (activate_skill,
+            // set_intention, etc.) reach the next LLM call. The parameter
+            // `conversation` is a snapshot from CompleteAsync entry; tools mutate
+            // a different copy loaded fresh from the store.
+            var freshConversation = agentLogic.GetConversation(conversationId) ?? conversation;
+
             var requestBody = new
             {
                 model = conversation.TextModel,
                 store = false,
                 stream = true,
-                instructions = agentLogic.GetSystemPrompt(conversation.Id, conversation.Source, voice: false, conversation.ActiveSkills, conversation.Intention),
+                instructions = agentLogic.GetSystemPrompt(freshConversation.Id, freshConversation.Source, voice: false, freshConversation.ActiveSkills, freshConversation.Intention),
                 input,
                 tools,
                 tool_choice = tools is { Count: > 0 } ? "auto" : null,
