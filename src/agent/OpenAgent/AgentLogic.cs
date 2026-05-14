@@ -41,6 +41,9 @@ internal sealed class AgentLogic(
     public void AddMessage(string conversationId, Message message)
         => store.AddMessage(conversationId, message);
 
+    public void DeleteMessages(string conversationId, IReadOnlyList<string> messageIds)
+        => store.DeleteMessages(conversationId, messageIds);
+
     public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false)
         => store.GetMessages(conversationId, includeToolResultBlobs);
 

@@ -129,8 +129,10 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 conversation.ContextWindowTokens = window;
         }
 
-        // Persist the caller-supplied user message
+        // Persist the caller-supplied user message. Track every message ID written this
+        // turn so the whole turn can be discarded if the agent ends with the "[]" sentinel.
         agentLogic.AddMessage(conversationId, userMessage);
+        var turnMessageIds = new List<string> { userMessage.Id };
 
         // Build the initial message list and tools — system prompt is rebuilt per round
         var messages = BuildMessages(conversation);
@@ -311,9 +313,11 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                     }).ToList();
 
                 // Persist assistant message with tool calls
+                var toolCallMessageId = Guid.NewGuid().ToString();
+                turnMessageIds.Add(toolCallMessageId);
                 agentLogic.AddMessage(conversationId, new Message
                 {
-                    Id = Guid.NewGuid().ToString(),
+                    Id = toolCallMessageId,
                     ConversationId = conversationId,
                     Role = "assistant",
                     ToolCalls = JsonSerializer.Serialize(assembledToolCalls),
@@ -347,9 +351,11 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                     // Persist tool result: Content keeps the compact summary (for UI and
                     // backward compat), FullToolResult carries the raw output to disk via the
                     // store's blob writer. Next turn's BuildMessages loads the blob back.
+                    var toolResultMessageId = Guid.NewGuid().ToString();
+                    turnMessageIds.Add(toolResultMessageId);
                     agentLogic.AddMessage(conversationId, new Message
                     {
-                        Id = Guid.NewGuid().ToString(),
+                        Id = toolResultMessageId,
                         ConversationId = conversationId,
                         Role = "tool",
                         Content = ToolResultSummary.Create(name, result),
@@ -372,8 +378,26 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 continue; // Re-call the LLM with tool results
             }
 
-            // Final text response — persist with usage stats
+            // Final text response.
             stopwatch.Stop();
+
+            // "[]" sentinel — the agent has nothing to report. Discard the whole turn
+            // (user message + any tool rounds) so a periodic background check that finds
+            // nothing leaves no trace in history, and emit ResponseSuppressed so consumers
+            // skip delivery instead of sending the literal "[]".
+            if (fullContent.ToString().Trim() == "[]")
+            {
+                agentLogic.DeleteMessages(conversationId, turnMessageIds);
+                logger.LogInformation(
+                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed)",
+                    conversationId, turnMessageIds.Count);
+                if (toolCallsStarted)
+                    yield return new ThinkingStopped();
+                yield return new ResponseSuppressed();
+                yield break;
+            }
+
+            // Persist with usage stats
             var assistantMessageId = Guid.NewGuid().ToString();
             agentLogic.AddMessage(conversationId, new Message
             {

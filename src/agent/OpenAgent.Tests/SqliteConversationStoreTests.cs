@@ -99,6 +99,55 @@ public class SqliteConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public void DeleteMessages_removes_rows_and_tool_result_blobs()
+    {
+        _store.GetOrCreate("conv1", "test", "test-provider", "test-model", "test-provider", "test-model");
+
+        // A full turn: user prompt, an assistant tool-call, its tool result (with a blob),
+        // and a final assistant reply that should survive the delete.
+        _store.AddMessage("conv1", new Message { Id = "u1", ConversationId = "conv1", Role = "user", Content = "run the check" });
+        _store.AddMessage("conv1", new Message { Id = "a1", ConversationId = "conv1", Role = "assistant", ToolCalls = "[{\"id\":\"c1\"}]" });
+        _store.AddMessage("conv1", new Message
+        {
+            Id = "t1", ConversationId = "conv1", Role = "tool", Content = "stub",
+            FullToolResult = "the full tool output", ToolCallId = "c1"
+        });
+        _store.AddMessage("conv1", new Message { Id = "keep", ConversationId = "conv1", Role = "assistant", Content = "kept reply" });
+
+        var blobPath = Path.Combine(_dbDir, "conversations", "conv1", "tool-results", "t1.txt");
+        Assert.True(File.Exists(blobPath), "tool-result blob should exist before delete");
+
+        _store.DeleteMessages("conv1", ["u1", "a1", "t1"]);
+
+        var remaining = _store.GetMessages("conv1");
+        Assert.Single(remaining);
+        Assert.Equal("keep", remaining[0].Id);
+        Assert.False(File.Exists(blobPath), "tool-result blob should be deleted with its message");
+    }
+
+    [Fact]
+    public void DeleteMessages_with_empty_list_is_a_noop()
+    {
+        _store.GetOrCreate("conv1", "test", "test-provider", "test-model", "test-provider", "test-model");
+        _store.AddMessage("conv1", new Message { Id = "m1", ConversationId = "conv1", Role = "user", Content = "hi" });
+
+        _store.DeleteMessages("conv1", []);
+
+        Assert.Single(_store.GetMessages("conv1"));
+    }
+
+    [Fact]
+    public void DeleteMessages_ignores_unknown_ids()
+    {
+        _store.GetOrCreate("conv1", "test", "test-provider", "test-model", "test-provider", "test-model");
+        _store.AddMessage("conv1", new Message { Id = "m1", ConversationId = "conv1", Role = "user", Content = "hi" });
+
+        _store.DeleteMessages("conv1", ["does-not-exist", "m1"]);
+
+        Assert.Empty(_store.GetMessages("conv1"));
+    }
+
+    [Fact]
     public void GetMessages_returns_all_when_no_compaction()
     {
         _store.GetOrCreate("conv1", "test", "test-provider", "test-model", "test-provider", "test-model");

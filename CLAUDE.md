@@ -398,6 +398,15 @@ Replaced single `QrPayload`/`ICredentialStore` with `ServerConnection`/`IConnect
 - **Switching:** `OnSelectedConnectionChanged` calls `SetActiveAsync` then refreshes conversations. `ApiClient`/`VoiceWebSocketClient` call `LoadActiveAsync()` per request — switching is immediate.
 - **Delete active:** Store promotes `list[0]` as new active. If none remain, navigates to onboarding.
 
+### "[]" Suppression Sentinel (shipped 2026-05-14)
+When the agent emits exactly `[]` as its final text it means "nothing to report" — used by periodic background flows (scheduled tasks, webhooks) that check for something and this time found nothing. Suppression is now handled at the **provider level** for all three text providers, replacing three scattered post-hoc string checks that only skipped delivery.
+- **Provider behavior.** Each provider tracks every message ID it writes during a turn (`turnMessageIds`: user message + any tool-call/tool-result rounds). When the final text trims to `[]`, it calls `IAgentLogic.DeleteMessages` to discard the **whole turn** from history, skips persisting the assistant message and the conversation stat update, and emits a new `ResponseSuppressed` completion event instead of `AssistantMessageSaved`. A periodic check that finds nothing leaves zero trace.
+- **`DeleteMessages`.** New on `IConversationStore` / `SqliteConversationStore` (and `IAgentLogic` passthrough): `DeleteMessages(conversationId, IReadOnlyList<string> messageIds)` — parameterized `IN` delete of message rows plus their on-disk tool-result blobs (blob file name is the message ID). Idempotent; unknown IDs ignored.
+- **`ResponseSuppressed`.** New `CompletionEvent` subtype. Consumers: `ScheduledTaskExecutor` sets `ExecutionResult.Suppressed` so `ScheduledTaskService` skips `DeliveryRouter` (run still counts as `Success`); REST `ChatEndpoints` emits `{type:"response_suppressed"}`; WS text emits `TextWebSocketResponseSuppressed` so clients drop streamed text. Channels (Telegram/WhatsApp) ignore the event — their existing `[]` string checks still suppress delivery.
+- **Left as-is.** The `[]` string checks in `TelegramMessageHandler`, `WhatsAppMessageHandler`, `WebhookEndpoints` are now a redundant-but-harmless safety net (the provider already deleted the turn). Not removed — they touch the live Flex channel paths; candidate for a later low-risk cleanup.
+- **Scope.** Universal sentinel — applies to any conversation type, not just scheduled tasks (also covers a task bound to an existing channel conversation, whose `Source` isn't `scheduledtask`). The streamed `[]` text deltas are still yielded before `ResponseSuppressed`; consumers discard them.
+- `OpenAgent.ScheduledTasks` gained `InternalsVisibleTo` for `ScheduledTaskExecutorTests`.
+
 ### User Preferences
 - Prefers design discussions before implementation — brainstorm first, then plan, then build
 - Wants to be consulted on naming and architecture, not surprised

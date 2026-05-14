@@ -274,7 +274,14 @@ public sealed class ScheduledTaskService : IHostedService, IDisposable
         {
             // Execute and deliver OUTSIDE the lock
             var result = await _executor.ExecuteAsync(task, promptOverride, ct);
-            await _deliveryRouter.DeliverAsync(result.Conversation, result.Response, ct);
+
+            // "[]" sentinel — the agent had nothing to report this run. The turn was already
+            // discarded from history; skip delivery so a periodic check that finds nothing
+            // stays silent. The run still counts as a success.
+            if (result.Suppressed)
+                _logger.LogInformation("Task '{Name}' ({Id}) ran with nothing to report — delivery skipped", task.Name, task.Id);
+            else
+                await _deliveryRouter.DeliverAsync(result.Conversation, result.Response, ct);
 
             // Update state UNDER the lock
             await _lock.WaitAsync(ct);

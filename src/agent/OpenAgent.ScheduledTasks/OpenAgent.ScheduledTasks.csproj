@@ -12,4 +12,8 @@
     <ProjectReference Include="..\OpenAgent.Models\OpenAgent.Models.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenAgent.Tests" />
+  </ItemGroup>
+
 </Project>

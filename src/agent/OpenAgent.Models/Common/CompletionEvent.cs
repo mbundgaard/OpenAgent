@@ -38,3 +38,13 @@ public sealed record ThinkingStarted : CompletionEvent;
 /// the LLM is producing its final text response.
 /// </summary>
 public sealed record ThinkingStopped : CompletionEvent;
+
+/// <summary>
+/// The LLM produced the "[]" sentinel — it had nothing to report. The provider has
+/// discarded the entire turn (user message, any tool rounds, the final response) from
+/// conversation history; no assistant message was persisted. Consumers must not deliver
+/// anything for this turn, and should drop any text streamed before this event arrived.
+/// Used by periodic background flows (scheduled tasks, webhooks) that check for something
+/// and this time found nothing worth surfacing.
+/// </summary>
+public sealed record ResponseSuppressed : CompletionEvent;

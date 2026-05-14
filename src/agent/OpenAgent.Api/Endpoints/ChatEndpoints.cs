@@ -66,6 +66,7 @@ public static class ChatEndpoints
                     ToolResultEvent toolResult => new { type = "tool_result", toolResult.ToolCallId, toolResult.Name, toolResult.Result },
                     ThinkingStarted => new { type = "thinking_started" },
                     ThinkingStopped => new { type = "thinking_stopped" },
+                    ResponseSuppressed => new { type = "response_suppressed" },
                     _ => new { type = "unknown" } as object
                 });
             }

@@ -32,10 +32,12 @@ internal sealed class ScheduledTaskExecutor(
     ILogger<ScheduledTaskExecutor> logger)
 {
     /// <summary>
-    /// Result of executing a task: the conversation it ran in (needed for delivery routing)
-    /// and the assistant response text.
+    /// Result of executing a task: the conversation it ran in (needed for delivery routing),
+    /// the assistant response text, and whether the agent suppressed the turn via the "[]"
+    /// sentinel (nothing to report). When <paramref name="Suppressed"/> is true the turn has
+    /// already been discarded from history and there is nothing to deliver.
     /// </summary>
-    public readonly record struct ExecutionResult(Conversation Conversation, string Response);
+    public readonly record struct ExecutionResult(Conversation Conversation, string Response, bool Suppressed);
 
     /// <summary>
     /// Executes the task's prompt against its conversation (auto-creating one on first run).
@@ -79,17 +81,31 @@ internal sealed class ScheduledTaskExecutor(
         // Resolve the text provider and run completion
         var provider = textProviderResolver(conversation.TextProvider);
         var responseBuilder = new StringBuilder();
+        var suppressed = false;
 
         await foreach (var evt in provider.CompleteAsync(conversation, userMessage, ct))
         {
-            if (evt is TextDelta delta)
-                responseBuilder.Append(delta.Content);
+            switch (evt)
+            {
+                case TextDelta delta:
+                    responseBuilder.Append(delta.Content);
+                    break;
+                // "[]" sentinel — the provider has already discarded the turn from history.
+                // Nothing to deliver; the caller skips the delivery hop.
+                case ResponseSuppressed:
+                    suppressed = true;
+                    break;
+            }
         }
 
         var response = responseBuilder.ToString();
-        logger.LogInformation("Scheduled task '{Name}' ({Id}) completed. Response length: {Length}",
-            task.Name, task.Id, response.Length);
+        if (suppressed)
+            logger.LogInformation("Scheduled task '{Name}' ({Id}) completed with nothing to report — turn discarded",
+                task.Name, task.Id);
+        else
+            logger.LogInformation("Scheduled task '{Name}' ({Id}) completed. Response length: {Length}",
+                task.Name, task.Id, response.Length);
 
-        return new ExecutionResult(conversation, response);
+        return new ExecutionResult(conversation, response, suppressed);
     }
 }

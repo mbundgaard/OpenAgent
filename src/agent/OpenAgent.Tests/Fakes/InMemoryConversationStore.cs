@@ -154,6 +154,19 @@ public sealed class InMemoryConversationStore : IConversationStore
         _messages[conversationId].Add(withRowId);
     }
 
+    public void DeleteMessages(string conversationId, IReadOnlyList<string> messageIds)
+    {
+        if (messageIds.Count == 0) return;
+
+        var idSet = messageIds.ToHashSet();
+        if (_messages.TryGetValue(conversationId, out var messages))
+            messages.RemoveAll(m => idSet.Contains(m.Id));
+
+        // Mirror SqliteConversationStore: drop any blob entries for the removed messages.
+        foreach (var messageId in messageIds)
+            _toolResultBlobs.Remove((conversationId, messageId));
+    }
+
     public void UpdateChannelMessageId(string messageId, string channelMessageId)
     {
         foreach (var messages in _messages.Values)

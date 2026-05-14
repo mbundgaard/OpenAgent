@@ -21,6 +21,13 @@ public interface IAgentLogic
     void AddMessage(string conversationId, Message message);
 
     /// <summary>
+    /// Removes the given messages from the conversation history, including any on-disk
+    /// tool-result blobs. Providers use this to discard an entire turn when the agent
+    /// emits the "[]" sentinel (nothing to report).
+    /// </summary>
+    void DeleteMessages(string conversationId, IReadOnlyList<string> messageIds);
+
+    /// <summary>
     /// Returns the full message history for a conversation. When <paramref name="includeToolResultBlobs"/>
     /// is true, tool result messages include their full on-disk content via
     /// <see cref="Message.FullToolResult"/>; providers should pass true when building LLM requests.

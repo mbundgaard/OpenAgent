@@ -134,6 +134,9 @@ public static class WebSocketTextEndpoints
                     case ThinkingStopped:
                         await SendJsonAsync(ws, new TextWebSocketThinkingStopped(), ct);
                         break;
+                    case ResponseSuppressed:
+                        await SendJsonAsync(ws, new TextWebSocketResponseSuppressed(), ct);
+                        break;
                 }
             }
 

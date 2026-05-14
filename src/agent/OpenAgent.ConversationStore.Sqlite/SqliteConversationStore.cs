@@ -454,6 +454,30 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    public void DeleteMessages(string conversationId, IReadOnlyList<string> messageIds)
+    {
+        if (messageIds.Count == 0)
+            return;
+
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+
+        // Parameterized IN clause — never interpolate IDs into SQL.
+        var paramNames = messageIds.Select((_, i) => $"@id{i}").ToArray();
+        cmd.CommandText = $"DELETE FROM Messages WHERE ConversationId = @conversationId AND Id IN ({string.Join(", ", paramNames)})";
+        cmd.Parameters.AddWithValue("@conversationId", conversationId);
+        for (var i = 0; i < messageIds.Count; i++)
+            cmd.Parameters.AddWithValue(paramNames[i], messageIds[i]);
+        var deleted = cmd.ExecuteNonQuery();
+
+        // Drop any tool-result blobs the deleted messages referenced. The blob file name is
+        // the message ID, so we can delete by ID without first reading ToolResultRef.
+        foreach (var messageId in messageIds)
+            DeleteToolResultBlob(conversationId, messageId);
+
+        _logger.LogDebug("Deleted {Deleted} message(s) from conversation {ConversationId}", deleted, conversationId);
+    }
+
     public void UpdateChannelMessageId(string messageId, string channelMessageId)
     {
         using var connection = Open();
@@ -975,6 +999,26 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         {
             _logger.LogWarning(ex, "Failed to read tool result blob: {Path}", absolutePath);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Removes a single tool-result blob by message ID. The blob file is named
+    /// "{messageId}.txt" (see <see cref="SaveToolResultBlob"/>), so non-tool messages
+    /// and messages with no blob simply have no file — the delete is a silent no-op.
+    /// </summary>
+    private void DeleteToolResultBlob(string conversationId, string messageId)
+    {
+        var path = Path.Combine(_dataPath, "conversations", conversationId, "tool-results", $"{messageId}.txt");
+        if (!File.Exists(path)) return;
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete tool result blob: {Path}", path);
         }
     }
 

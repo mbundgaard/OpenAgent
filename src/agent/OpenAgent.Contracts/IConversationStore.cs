@@ -69,6 +69,13 @@ public interface IConversationStore : IConfigurable
     /// <summary>Persists a message in the given conversation.</summary>
     void AddMessage(string conversationId, Message message);
 
+    /// <summary>
+    /// Removes the given messages from a conversation, including any on-disk tool-result
+    /// blobs they reference. Used to discard an entire turn when the agent emits the "[]"
+    /// sentinel (nothing to report). Idempotent — unknown IDs are ignored.
+    /// </summary>
+    void DeleteMessages(string conversationId, IReadOnlyList<string> messageIds);
+
     /// <summary>Updates the channel message ID on an existing message.</summary>
     void UpdateChannelMessageId(string messageId, string channelMessageId);
 

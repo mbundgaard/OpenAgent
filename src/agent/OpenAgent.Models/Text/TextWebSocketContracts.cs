@@ -85,3 +85,14 @@ public sealed class TextWebSocketThinkingStopped
     [JsonPropertyName("type")]
     public string Type { get; init; } = "thinking_stopped";
 }
+
+/// <summary>
+/// Outbound text WebSocket response-suppressed payload — the agent emitted the "[]" sentinel
+/// (nothing to report). The turn was discarded from history; the client should drop any text
+/// streamed this turn and not render an assistant message.
+/// </summary>
+public sealed class TextWebSocketResponseSuppressed
+{
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "response_suppressed";
+}

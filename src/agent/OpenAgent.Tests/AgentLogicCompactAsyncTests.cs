@@ -68,6 +68,7 @@ public class AgentLogicCompactAsyncTests
         public void UpdateDisplayName(string conversationId, string? displayName) => throw new NotImplementedException();
         public bool Delete(string conversationId) => throw new NotImplementedException();
         public void AddMessage(string conversationId, Message message) => throw new NotImplementedException();
+        public void DeleteMessages(string conversationId, IReadOnlyList<string> messageIds) => throw new NotImplementedException();
         public void UpdateChannelMessageId(string messageId, string channelMessageId) => throw new NotImplementedException();
         public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false) => throw new NotImplementedException();
         public IReadOnlyList<Message> GetMessagesByIds(IReadOnlyList<string> messageIds, bool includeToolResultBlobs = false) => throw new NotImplementedException();
@@ -81,6 +82,7 @@ public class AgentLogicCompactAsyncTests
         public IReadOnlyList<AgentToolDefinition> Tools => [];
         public Task<string> ExecuteToolAsync(string conversationId, string name, string arguments, CancellationToken ct = default) => Task.FromResult("");
         public void AddMessage(string conversationId, Message message) => store.AddMessage(conversationId, message);
+        public void DeleteMessages(string conversationId, IReadOnlyList<string> messageIds) => store.DeleteMessages(conversationId, messageIds);
         public IReadOnlyList<Message> GetMessages(string conversationId, bool includeToolResultBlobs = false) => store.GetMessages(conversationId, includeToolResultBlobs);
         public Conversation? GetConversation(string conversationId) => store.Get(conversationId);
         public void UpdateConversation(Conversation conversation) => store.Update(conversation);
