@@ -20,6 +20,7 @@ using OpenAgent.Security.ApiKey;
 using OpenAgent.Embedding.OnnxBge;
 using OpenAgent.Embedding.OnnxMultilingualE5;
 using OpenAgent.MemoryIndex;
+using OpenAgent.MemoryDigest;
 using OpenAgent.Tools.Expand;
 using OpenAgent.Tools.FileSystem;
 using OpenAgent.Terminal;
@@ -163,6 +164,8 @@ builder.Services.AddKeyedSingleton<IEmbeddingProvider>(OnnxBgeEmbeddingProvider.
 builder.Services.AddSingleton<Func<string, IEmbeddingProvider>>(sp =>
     key => sp.GetRequiredKeyedService<IEmbeddingProvider>(key));
 builder.Services.AddMemoryIndex();
+builder.Services.AddMemoryDigest();
+builder.Services.AddSystemJobs(environment.DataPath);
 
 builder.Services.AddSingleton(new CompactionConfig());
 

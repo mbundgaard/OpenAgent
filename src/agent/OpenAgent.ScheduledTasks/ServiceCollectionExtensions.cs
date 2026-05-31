@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
 using OpenAgent.ScheduledTasks.Storage;
+using OpenAgent.ScheduledTasks.SystemJobs;
 
 namespace OpenAgent.ScheduledTasks;
 
@@ -38,6 +39,20 @@ public static class ServiceCollectionExtensions
         services.AddHostedService(sp => sp.GetRequiredService<ScheduledTaskService>());
         services.AddSingleton<IToolHandler, ScheduledTaskToolHandler>();
 
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the <see cref="SystemJobRunner"/> hosted service. <see cref="ISystemJob"/>
+    /// implementations registered separately on the container are picked up automatically via
+    /// <c>IEnumerable&lt;ISystemJob&gt;</c>.
+    /// </summary>
+    public static IServiceCollection AddSystemJobs(this IServiceCollection services, string dataPath)
+    {
+        var statePath = Path.Combine(dataPath, "config", "system-jobs.json");
+        services.AddSingleton(new SystemJobStateStore(statePath));
+        services.AddSingleton<SystemJobRunner>();
+        services.AddHostedService(sp => sp.GetRequiredService<SystemJobRunner>());
         return services;
     }
 }
