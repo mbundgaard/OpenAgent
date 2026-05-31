@@ -28,10 +28,19 @@ if (Test-Path $publishDir) {
 }
 
 # Step 2: build the React app
+# Vite prints warnings to stderr; under PS 5.1 with $ErrorActionPreference=Stop, any native-command
+# stderr is treated as a fatal NativeCommandError and aborts the script. Scope ErrorAction to
+# Continue around the npm call and check $LASTEXITCODE explicitly.
 Write-Host "Building React app (src/web)..." -ForegroundColor Cyan
 Push-Location $webDir
 try {
-    npm run build
+    $prevErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        npm run build
+    } finally {
+        $ErrorActionPreference = $prevErrorAction
+    }
     if ($LASTEXITCODE -ne 0) { throw "npm run build failed (exit $LASTEXITCODE)" }
 } finally {
     Pop-Location
