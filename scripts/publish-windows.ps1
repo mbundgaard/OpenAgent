@@ -55,11 +55,27 @@ Write-Host "Zipping React build into wwwroot.zip..." -ForegroundColor Cyan
 if (Test-Path $wwwrootZip) { Remove-Item $wwwrootZip -Force }
 Compress-Archive -Path "$webDist\*" -DestinationPath $wwwrootZip -CompressionLevel Optimal
 
-# Step 4: publish self-contained single-file exe (wwwroot.zip embedded as resource, extracted at startup)
+# Step 4: locate a dotnet with an SDK. PATH can point at a runtime-only install
+# (e.g. C:\Program Files\dotnet with shared runtimes but no SDK) while the SDK
+# lives at the user-local %USERPROFILE%\.dotnet. Probe the active dotnet first;
+# if it has no SDKs, fall back to the user-local one.
+$dotnet = 'dotnet'
+$sdkList = & $dotnet --list-sdks 2>$null
+if (-not $sdkList) {
+    $userLocal = Join-Path $env:USERPROFILE '.dotnet\dotnet.exe'
+    if ((Test-Path $userLocal) -and (& $userLocal --list-sdks 2>$null)) {
+        $dotnet = $userLocal
+        Write-Host "Active 'dotnet' has no SDKs - using user-local install: $userLocal" -ForegroundColor Yellow
+    } else {
+        throw "No .NET SDK found. Install one from https://aka.ms/dotnet/download or ensure dotnet with SDKs is on PATH."
+    }
+}
+
+# Step 5: publish self-contained single-file exe (wwwroot.zip embedded as resource, extracted at startup)
 Write-Host "Publishing OpenAgent.exe (self-contained, single-file, win-x64)..." -ForegroundColor Cyan
 Push-Location $projectDir
 try {
-    dotnet publish -c Release -r win-x64 --self-contained `
+    & $dotnet publish -c Release -r win-x64 --self-contained `
         -p:PublishSingleFile=true `
         -p:IncludeNativeLibrariesForSelfExtract=true `
         -o $publishDir
@@ -68,7 +84,7 @@ try {
     Pop-Location
 }
 
-# Step 5: summary
+# Step 6: summary
 $exePath = Join-Path $publishDir 'OpenAgent.exe'
 $exeSize = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
 
