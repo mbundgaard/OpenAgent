@@ -24,4 +24,13 @@ public interface ISystemJob
     /// at-least-once delivery but a clean restart can re-fire a run that was already in flight.
     /// </summary>
     Task RunAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Optional pre-flight gate. Called by <c>SystemJobRunner</c> when the cron says it's time —
+    /// returning false skips both execution AND state updates (so <c>LastRunAt</c> does not move
+    /// and the gate is re-checked on the next tick). Useful for jobs that need to evaluate runtime
+    /// conditions beyond the cron expression (e.g. "skip unless the user has been idle for 45min").
+    /// Default returns true — the job runs whenever the cron fires.
+    /// </summary>
+    Task<bool> ShouldRunAsync(CancellationToken ct) => Task.FromResult(true);
 }

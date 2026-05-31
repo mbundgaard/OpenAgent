@@ -111,6 +111,27 @@ public sealed class SystemJobRunner : IHostedService, IDisposable
     /// </summary>
     public async Task ExecuteAsync(ISystemJob job, CancellationToken ct)
     {
+        // Pre-flight gate. A false return short-circuits this tick entirely — no execution,
+        // no state mutation — so the gate condition (e.g. "user idle long enough") is checked
+        // again on the next cron fire. Updating LastRunAt here would reset interval-based
+        // gates that watch the last-run timestamp.
+        bool shouldRun;
+        try
+        {
+            shouldRun = await job.ShouldRunAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "System job '{Name}' ShouldRunAsync threw; treating as skip", job.Name);
+            return;
+        }
+
+        if (!shouldRun)
+        {
+            _logger.LogDebug("System job '{Name}' gated out — skipping this tick", job.Name);
+            return;
+        }
+
         _logger.LogInformation("System job '{Name}' starting", job.Name);
         var startedAt = DateTimeOffset.UtcNow;
 

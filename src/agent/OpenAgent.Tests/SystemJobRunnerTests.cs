@@ -111,6 +111,78 @@ public class SystemJobRunnerTests : IDisposable
         Assert.NotNull(state.LastRunAt);
     }
 
+    [Fact]
+    public async Task ShouldRunAsync_false_skips_execution_and_leaves_state_untouched()
+    {
+        var job = new GatedJob("gated", "0 * * * *", "UTC") { Allow = false };
+        var runner = BuildRunner(job);
+        await runner.StartAsync(CancellationToken.None);
+
+        var seededNext = runner.GetState("gated")!.NextRunAt;
+        await runner.ExecuteAsync(job, CancellationToken.None);
+        await runner.StopAsync(CancellationToken.None);
+
+        var state = runner.GetState("gated")!;
+        Assert.Equal(0, job.RunCount);
+        Assert.Null(state.LastRunAt);
+        Assert.Null(state.LastStatus);
+        Assert.Equal(seededNext, state.NextRunAt); // NextRunAt must NOT advance
+    }
+
+    [Fact]
+    public async Task ShouldRunAsync_true_runs_normally()
+    {
+        var job = new GatedJob("opened", "0 * * * *", "UTC") { Allow = true };
+        var runner = BuildRunner(job);
+        await runner.StartAsync(CancellationToken.None);
+
+        await runner.ExecuteAsync(job, CancellationToken.None);
+        await runner.StopAsync(CancellationToken.None);
+
+        Assert.Equal(1, job.RunCount);
+        var state = runner.GetState("opened")!;
+        Assert.Equal("success", state.LastStatus);
+    }
+
+    [Fact]
+    public async Task ShouldRunAsync_throwing_is_treated_as_skip()
+    {
+        var job = new GatedJob("throwing", "0 * * * *", "UTC") { ThrowOnGate = true };
+        var runner = BuildRunner(job);
+        await runner.StartAsync(CancellationToken.None);
+
+        await runner.ExecuteAsync(job, CancellationToken.None);
+        await runner.StopAsync(CancellationToken.None);
+
+        Assert.Equal(0, job.RunCount);
+        var state = runner.GetState("throwing")!;
+        Assert.Null(state.LastRunAt);
+    }
+
+    private sealed class GatedJob : ISystemJob
+    {
+        public GatedJob(string name, string cron, string tz)
+        {
+            Name = name; Cron = cron; Timezone = tz;
+        }
+        public string Name { get; }
+        public string Cron { get; }
+        public string Timezone { get; }
+        public bool Allow { get; set; }
+        public bool ThrowOnGate { get; set; }
+        public int RunCount { get; private set; }
+        public Task<bool> ShouldRunAsync(CancellationToken ct)
+        {
+            if (ThrowOnGate) throw new InvalidOperationException("gate failed");
+            return Task.FromResult(Allow);
+        }
+        public Task RunAsync(CancellationToken ct)
+        {
+            RunCount++;
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FakeJob : ISystemJob
     {
         public FakeJob(string name, string cron, string tz)
