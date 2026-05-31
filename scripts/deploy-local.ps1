@@ -11,7 +11,7 @@
       4. Probe /health to confirm the new build is live.
 
     Expects OpenAgent.exe.new to already be staged in $InstallDir (publish-windows.ps1
-    output copied there). Must run elevated — service control is Administrators-only.
+    output copied there). Must run elevated -- service control is Administrators-only.
     On a failed start it rolls the previous exe back automatically.
 #>
 param(
@@ -22,7 +22,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Elevation gate — Stop/Start-Service on this service requires Administrators.
+# Elevation gate -- Stop/Start-Service on this service requires Administrators.
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltinRole]::Administrator)
 if (-not $isAdmin) { throw "Must run elevated (Administrator)." }
@@ -33,12 +33,12 @@ $backup = Join-Path $InstallDir ("OpenAgent.exe.bak-{0}" -f (Get-Date -Format 'y
 
 if (-not (Test-Path $staged)) { throw "Staged build not found: $staged" }
 
-# Step 1: stop the service — Stop-Service blocks until Stopped.
+# Step 1: stop the service -- Stop-Service blocks until Stopped.
 Write-Host "Stopping $ServiceName..." -ForegroundColor Cyan
 Stop-Service $ServiceName
 (Get-Service $ServiceName).WaitForStatus('Stopped', '00:00:30')
 
-# Step 2: back up current exe, then swap. Retry the swap briefly — the OS can hold
+# Step 2: back up current exe, then swap. Retry the swap briefly -- the OS can hold
 # the image handle for a moment after the process exits.
 Write-Host "Backing up current exe -> $backup" -ForegroundColor Cyan
 Copy-Item $exe $backup -Force
@@ -70,15 +70,15 @@ foreach ($attempt in 1..15) {
 }
 
 if (-not $healthy) {
-    Write-Host "Health check failed — rolling back to previous exe." -ForegroundColor Red
+    Write-Host "Health check failed -- rolling back to previous exe." -ForegroundColor Red
     Stop-Service $ServiceName
     (Get-Service $ServiceName).WaitForStatus('Stopped', '00:00:30')
     Copy-Item $backup $exe -Force
     Start-Service $ServiceName
     (Get-Service $ServiceName).WaitForStatus('Running', '00:00:30')
-    throw "Deploy rolled back. Service is Running on the previous build ($backup kept)."
+    throw "Deploy rolled back. Service is Running on the previous build. Backup kept at $backup."
 }
 
 Write-Host ""
-Write-Host "Deploy complete — $ServiceName is Running and healthy." -ForegroundColor Green
+Write-Host "Deploy complete -- $ServiceName is Running and healthy." -ForegroundColor Green
 Write-Host "  Backup kept: $backup"
