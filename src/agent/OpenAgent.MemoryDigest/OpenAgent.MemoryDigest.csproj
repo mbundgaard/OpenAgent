@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenAgent.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAgent.Contracts\OpenAgent.Contracts.csproj" />
+    <ProjectReference Include="..\OpenAgent.Models\OpenAgent.Models.csproj" />
+  </ItemGroup>
+
+</Project>
