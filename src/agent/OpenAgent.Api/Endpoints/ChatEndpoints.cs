@@ -59,6 +59,12 @@ public static class ChatEndpoints
             var events = new List<object>();
             await foreach (var evt in textProvider.CompleteAsync(conversation, userMessage, ct))
             {
+                // AssistantMessageSaved is an internal channel-association signal (carries the
+                // persisted message ID for channel providers), not app-facing output. The WebSocket
+                // endpoint already skips it; mirror that here so it never surfaces as "unknown".
+                if (evt is AssistantMessageSaved)
+                    continue;
+
                 events.Add(evt switch
                 {
                     TextDelta delta => new { type = "text", delta.Content },

@@ -156,6 +156,62 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal("text", events[4].GetProperty("type").GetString());
     }
 
+    [Fact]
+    public async Task SendMessage_AssistantMessageSaved_IsNotSurfacedAsUnknown()
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll(typeof(ILlmTextProvider));
+                var fake = new FakeMessageSavedTextProvider();
+                services.AddKeyedSingleton<ILlmTextProvider>("azure-openai-text", fake);
+                services.AddSingleton<ILlmTextProvider>(fake);
+            });
+        });
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+        var conversationId = Guid.NewGuid().ToString();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/messages",
+            new { Content = "hello" });
+
+        response.EnsureSuccessStatusCode();
+        var events = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        Assert.NotNull(events);
+        // AssistantMessageSaved is an internal channel-association signal — it must not surface
+        // to app/REST consumers (neither as "unknown" nor at all). Only the text event remains.
+        Assert.DoesNotContain(events, e => e.GetProperty("type").GetString() == "unknown");
+        Assert.Single(events);
+        Assert.Equal("text", events[0].GetProperty("type").GetString());
+    }
+
+    private sealed class FakeMessageSavedTextProvider : ILlmTextProvider
+    {
+        public string Key => "text-provider";
+        public IReadOnlyList<ProviderConfigField> ConfigFields => [];
+        public void Configure(JsonElement configuration) { }
+        public int? GetContextWindow(string model) => null;
+
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new TextDelta("hi");
+            yield return new AssistantMessageSaved("msg-123");
+            await Task.CompletedTask;
+        }
+
+        public async IAsyncEnumerable<CompletionEvent> CompleteAsync(IReadOnlyList<Message> messages, string model,
+            CompletionOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new TextDelta("raw");
+            await Task.CompletedTask;
+        }
+    }
+
     private sealed class FakeTextProvider : ILlmTextProvider
     {
         public string Key => "text-provider";
