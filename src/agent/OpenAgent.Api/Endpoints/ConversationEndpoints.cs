@@ -116,6 +116,9 @@ public static class ConversationEndpoints
                     url = $"/api/conversations/{conversation.Id}/messages",
                     auth = "X-Api-Key header",
                     body = new { content = "your message to the agent" },
+                    encoding = "Send the body as UTF-8. Escape non-ASCII as \\uXXXX or post raw UTF-8 bytes; " +
+                               "a literal em-dash or curly quote sent via a Windows shell's `curl -d` becomes invalid " +
+                               "UTF-8 and is rejected with 400.",
                     response = "JSON array of completion events; concatenate the content of every {\"type\":\"text\"} event to get the agent's reply"
                 }
             });

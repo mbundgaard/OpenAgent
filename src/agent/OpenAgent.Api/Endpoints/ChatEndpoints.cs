@@ -30,12 +30,30 @@ public static class ChatEndpoints
     {
         app.MapPost("/api/conversations/{conversationId}/messages", async (
             string conversationId,
-            ChatRequest request,
+            HttpRequest httpRequest,
             IConversationStore store,
             AgentConfig agentConfig,
             IServiceProvider services,
             CancellationToken ct) =>
         {
+            // Parse the body explicitly so a malformed request (most commonly a non-ASCII
+            // character sent as a legacy code page instead of UTF-8 — e.g. a Windows shell
+            // passing an em-dash via `curl -d`) returns an actionable message instead of the
+            // empty 400 body the framework emits in Production.
+            ChatRequest? request;
+            try
+            {
+                request = await httpRequest.ReadFromJsonAsync<ChatRequest>(ct);
+            }
+            catch (Exception ex) when (ex is JsonException or BadHttpRequestException)
+            {
+                return Results.Problem(
+                    detail: "Request body must be UTF-8 encoded JSON, e.g. {\"content\":\"...\"}. " +
+                            "Send non-ASCII characters as UTF-8 (escape them as \\uXXXX or post raw " +
+                            "UTF-8 bytes), not a legacy code page such as Windows-1252.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var conversation = store.GetOrCreate(conversationId, "app",
                 agentConfig.TextProvider, agentConfig.TextModel,
                 agentConfig.VoiceProvider, agentConfig.VoiceModel);
