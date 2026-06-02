@@ -125,5 +125,56 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
             "mention_filter should be omitted when null (JsonIgnoreWhenWritingNull)");
     }
 
+    [Fact]
+    public async Task GetGuide_NotFound_Returns404()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+
+        var response = await client.GetAsync("/api/conversations/does-not-exist/guide");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetGuide_Exists_ReturnsIntentionAndUsage()
+    {
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", "test-provider", "test-model", "test-provider", "test-model");
+        conversation.Intention = "I log time via Paymo. Tell me hours, project, and date.";
+        store.Update(conversation);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+
+        var response = await client.GetAsync($"/api/conversations/{conversation.Id}/guide");
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(conversation.Id, body.GetProperty("conversation_id").GetString());
+        Assert.Equal("I log time via Paymo. Tell me hours, project, and date.", body.GetProperty("intention").GetString());
+        // usage block tells the caller how to post a message
+        var usage = body.GetProperty("usage");
+        Assert.Equal("POST", usage.GetProperty("method").GetString());
+        Assert.Equal($"/api/conversations/{conversation.Id}/messages", usage.GetProperty("url").GetString());
+    }
+
+    [Fact]
+    public async Task GetGuide_NoIntention_ReturnsNullIntention()
+    {
+        var store = _factory.Services.GetRequiredService<IConversationStore>();
+        var conversation = store.GetOrCreate(Guid.NewGuid().ToString(), "app", "test-provider", "test-model", "test-provider", "test-model");
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+
+        var response = await client.GetAsync($"/api/conversations/{conversation.Id}/guide");
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(conversation.Id, body.GetProperty("conversation_id").GetString());
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("intention").ValueKind);
+    }
+
     private record ConversationResponse(string Id);
 }

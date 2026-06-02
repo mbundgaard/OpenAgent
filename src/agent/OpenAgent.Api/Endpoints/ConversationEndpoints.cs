@@ -98,6 +98,29 @@ public static class ConversationEndpoints
             return Results.Ok(messages);
         });
 
+        group.MapGet("/{conversationId}/guide", (string conversationId, IConversationStore store) =>
+        {
+            var conversation = store.Get(conversationId);
+            if (conversation is null)
+                return Results.NotFound();
+
+            // Self-describing: the conversation's intention is the "skill", paired with
+            // constant instructions for how to post a message to it.
+            return Results.Ok(new
+            {
+                conversation_id = conversation.Id,
+                intention = conversation.Intention,
+                usage = new
+                {
+                    method = "POST",
+                    url = $"/api/conversations/{conversation.Id}/messages",
+                    auth = "X-Api-Key header",
+                    body = new { content = "your message to the agent" },
+                    response = "JSON array of completion events; concatenate the content of every {\"type\":\"text\"} event to get the agent's reply"
+                }
+            });
+        });
+
         group.MapPatch("/{conversationId}", (string conversationId, UpdateConversationRequest request, IConversationStore store) =>
         {
             var conversation = store.Get(conversationId);

@@ -513,3 +513,6 @@ src/app/**/*.user
 *.mobileprovision
 *.p8
 *.b64
+
+# Local data backups
+.backup/
