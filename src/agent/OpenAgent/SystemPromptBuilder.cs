@@ -19,17 +19,27 @@ internal sealed class SystemPromptBuilder
     private readonly AgentConfig _agentConfig;
     private readonly Dictionary<string, string> _files = new();
 
-    // Prompt files. VoiceOnly = true means the file is included only for voice sessions.
-    private static readonly (string FilePath, bool VoiceOnly)[] FileMap =
+    // Prompt files. Mode filters control which files are included for which conversation mode.
+    // Default mode (Always) means the file is included in every prompt; VoiceOnly / BackgroundOnly
+    // select files that only apply to specific source/modality combinations.
+    private static readonly (string FilePath, PromptFileMode Mode)[] FileMap =
     [
-        ("AGENTS.md",   false),
-        ("SOUL.md",     false),
-        ("IDENTITY.md", false),
-        ("USER.md",     false),
-        ("TOOLS.md",    false),
-        ("MEMORY.md",   false),
-        ("VOICE.md",    true),
+        ("AGENTS.md",     PromptFileMode.Always),
+        ("SOUL.md",       PromptFileMode.Always),
+        ("IDENTITY.md",   PromptFileMode.Always),
+        ("USER.md",       PromptFileMode.Always),
+        ("TOOLS.md",      PromptFileMode.Always),
+        ("MEMORY.md",     PromptFileMode.Always),
+        ("VOICE.md",      PromptFileMode.VoiceOnly),
+        ("BACKGROUND.md", PromptFileMode.BackgroundOnly),
     ];
+
+    private enum PromptFileMode
+    {
+        Always,
+        VoiceOnly,
+        BackgroundOnly
+    }
 
     public SystemPromptBuilder(AgentEnvironment environment, SkillCatalog skillCatalog, AgentConfig agentConfig, ILogger<SystemPromptBuilder> logger)
     {
@@ -54,15 +64,19 @@ internal sealed class SystemPromptBuilder
     /// <summary>
     /// Builds the system prompt for the given conversation by concatenating the relevant
     /// files in order, separated by blank lines. <paramref name="voice"/> selects whether
-    /// voice-only files (e.g. VOICE.md) are included.
+    /// voice-only files (e.g. VOICE.md) are included. <paramref name="source"/> selects
+    /// source-specific files (e.g. BACKGROUND.md when <c>source == "background"</c>).
     /// </summary>
-    public string Build(string conversationId, bool voice, IReadOnlyList<string>? activeSkills = null, string? intention = null)
+    public string Build(string conversationId, bool voice, IReadOnlyList<string>? activeSkills = null, string? intention = null, string? source = null)
     {
+        var isBackground = string.Equals(source, "background", StringComparison.OrdinalIgnoreCase);
         var sections = new List<string>();
 
-        foreach (var (filePath, voiceOnly) in FileMap)
+        foreach (var (filePath, mode) in FileMap)
         {
-            if (voiceOnly && !voice)
+            if (mode == PromptFileMode.VoiceOnly && !voice)
+                continue;
+            if (mode == PromptFileMode.BackgroundOnly && !isBackground)
                 continue;
 
             if (_files.TryGetValue(filePath, out var content))
