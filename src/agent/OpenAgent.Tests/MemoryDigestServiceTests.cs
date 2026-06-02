@@ -255,6 +255,7 @@ internal sealed class CapturingTextProvider : ILlmTextProvider
         OpenAgent.Models.Conversations.Message userMessage,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
+        LastUserContent = userMessage.Content;
         yield return new OpenAgent.Models.Common.TextDelta(_response);
         await Task.Yield();
     }
