@@ -310,6 +310,7 @@ app.MapWhatsAppEndpoints();
 app.MapScheduledTaskEndpoints();
 app.MapToolEndpoints();
 app.MapMemoryIndexEndpoints();
+app.MapBackgroundAgentEndpoints();
 
 // SPA fallback — serve index.html for unmatched routes (client-side routing)
 app.MapFallbackToFile("index.html");
