@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Common;
 using OpenAgent.Models.Conversations;
 
 namespace OpenAgent;
@@ -34,7 +35,16 @@ internal sealed class AgentLogic(
         }
 
         logger.LogDebug("Executing tool {ToolName} for conversation {ConversationId}", name, conversationId);
-        return await tool.ExecuteAsync(arguments, conversationId, ct);
+        var result = await tool.ExecuteAsync(arguments, conversationId, ct);
+
+        // Cap oversized output before it enters history / the LLM context. An unbounded
+        // tool result can exceed the context window and wedge the conversation beyond
+        // compaction's reach, so truncate with a notice that tells the agent to narrow.
+        if (result is { Length: > ToolOutputCap.DefaultMaxChars })
+            logger.LogWarning("Tool {ToolName} output {Length} chars exceeds cap {Cap}, truncating; conversation {ConversationId}",
+                name, result.Length, ToolOutputCap.DefaultMaxChars, conversationId);
+
+        return ToolOutputCap.Apply(result);
     }
 
     public void AddMessage(string conversationId, Message message)
