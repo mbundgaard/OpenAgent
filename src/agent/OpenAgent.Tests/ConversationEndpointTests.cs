@@ -157,6 +157,8 @@ public class ConversationEndpointTests : IClassFixture<WebApplicationFactory<Pro
         var usage = body.GetProperty("usage");
         Assert.Equal("POST", usage.GetProperty("method").GetString());
         Assert.Equal($"/api/conversations/{conversation.Id}/messages", usage.GetProperty("url").GetString());
+        // and warns clients to send UTF-8 so non-ASCII characters don't 400
+        Assert.Contains("UTF-8", usage.GetProperty("encoding").GetString());
     }
 
     [Fact]

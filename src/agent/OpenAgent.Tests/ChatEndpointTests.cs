@@ -212,6 +212,31 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         }
     }
 
+    [Fact]
+    public async Task SendMessage_InvalidUtf8Body_Returns400WithHelpfulMessage()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "dev-api-key-change-me");
+        var conversationId = Guid.NewGuid().ToString();
+
+        // {"content":"<0x97>"} — 0x97 is a lone CP-1252 byte, invalid UTF-8. This is what
+        // a Windows shell produces when a literal em-dash is passed via `curl -d`.
+        var invalidUtf8 = new byte[]
+        {
+            0x7B, 0x22, 0x63, 0x6F, 0x6E, 0x74, 0x65, 0x6E, 0x74, 0x22, 0x3A, 0x22, 0x97, 0x22, 0x7D
+        };
+        var content = new ByteArrayContent(invalidUtf8);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var response = await client.PostAsync($"/api/conversations/{conversationId}/messages", content);
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        // The client must get an actionable, environment-independent message — not the empty
+        // body production emits by default. Assert the specific phrase our handler produces.
+        Assert.Contains("body must be UTF-8 encoded JSON", body);
+    }
+
     private sealed class FakeTextProvider : ILlmTextProvider
     {
         public string Key => "text-provider";
