@@ -59,6 +59,15 @@ public sealed class BackgroundAgentRunner
     /// </summary>
     public Task<bool> ShouldRunAsync(DateTimeOffset now)
     {
+        // Master switch — when the autonomous flow is disabled in agent.json the scheduled tick
+        // skips silently. Per-conversation proactivity is handled by scheduled tasks instead.
+        // Manual /api/background-agent/run still works; it doesn't consult this gate.
+        if (!_agentConfig.BackgroundAgentEnabled)
+        {
+            _logger.LogDebug("Background agent gated: AgentConfig.BackgroundAgentEnabled is false");
+            return Task.FromResult(false);
+        }
+
         if (string.IsNullOrWhiteSpace(_agentConfig.MainConversationId))
         {
             _logger.LogDebug("Background agent gated: AgentConfig.MainConversationId is not set");

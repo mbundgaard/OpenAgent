@@ -70,6 +70,16 @@ public sealed class AgentConfig
     public string EmbeddingModel { get; set; } = "multilingual-e5-base";
 
     /// <summary>
+    /// Master switch for the autonomous background agent (system job + scheduled ticks).
+    /// Default is false: the job stays registered for DI but <c>ShouldRunAsync</c> short-circuits,
+    /// so no autonomous turns fire. The manual <c>POST /api/background-agent/run</c> endpoint
+    /// still works regardless — it bypasses gating by design. Per-conversation proactivity is
+    /// covered by the scheduled-task system instead.
+    /// </summary>
+    [JsonPropertyName("backgroundAgentEnabled")]
+    public bool BackgroundAgentEnabled { get; set; } = false;
+
+    /// <summary>
     /// Safety cap on tool-call rounds within a single LLM completion. Each round is one
     /// LLM call followed by zero or more tool executions. The cap prevents runaway loops
     /// when an LLM keeps requesting tools without converging on a final answer; legitimate

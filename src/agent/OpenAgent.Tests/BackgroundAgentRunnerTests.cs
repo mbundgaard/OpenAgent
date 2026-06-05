@@ -33,6 +33,7 @@ public class BackgroundAgentRunnerTests : IDisposable
 
         var config = new AgentConfig
         {
+            BackgroundAgentEnabled = true,
             MainConversationId = mainId,
             TextProvider = "fake",
             TextModel = "m"
@@ -46,6 +47,14 @@ public class BackgroundAgentRunnerTests : IDisposable
             store, factory, environment, config, jobStore,
             NullLogger<BackgroundAgentRunner>.Instance);
         return (runner, store, config, jobStore);
+    }
+
+    [Fact]
+    public async Task ShouldRun_false_when_master_switch_disabled()
+    {
+        var (runner, _, config, _) = Build();
+        config.BackgroundAgentEnabled = false;
+        Assert.False(await runner.ShouldRunAsync(DateTimeOffset.UtcNow));
     }
 
     [Fact]
