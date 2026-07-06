@@ -25,7 +25,8 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
         new() { Key = "mainConversationId", Label = "Main Conversation", Type = "String", Required = false },
         new() { Key = "embeddingProvider", Label = "Embedding Provider", Type = "String", Required = false },
         new() { Key = "embeddingModel", Label = "Embedding Model", Type = "String", Required = false },
-        new() { Key = "maxToolRounds", Label = "Max Tool Rounds", Type = "String", Required = false }
+        new() { Key = "maxToolRounds", Label = "Max Tool Rounds", Type = "String", Required = false },
+        new() { Key = "backgroundAgentEnabled", Label = "Background Agent Enabled", Type = "Enum", Required = false, DefaultValue = "false", Options = ["false", "true"] }
     ];
 
     public void Configure(JsonElement configuration)
@@ -70,6 +71,14 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
                 agentConfig.MaxToolRounds = mtrInt;
             else if (mtr.ValueKind == JsonValueKind.Number)
                 agentConfig.MaxToolRounds = mtr.GetInt32();
+        }
+        if (configuration.TryGetProperty("backgroundAgentEnabled", out var bae))
+        {
+            // Accept both a JSON bool and a "true"/"false" string — the admin UI sends strings
+            if (bae.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                agentConfig.BackgroundAgentEnabled = bae.GetBoolean();
+            else if (bae.ValueKind == JsonValueKind.String && bool.TryParse(bae.GetString(), out var baeBool))
+                agentConfig.BackgroundAgentEnabled = baeBool;
         }
     }
 }
