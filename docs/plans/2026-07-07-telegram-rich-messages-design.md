@@ -44,9 +44,21 @@ class InputRichMessage {            // the `rich_message` payload
 - Any expressive-only vocabulary + teaching (skill / system-prompt primer). The agent authors nothing new.
 - Parsing received `rich_message` trees; media/maps; WhatsApp and other channels.
 
-## Open item resolved by a live smoke test (first implementation step)
+## Smoke-test results (Task 1 — RESOLVED, 2026-07-07)
 
-The docs page truncated before the `InputRichMessage` detail, so the exact **markdown dialect** the field accepts is unconfirmed: does the agent's existing markdown render tables/LaTeX/headings as-is, or does it need light adaptation (escaping, fenced-block syntax)? This is answered empirically by sending a sample to a test chat and observing — **not** by more doc-scraping. `InputRichMessage.html` (which we can already produce via `ToTelegramHtml`) is an intermediate option if the markdown dialect proves finicky, but `markdown` is the target because it carries the rich elements our HTML drops.
+Sent a sample via `sendRichMessage` `{ markdown }` to a live chat (@OpenAgentEirBot). Result: **`ok:true`, and the agent's plain CommonMark renders natively with zero adaptation.** The API echoed the parsed `rich_message.blocks`, confirming:
+
+| Markdown | Parsed block | Client render |
+|---|---|---|
+| `#` / `##` | `heading` (size 1/2) | ✅ |
+| `**b**` `*i*` `~~s~~` `` `c` `` `[l](u)` | typed inline runs (bold/italic/strikethrough/code/url) | ✅ |
+| pipe table w/ `:--:` | `table` (is_header, align, is_bordered, is_striped) | ✅ grid |
+| `-`/`1.`/nested | `list` (unordered bullets, ordered `type:"1"`) | ✅ |
+| ```` ```lang ```` | `pre` (language preserved) | ✅ |
+| `$E=mc^2$` inline, `$$…$$` block | `mathematical_expression` | ✅ real formulas |
+| `>` quote | `blockquote` | ✅ |
+
+**Decision:** send the agent's markdown verbatim in `rich_message.markdown`; no converter, no dialect adaptation. The dialect is CommonMark-compatible (GitHub tables + `$`/`$$` math). `InputRichMessage.html` remains available as a fallback but is not needed. Tables and LaTeX — our two worst-rendered elements today — render natively.
 
 ## Approach decision
 

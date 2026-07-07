@@ -356,6 +356,10 @@ public sealed class TelegramMessageHandler
         var lastSentLength = 0;
         var draftsSent = 0;
 
+        // Rich draft path is used while enabled; a thrown rich failure degrades to the
+        // plain draft path for the remainder of the stream.
+        var useRich = _richMessages;
+
         await Task.Run(async () =>
         {
             while (true)
@@ -387,16 +391,27 @@ public sealed class TelegramMessageHandler
                     continue;
                 }
 
-                // Send draft — catch unexpected exceptions so the consumer stays alive
+                // Send draft — catch unexpected exceptions so the consumer stays alive.
+                // Rich draft failures degrade to the plain path for the rest of the stream.
                 DraftResult result;
                 try
                 {
-                    result = await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
+                    result = useRich
+                        ? await sender.SendRichMarkdownDraftAsync(chatId, draftId, snapshot, ct)
+                        : await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning(ex, "Draft send threw for chat {ChatId}, will retry next interval", chatId);
+                    if (useRich)
+                    {
+                        useRich = false;
+                        _logger?.LogWarning(ex, "Rich draft send threw for chat {ChatId}, degrading to plain drafts", chatId);
+                    }
+                    else
+                    {
+                        _logger?.LogWarning(ex, "Draft send threw for chat {ChatId}, will retry next interval", chatId);
+                    }
                     if (done) break;
                     continue;
                 }

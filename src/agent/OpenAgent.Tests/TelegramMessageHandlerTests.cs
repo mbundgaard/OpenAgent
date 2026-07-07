@@ -427,4 +427,41 @@ public class TelegramMessageHandlerTests
         Assert.Single(sender.RichMarkdownCalls);
         Assert.Equal("OK!", sender.RichMarkdownCalls[0].Markdown);
     }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichStreaming_SendsRichDrafts()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new StreamingTextProvider("Hello", " ", "world");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichStreamingOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Drafts streamed via the rich markdown draft path, not the plain path
+        Assert.NotEmpty(sender.RichMarkdownDraftCalls);
+        Assert.Empty(sender.DraftCalls);
+        Assert.All(sender.RichMarkdownDraftCalls, d => Assert.Equal(ChatId, d.ChatId));
+        var draftId = sender.RichMarkdownDraftCalls[0].DraftId;
+        Assert.All(sender.RichMarkdownDraftCalls, d => Assert.Equal(draftId, d.DraftId));
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichDraftThrows_DegradesToPlainDrafts()
+    {
+        var store = new InMemoryConversationStore();
+        // Slow producer keeps the stream alive across several 300ms draft ticks.
+        var provider = new DelayedStreamingTextProvider(TimeSpan.FromMilliseconds(300),
+            "one ", "two ", "three ", "four ", "five ", "six ");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichStreamingOptions(AllowedUserId));
+        var sender = new FakeTelegramSender { FailRichMarkdown = true };
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Rich draft threw on the first tick; the consumer degraded to the plain path thereafter
+        Assert.Empty(sender.RichMarkdownDraftCalls);
+        Assert.NotEmpty(sender.DraftCalls);
+    }
 }
