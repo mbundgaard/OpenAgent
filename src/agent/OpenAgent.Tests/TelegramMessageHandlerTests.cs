@@ -375,7 +375,8 @@ public class TelegramMessageHandlerTests
 
         await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
 
-        // Rich attempted, then HTML fallback used
+        // Rich attempted (proven by the counter), threw, then HTML fallback used
+        Assert.True(sender.RichAttempts >= 1);
         Assert.Empty(sender.RichMarkdownCalls);
         Assert.Single(sender.HtmlCalls);
         Assert.Contains("Hello", sender.HtmlCalls[0].Html);
@@ -451,16 +452,43 @@ public class TelegramMessageHandlerTests
     public async Task HandleUpdateAsync_RichDraftThrows_DegradesToPlainDrafts()
     {
         var store = new InMemoryConversationStore();
-        // Slow producer keeps the stream alive across several 300ms draft ticks.
-        var provider = new DelayedStreamingTextProvider(TimeSpan.FromMilliseconds(300),
-            "one ", "two ", "three ", "four ", "five ", "six ");
-        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichStreamingOptions(AllowedUserId));
         var sender = new FakeTelegramSender { FailRichMarkdown = true };
+        // Gated producer: emits one token, blocks until the first rich draft is attempted,
+        // then emits more so the follow-up ticks exercise the degraded (plain) path.
+        var provider = new GatedStreamingTextProvider(
+            sender.FirstRichDraftAttempted.Task,
+            preGateTokens: ["one "],
+            postGateTokens: ["two ", "three ", "four "],
+            postGateDelay: TimeSpan.FromMilliseconds(300));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichStreamingOptions(AllowedUserId));
         var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
 
         await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
 
-        // Rich draft threw on the first tick; the consumer degraded to the plain path thereafter
+        // Rich draft was attempted (proven by the counter), threw, then the consumer degraded to plain
+        Assert.True(sender.RichAttempts >= 1);
+        Assert.Empty(sender.RichMarkdownDraftCalls);
+        Assert.NotEmpty(sender.DraftCalls);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichDraftRejectedNotOk_DegradesToPlainDrafts()
+    {
+        var store = new InMemoryConversationStore();
+        // Rich draft returns !Ok (HTTP 400) WITHOUT throwing — Telegram rejecting the markdown.
+        var sender = new FakeTelegramSender { RichDraftRejects = true };
+        var provider = new GatedStreamingTextProvider(
+            sender.FirstRichDraftAttempted.Task,
+            preGateTokens: ["one "],
+            postGateTokens: ["two ", "three ", "four "],
+            postGateDelay: TimeSpan.FromMilliseconds(300));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichStreamingOptions(AllowedUserId));
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // A non-429 rejection must degrade to plain drafts, not retry rich forever
+        Assert.True(sender.RichAttempts >= 1);
         Assert.Empty(sender.RichMarkdownDraftCalls);
         Assert.NotEmpty(sender.DraftCalls);
     }

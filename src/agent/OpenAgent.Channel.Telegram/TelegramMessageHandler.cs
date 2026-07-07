@@ -423,6 +423,16 @@ public sealed class TelegramMessageHandler
                     _logger?.LogDebug("Draft #{DraftNum} sent for chat {ChatId}, {Length} chars",
                         draftsSent, chatId, snapshot.Length);
                 }
+                else if (useRich && result.StatusCode != 429)
+                {
+                    // Rich draft rejected without throwing (e.g. Telegram 400s the markdown). This
+                    // is not a rate limit, so backoff won't help — degrade to the plain path for the
+                    // rest of the stream instead of retrying rich forever. (429 falls through below.)
+                    useRich = false;
+                    _logger?.LogWarning(
+                        "Rich draft rejected for chat {ChatId}: HTTP {StatusCode}, \"{Description}\" — degrading to plain drafts",
+                        chatId, result.StatusCode, result.Description);
+                }
                 else
                 {
                     var backoffSeconds = result.RetryAfterSeconds ?? 1;

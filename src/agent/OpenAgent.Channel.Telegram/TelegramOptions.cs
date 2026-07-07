@@ -52,5 +52,4 @@ public sealed class TelegramOptions
     /// When true, sends replies as Bot API 10.1 Rich Messages (markdown), falling back to HTML on failure.
     /// </summary>
     public bool RichMessages { get; set; } = true;
-
 }

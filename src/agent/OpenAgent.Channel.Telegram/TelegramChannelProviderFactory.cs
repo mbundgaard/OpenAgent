@@ -121,6 +121,8 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
                     options.ShowThinking = string.Equals(thinkEl.GetString(), "true", StringComparison.OrdinalIgnoreCase);
             }
 
+            // Opt-out semantics: the default is true, so only an explicit "false" disables rich
+            // messages (contrast showThinking above, which is opt-in and defaults to false).
             if (connection.Config.TryGetProperty("richMessages", out var richEl))
             {
                 if (richEl.ValueKind == JsonValueKind.True) options.RichMessages = true;
