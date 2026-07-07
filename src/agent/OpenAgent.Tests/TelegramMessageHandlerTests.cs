@@ -22,21 +22,40 @@ public class TelegramMessageHandlerTests
     private static TelegramOptions CreateOptions(params long[] allowedUserIds) => new()
     {
         BotToken = "fake-token",
-        AllowedUserIds = [..allowedUserIds]
+        AllowedUserIds = [..allowedUserIds],
+        RichMessages = false
     };
 
     private static TelegramOptions CreateBatchOptions(params long[] allowedUserIds) => new()
     {
         BotToken = "fake-token",
         AllowedUserIds = [..allowedUserIds],
-        StreamResponses = false
+        StreamResponses = false,
+        RichMessages = false
     };
 
     private static TelegramOptions CreateStreamingOptions(params long[] allowedUserIds) => new()
     {
         BotToken = "fake-token",
         AllowedUserIds = [..allowedUserIds],
-        StreamResponses = true
+        StreamResponses = true,
+        RichMessages = false
+    };
+
+    private static TelegramOptions CreateRichBatchOptions(params long[] allowedUserIds) => new()
+    {
+        BotToken = "fake-token",
+        AllowedUserIds = [..allowedUserIds],
+        StreamResponses = false,
+        RichMessages = true
+    };
+
+    private static TelegramOptions CreateRichStreamingOptions(params long[] allowedUserIds) => new()
+    {
+        BotToken = "fake-token",
+        AllowedUserIds = [..allowedUserIds],
+        StreamResponses = true,
+        RichMessages = true
     };
 
     private static Update CreatePrivateTextUpdate(long userId, long chatId, string text) => new()
@@ -324,5 +343,153 @@ public class TelegramMessageHandlerTests
 
         Assert.Single(sender.HtmlCalls);
         Assert.Contains("Hi back", sender.HtmlCalls[0].Html);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichOn_SendsFinalReplyAsRichMarkdown()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new StreamingTextProvider("Hello", " ", "world");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichBatchOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Rich send called once with the FULL un-chunked reply text
+        Assert.Single(sender.RichMarkdownCalls);
+        Assert.Equal(ChatId, sender.RichMarkdownCalls[0].ChatId);
+        Assert.Equal("Hello world", sender.RichMarkdownCalls[0].Markdown);
+        // HTML path untouched
+        Assert.Empty(sender.HtmlCalls);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichSendThrows_FallsBackToHtml()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new FakeTelegramTextProvider("Hello **bold**");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichBatchOptions(AllowedUserId));
+        var sender = new FakeTelegramSender { FailRichMarkdown = true };
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Rich attempted (proven by the counter), threw, then HTML fallback used
+        Assert.True(sender.RichAttempts >= 1);
+        Assert.Empty(sender.RichMarkdownCalls);
+        Assert.Single(sender.HtmlCalls);
+        Assert.Contains("Hello", sender.HtmlCalls[0].Html);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichOff_UsesHtmlPath_NoRichCall()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new FakeTelegramTextProvider("Hello");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateBatchOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        Assert.Empty(sender.RichMarkdownCalls);
+        Assert.Single(sender.HtmlCalls);
+        Assert.Contains("Hello", sender.HtmlCalls[0].Html);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichOn_SuppressSentinel_SendsNothing()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new FakeTelegramTextProvider("[]");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichBatchOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        Assert.Empty(sender.RichMarkdownCalls);
+        Assert.Empty(sender.HtmlCalls);
+        Assert.Empty(sender.TextCalls);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichOn_EmptyReply_BecomesOk()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new FakeTelegramTextProvider("");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichBatchOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        Assert.Single(sender.RichMarkdownCalls);
+        Assert.Equal("OK!", sender.RichMarkdownCalls[0].Markdown);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichStreaming_SendsRichDrafts()
+    {
+        var store = new InMemoryConversationStore();
+        var provider = new StreamingTextProvider("Hello", " ", "world");
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichStreamingOptions(AllowedUserId));
+        var sender = new FakeTelegramSender();
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Drafts streamed via the rich markdown draft path, not the plain path
+        Assert.NotEmpty(sender.RichMarkdownDraftCalls);
+        Assert.Empty(sender.DraftCalls);
+        Assert.All(sender.RichMarkdownDraftCalls, d => Assert.Equal(ChatId, d.ChatId));
+        var draftId = sender.RichMarkdownDraftCalls[0].DraftId;
+        Assert.All(sender.RichMarkdownDraftCalls, d => Assert.Equal(draftId, d.DraftId));
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichDraftThrows_DegradesToPlainDrafts()
+    {
+        var store = new InMemoryConversationStore();
+        var sender = new FakeTelegramSender { FailRichMarkdown = true };
+        // Gated producer: emits one token, blocks until the first rich draft is attempted,
+        // then emits more so the follow-up ticks exercise the degraded (plain) path.
+        var provider = new GatedStreamingTextProvider(
+            sender.FirstRichDraftAttempted.Task,
+            preGateTokens: ["one "],
+            postGateTokens: ["two ", "three ", "four "],
+            postGateDelay: TimeSpan.FromMilliseconds(300));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichStreamingOptions(AllowedUserId));
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // Rich draft was attempted (proven by the counter), threw, then the consumer degraded to plain
+        Assert.True(sender.RichAttempts >= 1);
+        Assert.Empty(sender.RichMarkdownDraftCalls);
+        Assert.NotEmpty(sender.DraftCalls);
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_RichDraftRejectedNotOk_DegradesToPlainDrafts()
+    {
+        var store = new InMemoryConversationStore();
+        // Rich draft returns !Ok (HTTP 400) WITHOUT throwing — Telegram rejecting the markdown.
+        var sender = new FakeTelegramSender { RichDraftRejects = true };
+        var provider = new GatedStreamingTextProvider(
+            sender.FirstRichDraftAttempted.Task,
+            preGateTokens: ["one "],
+            postGateTokens: ["two ", "three ", "four "],
+            postGateDelay: TimeSpan.FromMilliseconds(300));
+        var handler = new TelegramMessageHandler(store, new FakeConnectionStore(ConnectionId), _ => provider, ConnectionId, TestAgentConfig, CreateRichStreamingOptions(AllowedUserId));
+        var update = CreatePrivateTextUpdate(AllowedUserId, ChatId, "Hi");
+
+        await handler.HandleUpdateAsync(sender, update, CancellationToken.None);
+
+        // A non-429 rejection must degrade to plain drafts, not retry rich forever
+        Assert.True(sender.RichAttempts >= 1);
+        Assert.Empty(sender.RichMarkdownDraftCalls);
+        Assert.NotEmpty(sender.DraftCalls);
     }
 }

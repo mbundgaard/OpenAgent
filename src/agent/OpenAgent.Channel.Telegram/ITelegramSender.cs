@@ -19,6 +19,12 @@ public interface ITelegramSender
 
     /// <summary>Sends a message draft that updates in-place (Bot API 9.3+).</summary>
     Task<DraftResult> SendDraftAsync(ChatId chatId, long draftId, string text, string? parseMode, CancellationToken ct);
+
+    /// <summary>Sends a rich message with markdown content (Bot API 10.1+). Returns the Telegram message ID.</summary>
+    Task<int> SendRichMarkdownAsync(ChatId chatId, string markdown, CancellationToken ct);
+
+    /// <summary>Sends a rich message draft with markdown content that updates in-place (Bot API 10.1+).</summary>
+    Task<DraftResult> SendRichMarkdownDraftAsync(ChatId chatId, long draftId, string markdown, CancellationToken ct);
 }
 
 /// <summary>

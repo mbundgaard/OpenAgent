@@ -49,8 +49,25 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
     /// <summary>Deserializes the connection's config into TelegramOptions and creates the provider.</summary>
     public IChannelProvider Create(Connection connection)
     {
-        // Parse config manually — the dynamic form sends comma-separated strings
-        // for list fields and string "true"/"false" for booleans.
+        var options = ParseOptions(connection);
+
+        return new TelegramChannelProvider(
+            options,
+            connection.Id,
+            _store,
+            _connectionStore,
+            _textProviderResolver,
+            _agentConfig,
+            _loggerFactory.CreateLogger<TelegramChannelProvider>(),
+            _loggerFactory.CreateLogger<TelegramMessageHandler>());
+    }
+
+    /// <summary>
+    /// Parses a connection's config blob into <see cref="TelegramOptions"/>. The dynamic form
+    /// sends comma-separated strings for list fields and string "true"/"false" for booleans.
+    /// </summary>
+    internal static TelegramOptions ParseOptions(Connection connection)
+    {
         var options = new TelegramOptions();
 
         if (connection.Config.ValueKind == JsonValueKind.Object)
@@ -103,16 +120,18 @@ public sealed class TelegramChannelProviderFactory : IChannelProviderFactory
                 else if (thinkEl.ValueKind == JsonValueKind.String)
                     options.ShowThinking = string.Equals(thinkEl.GetString(), "true", StringComparison.OrdinalIgnoreCase);
             }
+
+            // Opt-out semantics: the default is true, so only an explicit "false" disables rich
+            // messages (contrast showThinking above, which is opt-in and defaults to false).
+            if (connection.Config.TryGetProperty("richMessages", out var richEl))
+            {
+                if (richEl.ValueKind == JsonValueKind.True) options.RichMessages = true;
+                else if (richEl.ValueKind == JsonValueKind.False) options.RichMessages = false;
+                else if (richEl.ValueKind == JsonValueKind.String)
+                    options.RichMessages = !string.Equals(richEl.GetString(), "false", StringComparison.OrdinalIgnoreCase);
+            }
         }
 
-        return new TelegramChannelProvider(
-            options,
-            connection.Id,
-            _store,
-            _connectionStore,
-            _textProviderResolver,
-            _agentConfig,
-            _loggerFactory.CreateLogger<TelegramChannelProvider>(),
-            _loggerFactory.CreateLogger<TelegramMessageHandler>());
+        return options;
     }
 }

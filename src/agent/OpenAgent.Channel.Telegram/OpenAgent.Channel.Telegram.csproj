@@ -8,6 +8,9 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenAgent.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Telegram.Bot" />
     <PackageReference Include="Markdig" />
   </ItemGroup>

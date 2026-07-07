@@ -34,6 +34,7 @@ public sealed class TelegramMessageHandler
     private readonly AgentConfig _agentConfig;
     private readonly bool _streamResponses;
     private readonly bool _showThinking;
+    private readonly bool _richMessages;
     private readonly ILogger<TelegramMessageHandler>? _logger;
 
     public TelegramMessageHandler(
@@ -52,6 +53,7 @@ public sealed class TelegramMessageHandler
         _agentConfig = agentConfig;
         _streamResponses = options.StreamResponses;
         _showThinking = options.ShowThinking;
+        _richMessages = options.RichMessages;
         _logger = logger;
     }
 
@@ -354,6 +356,10 @@ public sealed class TelegramMessageHandler
         var lastSentLength = 0;
         var draftsSent = 0;
 
+        // Rich draft path is used while enabled; a thrown rich failure degrades to the
+        // plain draft path for the remainder of the stream.
+        var useRich = _richMessages;
+
         await Task.Run(async () =>
         {
             while (true)
@@ -385,16 +391,27 @@ public sealed class TelegramMessageHandler
                     continue;
                 }
 
-                // Send draft — catch unexpected exceptions so the consumer stays alive
+                // Send draft — catch unexpected exceptions so the consumer stays alive.
+                // Rich draft failures degrade to the plain path for the rest of the stream.
                 DraftResult result;
                 try
                 {
-                    result = await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
+                    result = useRich
+                        ? await sender.SendRichMarkdownDraftAsync(chatId, draftId, snapshot, ct)
+                        : await sender.SendDraftAsync(chatId, draftId, snapshot, null, ct);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning(ex, "Draft send threw for chat {ChatId}, will retry next interval", chatId);
+                    if (useRich)
+                    {
+                        useRich = false;
+                        _logger?.LogWarning(ex, "Rich draft send threw for chat {ChatId}, degrading to plain drafts", chatId);
+                    }
+                    else
+                    {
+                        _logger?.LogWarning(ex, "Draft send threw for chat {ChatId}, will retry next interval", chatId);
+                    }
                     if (done) break;
                     continue;
                 }
@@ -405,6 +422,16 @@ public sealed class TelegramMessageHandler
                     lastSentLength = snapshot.Length;
                     _logger?.LogDebug("Draft #{DraftNum} sent for chat {ChatId}, {Length} chars",
                         draftsSent, chatId, snapshot.Length);
+                }
+                else if (useRich && result.StatusCode != 429)
+                {
+                    // Rich draft rejected without throwing (e.g. Telegram 400s the markdown). This
+                    // is not a rate limit, so backoff won't help — degrade to the plain path for the
+                    // rest of the stream instead of retrying rich forever. (429 falls through below.)
+                    useRich = false;
+                    _logger?.LogWarning(
+                        "Rich draft rejected for chat {ChatId}: HTTP {StatusCode}, \"{Description}\" — degrading to plain drafts",
+                        chatId, result.StatusCode, result.Description);
                 }
                 else
                 {
@@ -532,6 +559,28 @@ public sealed class TelegramMessageHandler
         // Guard against empty responses — tool-only turns can produce no text
         if (string.IsNullOrWhiteSpace(replyText))
             replyText = "OK!";
+
+        // Rich Messages path: send the full un-chunked markdown as one Bot API Rich Message.
+        // On any failure, fall through to the legacy chunk+HTML path below (zero regression).
+        if (_richMessages)
+        {
+            try
+            {
+                var richId = await sender.SendRichMarkdownAsync(chatId, replyText, ct);
+                if (assistantMessageId is not null)
+                {
+                    _store.UpdateChannelMessageId(assistantMessageId, richId.ToString());
+                    _logger?.LogDebug("Updated assistant message {MessageId} with Telegram message ID {TelegramMessageId}",
+                        assistantMessageId, richId);
+                }
+                _logger?.LogInformation("Final rich message sent for chat {ChatId}", chatId);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Rich message send failed for chat {ChatId}, falling back to HTML", chatId);
+            }
+        }
 
         var chunks = TelegramMarkdownConverter.ChunkMarkdown(replyText, TelegramMaxMessageLength);
 
