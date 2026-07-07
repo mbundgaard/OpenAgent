@@ -535,6 +535,28 @@ public sealed class TelegramMessageHandler
         if (string.IsNullOrWhiteSpace(replyText))
             replyText = "OK!";
 
+        // Rich Messages path: send the full un-chunked markdown as one Bot API Rich Message.
+        // On any failure, fall through to the legacy chunk+HTML path below (zero regression).
+        if (_richMessages)
+        {
+            try
+            {
+                var richId = await sender.SendRichMarkdownAsync(chatId, replyText, ct);
+                if (assistantMessageId is not null)
+                {
+                    _store.UpdateChannelMessageId(assistantMessageId, richId.ToString());
+                    _logger?.LogDebug("Updated assistant message {MessageId} with Telegram message ID {TelegramMessageId}",
+                        assistantMessageId, richId);
+                }
+                _logger?.LogInformation("Final rich message sent for chat {ChatId}", chatId);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Rich message send failed for chat {ChatId}, falling back to HTML", chatId);
+            }
+        }
+
         var chunks = TelegramMarkdownConverter.ChunkMarkdown(replyText, TelegramMaxMessageLength);
 
         int? telegramMessageId = null;

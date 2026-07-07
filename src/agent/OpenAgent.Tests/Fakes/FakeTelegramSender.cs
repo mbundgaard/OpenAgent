@@ -24,6 +24,9 @@ public sealed class FakeTelegramSender : ITelegramSender
     /// <summary>When true, SendDraftAsync throws.</summary>
     public bool FailDraft { get; set; }
 
+    /// <summary>When true, the rich markdown send methods throw to trigger fallback.</summary>
+    public bool FailRichMarkdown { get; set; }
+
     public Task SendTypingAsync(ChatId chatId, CancellationToken ct)
     {
         if (FailAll) throw new Exception("Send failed");
@@ -58,13 +61,14 @@ public sealed class FakeTelegramSender : ITelegramSender
 
     public Task<int> SendRichMarkdownAsync(ChatId chatId, string markdown, CancellationToken ct)
     {
-        if (FailAll) throw new Exception("Rich markdown send failed");
+        if (FailAll || FailRichMarkdown) throw new Exception("Rich markdown send failed");
         RichMarkdownCalls.Add((chatId.Identifier!.Value, markdown));
         return Task.FromResult(_nextMessageId++);
     }
 
     public Task<DraftResult> SendRichMarkdownDraftAsync(ChatId chatId, long draftId, string markdown, CancellationToken ct)
     {
+        if (FailRichMarkdown) throw new Exception("Rich markdown draft send failed");
         if (FailAll || FailDraft)
             return Task.FromResult(new DraftResult { Ok = false, StatusCode = 429, RetryAfterSeconds = 1, Description = "Too Many Requests" });
         RichMarkdownDraftCalls.Add((chatId.Identifier!.Value, draftId, markdown));
