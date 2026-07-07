@@ -23,6 +23,17 @@ public sealed class TelegramBotClientSender : ITelegramSender
         _httpClient = new HttpClient { BaseAddress = new Uri($"https://api.telegram.org/bot{_botToken}/") };
     }
 
+    /// <summary>
+    /// Test constructor — injects a pre-built <see cref="HttpClient"/> so a stubbed
+    /// <see cref="HttpMessageHandler"/> can exercise the raw-HTTP send methods without a live bot.
+    /// </summary>
+    internal TelegramBotClientSender(HttpClient httpClient)
+    {
+        _botClient = null!;
+        _botToken = string.Empty;
+        _httpClient = httpClient;
+    }
+
     /// <inheritdoc />
     public async Task SendTypingAsync(ChatId chatId, CancellationToken ct)
     {
@@ -53,10 +64,54 @@ public sealed class TelegramBotClientSender : ITelegramSender
             : new { chat_id = chatId.Identifier, draft_id = draftId, text };
         var response = await _httpClient.PostAsJsonAsync("sendMessageDraft", payload, ct);
 
-        var statusCode = (int)response.StatusCode;
+        if (response.IsSuccessStatusCode)
+            return DraftResult.Success();
+
+        return await ParseDraftFailureAsync(response, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> SendRichMarkdownAsync(ChatId chatId, string markdown, CancellationToken ct)
+    {
+        // Raw HTTP — sendRichMessage is not yet in Telegram.Bot NuGet
+        var payload = new
+        {
+            chat_id = chatId.Identifier ?? (object)chatId.Username!,
+            rich_message = new { markdown }
+        };
+        var response = await _httpClient.PostAsJsonAsync("sendRichMessage", payload, ct);
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.GetProperty("result").GetProperty("message_id").GetInt32();
+    }
+
+    /// <inheritdoc />
+    public async Task<DraftResult> SendRichMarkdownDraftAsync(ChatId chatId, long draftId, string markdown, CancellationToken ct)
+    {
+        // Raw HTTP — sendRichMessageDraft is not yet in Telegram.Bot NuGet
+        var payload = new
+        {
+            chat_id = chatId.Identifier,
+            draft_id = draftId,
+            rich_message = new { markdown }
+        };
+        var response = await _httpClient.PostAsJsonAsync("sendRichMessageDraft", payload, ct);
 
         if (response.IsSuccessStatusCode)
             return DraftResult.Success();
+
+        return await ParseDraftFailureAsync(response, ct);
+    }
+
+    /// <summary>
+    /// Best-effort parse of a failed draft response into a <see cref="DraftResult"/>,
+    /// extracting the Telegram <c>description</c> and <c>parameters.retry_after</c> rate-limit hint.
+    /// </summary>
+    private async Task<DraftResult> ParseDraftFailureAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        var statusCode = (int)response.StatusCode;
 
         // Read response body for error details and retry_after
         int? retryAfter = null;
