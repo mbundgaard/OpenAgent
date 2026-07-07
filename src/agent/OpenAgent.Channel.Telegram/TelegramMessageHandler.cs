@@ -34,6 +34,7 @@ public sealed class TelegramMessageHandler
     private readonly AgentConfig _agentConfig;
     private readonly bool _streamResponses;
     private readonly bool _showThinking;
+    private readonly bool _richMessages;
     private readonly ILogger<TelegramMessageHandler>? _logger;
 
     public TelegramMessageHandler(
@@ -52,6 +53,7 @@ public sealed class TelegramMessageHandler
         _agentConfig = agentConfig;
         _streamResponses = options.StreamResponses;
         _showThinking = options.ShowThinking;
+        _richMessages = options.RichMessages;
         _logger = logger;
     }
 
