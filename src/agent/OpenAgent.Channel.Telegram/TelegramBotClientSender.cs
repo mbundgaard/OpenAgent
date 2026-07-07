@@ -60,8 +60,8 @@ public sealed class TelegramBotClientSender : ITelegramSender
         // Raw HTTP — sendMessageDraft is not yet in Telegram.Bot NuGet
         // Build payload with optional parse_mode
         object payload = parseMode is not null
-            ? new { chat_id = chatId.Identifier, draft_id = draftId, text, parse_mode = parseMode }
-            : new { chat_id = chatId.Identifier, draft_id = draftId, text };
+            ? new { chat_id = ResolveChatId(chatId), draft_id = draftId, text, parse_mode = parseMode }
+            : new { chat_id = ResolveChatId(chatId), draft_id = draftId, text };
         var response = await _httpClient.PostAsJsonAsync("sendMessageDraft", payload, ct);
 
         if (response.IsSuccessStatusCode)
@@ -76,7 +76,7 @@ public sealed class TelegramBotClientSender : ITelegramSender
         // Raw HTTP — sendRichMessage is not yet in Telegram.Bot NuGet
         var payload = new
         {
-            chat_id = chatId.Identifier ?? (object)chatId.Username!,
+            chat_id = ResolveChatId(chatId),
             rich_message = new { markdown }
         };
         var response = await _httpClient.PostAsJsonAsync("sendRichMessage", payload, ct);
@@ -93,7 +93,7 @@ public sealed class TelegramBotClientSender : ITelegramSender
         // Raw HTTP — sendRichMessageDraft is not yet in Telegram.Bot NuGet
         var payload = new
         {
-            chat_id = chatId.Identifier,
+            chat_id = ResolveChatId(chatId),
             draft_id = draftId,
             rich_message = new { markdown }
         };
@@ -104,6 +104,12 @@ public sealed class TelegramBotClientSender : ITelegramSender
 
         return await ParseDraftFailureAsync(response, ct);
     }
+
+    /// <summary>
+    /// Resolves a <see cref="ChatId"/> to the value Telegram's <c>chat_id</c> field expects —
+    /// the numeric identifier when present, otherwise the <c>@username</c> string.
+    /// </summary>
+    private static object? ResolveChatId(ChatId chatId) => chatId.Identifier ?? (object?)chatId.Username;
 
     /// <summary>
     /// Best-effort parse of a failed draft response into a <see cref="DraftResult"/>,

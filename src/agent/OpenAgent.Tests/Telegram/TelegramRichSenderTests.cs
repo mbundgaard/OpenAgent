@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using OpenAgent.Channel.Telegram;
+using Telegram.Bot.Types;
 using Xunit;
 
 namespace OpenAgent.Tests.Telegram;
@@ -19,6 +21,27 @@ public class TelegramRichSenderTests
         Assert.EndsWith("sendRichMessage", handler.LastRequest!.RequestUri!.AbsolutePath);
         Assert.Contains("rich_message", handler.LastBody);
         Assert.Contains("markdown", handler.LastBody);
+    }
+
+    [Fact]
+    public async Task SendRichMarkdownAsync_OnFailureStatus_Throws()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.BadRequest, "{\"ok\":false,\"description\":\"Bad Request\"}");
+        var sender = new TelegramBotClientSender(NewHttpClient(handler));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => sender.SendRichMarkdownAsync(12345L, "x", default));
+    }
+
+    [Fact]
+    public async Task SendRichMarkdownAsync_UsernameChatId_SerializesChatIdAsUsername()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{\"ok\":true,\"result\":{\"message_id\":1}}");
+        var sender = new TelegramBotClientSender(NewHttpClient(handler));
+
+        await sender.SendRichMarkdownAsync(new ChatId("@somechannel"), "x", default);
+
+        using var doc = JsonDocument.Parse(handler.LastBody);
+        Assert.Equal("@somechannel", doc.RootElement.GetProperty("chat_id").GetString());
     }
 
     [Fact]
