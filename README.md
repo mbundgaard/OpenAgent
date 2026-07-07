@@ -20,7 +20,9 @@ Connect once, reach everywhere. Each channel gets its own conversation with full
 Swap providers and models at runtime. No restarts, no redeployment. Per-conversation provider selection.
 
 - **Azure OpenAI** — Chat Completions for text, Realtime API for voice
-- **Anthropic Claude** — Messages API with adaptive thinking for Claude 4.6 models
+- **Anthropic Claude** — Messages API with adaptive thinking for Claude 4.x models
+- **Google Gemini Live** — bidirectional voice streaming
+- **xAI Grok Realtime** — bidirectional voice streaming
 - **Pluggable** — add new providers by implementing `ILlmTextProvider` or `ILlmVoiceProvider`
 
 ### Agent Skills
@@ -34,6 +36,7 @@ Scoped to the data directory for safety. Tools are sent to the LLM via the wire 
 - **File operations** — read, write, append, edit with line-level precision
 - **Shell execution** — timeout enforcement, process tree cleanup, merged stdout/stderr
 - **Web fetch** — URL validation, SSRF protection, content extraction
+- **Conversation control** — switch model mid-conversation, list available models, set or clear conversation intention
 - **Skill resources** — load scripts, references, and assets from active skill directories
 
 ### Scheduled Tasks
@@ -69,8 +72,9 @@ Channels                    Core                         Providers
 -----------                 ----                         ---------
 REST API      --+                                +--  Azure OpenAI (Text)
 WebSocket     --+                                +--  Anthropic Claude (Text)
-Telegram      --+--  AgentLogic / Contracts  ----+--  Azure OpenAI (Voice)
-WhatsApp      --+                                +--  (pluggable)
+Telegram      --+--  AgentLogic / Contracts  ----+--  Azure OpenAI Realtime (Voice)
+WhatsApp      --+                                +--  Gemini Live / Grok (Voice)
+                                                 +--  (pluggable)
 
                          Skills Layer
                          ------------
@@ -121,6 +125,15 @@ npm run dev
 ```bash
 cd src/agent
 dotnet test
+```
+
+### Chat CLI
+
+A Spectre.Console terminal client lives at `src/chat-cli/OpenAgent.ChatCli/`. Reads its API key from `.env` and uses the dev key when targeting localhost.
+
+```bash
+cd src/chat-cli/OpenAgent.ChatCli
+dotnet run
 ```
 
 ### Configuration
