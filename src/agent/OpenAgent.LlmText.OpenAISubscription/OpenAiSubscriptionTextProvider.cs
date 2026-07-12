@@ -534,7 +534,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
             // (user message + any tool rounds) so a periodic background check that finds
             // nothing leaves no trace in history, and emit ResponseSuppressed so consumers
             // skip delivery instead of sending the literal "[]".
-            if (text.ToString().Trim() == "[]")
+            if (ResponseSuppression.IsSuppressed(text.ToString()))
             {
                 agentLogic.DeleteMessages(conversationId, turnMessageIds);
                 logger.LogInformation(

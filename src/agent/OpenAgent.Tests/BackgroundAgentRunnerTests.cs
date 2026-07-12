@@ -73,26 +73,26 @@ public class BackgroundAgentRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task ShouldRun_false_when_less_than_2h_since_last_run()
+    public async Task ShouldRun_false_when_less_than_30min_since_last_run()
     {
         var (runner, _, _, jobState) = Build();
         var state = jobState.GetOrCreate(BackgroundAgentRunner.JobName);
-        state.LastRunAt = DateTimeOffset.UtcNow.AddMinutes(-30);
+        state.LastRunAt = DateTimeOffset.UtcNow.AddMinutes(-10);
         Assert.False(await runner.ShouldRunAsync(DateTimeOffset.UtcNow));
     }
 
     [Fact]
-    public async Task ShouldRun_true_when_2h_elapsed_since_last_run_and_main_idle()
+    public async Task ShouldRun_true_when_30min_elapsed_since_last_run_and_main_idle()
     {
         var (runner, _, _, jobState) = Build();
         var state = jobState.GetOrCreate(BackgroundAgentRunner.JobName);
-        state.LastRunAt = DateTimeOffset.UtcNow.AddHours(-3);
+        state.LastRunAt = DateTimeOffset.UtcNow.AddMinutes(-45);
         // Main conversation has no messages → quiet by default
         Assert.True(await runner.ShouldRunAsync(DateTimeOffset.UtcNow));
     }
 
     [Fact]
-    public async Task ShouldRun_false_when_user_messaged_main_less_than_45min_ago()
+    public async Task ShouldRun_false_when_user_messaged_main_less_than_15min_ago()
     {
         var (runner, store, _, _) = Build();
         store.AddMessage(MainId, new Message

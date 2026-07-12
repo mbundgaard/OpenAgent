@@ -25,8 +25,8 @@ public sealed class BackgroundAgentRunner
     /// <summary>Name under which <see cref="BackgroundAgentJob"/> registers in system-jobs.json.</summary>
     public const string JobName = "background-agent";
 
-    private static readonly TimeSpan MinSinceLastRun = TimeSpan.FromHours(2);
-    private static readonly TimeSpan MinSinceLastMainMessage = TimeSpan.FromMinutes(45);
+    private static readonly TimeSpan MinSinceLastRun = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan MinSinceLastMainMessage = TimeSpan.FromMinutes(15);
     private const int SandboxFilePreviewLines = 60;
 
     private readonly IConversationStore _store;

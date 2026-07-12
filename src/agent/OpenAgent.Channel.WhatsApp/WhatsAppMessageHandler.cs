@@ -194,7 +194,7 @@ public sealed class WhatsAppMessageHandler
         // Suppress sentinel: agent returns "[]" to signal "nothing worth sending".
         // Used by silent webhook flows (wishlist daily recheck on a miss, etc.) so the
         // agent doesn't leak courtesy text. Distinct from a crash — logged explicitly.
-        if (replyText.Trim() == "[]")
+        if (ResponseSuppression.IsSuppressed(replyText))
         {
             _logger?.LogInformation("Reply suppressed by [] sentinel for chat {ChatId}", chatId);
             return;

@@ -385,7 +385,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             // (user message + any tool rounds) so a periodic background check that finds
             // nothing leaves no trace in history, and emit ResponseSuppressed so consumers
             // skip delivery instead of sending the literal "[]".
-            if (fullContent.ToString().Trim() == "[]")
+            if (ResponseSuppression.IsSuppressed(fullContent.ToString()))
             {
                 agentLogic.DeleteMessages(conversationId, turnMessageIds);
                 logger.LogInformation(

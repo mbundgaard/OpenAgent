@@ -550,7 +550,7 @@ public sealed class TelegramMessageHandler
         // Suppress sentinel: agent returns "[]" to signal "nothing worth sending".
         // Used by silent webhook flows so the agent doesn't leak courtesy text.
         // Distinct from a crash — logged explicitly.
-        if (replyText.Trim() == "[]")
+        if (ResponseSuppression.IsSuppressed(replyText))
         {
             _logger?.LogInformation("Reply suppressed by [] sentinel for chat {ChatId}", chatId);
             return;

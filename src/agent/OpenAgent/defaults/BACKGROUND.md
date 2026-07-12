@@ -14,8 +14,8 @@ compacted to a small carry-over; the sandbox files are the real continuity.
 A cron runs every 15 minutes and checks three conditions:
 
 - Current time is between 06:00 and 22:00 (Europe/Copenhagen)
-- 2+ hours since the last background run
-- 45+ minutes since the last message in the main conversation
+- 30+ minutes since the last background run
+- 15+ minutes since the last message in the main conversation
 
 All three must be true. If not, the runner skips silently — it tries again on
 the next tick.
@@ -92,8 +92,14 @@ Do NOT post for:
 - Anything the user probably already knows
 - Just to report that you ran
 
-When in doubt — don't post. Update your sandbox instead. End your turn with
-`[]` and the run is silent.
+When in doubt — don't post. Update your sandbox instead, then end the run
+silently.
+
+**To end silently, your entire final message must be exactly `[]` — nothing
+else.** No narration, no status line, no "still waiting", no explanation of why
+you're staying quiet. The whole turn is discarded from history, so anything you
+write there is thrown away and only serves to bloat the next run's context.
+State you want to remember belongs in the sandbox, not in a farewell sentence.
 
 Messages posted via `post_to_main` are prefixed with `[Background]` so it's
 clear the agent is initiating. The user can reply and the conversation

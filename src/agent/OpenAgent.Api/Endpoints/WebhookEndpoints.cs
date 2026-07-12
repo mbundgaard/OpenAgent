@@ -87,7 +87,7 @@ public static class WebhookEndpoints
                 var response = sb.ToString();
 
                 // [] sentinel — agent signalled "nothing worth sending" (silent background flow).
-                if (response.Trim() == "[]")
+                if (ResponseSuppression.IsSuppressed(response))
                 {
                     logger.LogInformation("Webhook reply suppressed by [] sentinel for conversation {ConversationId}", conversationId);
                     return;
