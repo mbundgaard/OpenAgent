@@ -83,7 +83,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
     }
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
@@ -102,15 +102,33 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                 conversation.ContextWindowTokens = window;
         }
 
-        // Persist the caller-supplied user message. Track every message ID written this
-        // turn so the whole turn can be discarded if the agent ends with the "[]" sentinel.
-        agentLogic.AddMessage(conversationId, userMessage);
-        var turnMessageIds = new List<string> { userMessage.Id };
+        // Persist the caller-supplied user message, unless the caller asked for it to stay
+        // ephemeral (see persistUserMessage doc on the interface). Track every message ID
+        // written this turn so the whole turn can be discarded if the agent ends with the
+        // "[]" sentinel.
+        var turnMessageIds = new List<string>();
+        if (persistUserMessage)
+        {
+            agentLogic.AddMessage(conversationId, userMessage);
+            turnMessageIds.Add(userMessage.Id);
+        }
 
-        // Build request once — messages are mutated across tool call rounds
+        // Build request once — messages are mutated across tool call rounds. When the user
+        // message was not persisted, append it in-memory so the model still sees it as the
+        // final turn without it ever touching the conversation store.
+        var chatMessages = BuildChatMessages(conversation);
+        if (!persistUserMessage)
+            chatMessages.Add(ToTransientMessage(userMessage));
+
+        // Anchor marking where this turn's own assistant/tool-result messages begin (appended
+        // in-memory below, round by round). Used only by the overflow-retry rebuild so the
+        // transient nudge (persistUserMessage == false) can be reinserted at this same
+        // chronological position instead of landing after this turn's own tool activity.
+        var turnPrefixCount = chatMessages.Count;
+
         var request = new ChatCompletionRequest
         {
-            Messages = BuildChatMessages(conversation),
+            Messages = chatMessages,
             Tools = BuildTools(),
             ToolChoice = agentLogic.Tools.Count > 0 ? "auto" : null,
             Stream = true,
@@ -169,7 +187,30 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                     // Rebuild from the compacted state — GetConversation re-reads with the new
                     // Conversation.Context set by compaction.
                     var compactedConv = agentLogic.GetConversation(conversationId) ?? conversation;
-                    request.Messages = BuildChatMessages(compactedConv);
+                    if (persistUserMessage)
+                    {
+                        // userMessage is already persisted, so BuildChatMessages naturally
+                        // includes it (and this turn's tool activity, in order) — same as the
+                        // initial build.
+                        request.Messages = BuildChatMessages(compactedConv);
+                    }
+                    else
+                    {
+                        // The transient nudge was never persisted, so BuildChatMessages alone
+                        // would omit it, and naively re-appending it at the end would land it
+                        // AFTER this turn's own assistant/tool-result messages (which ARE
+                        // persisted by now, if overflow hit on round >= 1) — presenting it as the
+                        // newest message instead of the one that opened the turn. Preserve this
+                        // turn's already-built messages, rebuild history excluding them (they'd
+                        // otherwise be duplicated from the store), reinsert the nudge in its
+                        // correct chronological position, then reattach the turn's messages
+                        // after it.
+                        var turnTail = request.Messages.Skip(turnPrefixCount).ToList();
+                        var rebuiltBase = BuildChatMessages(compactedConv, turnMessageIds);
+                        rebuiltBase.Add(ToTransientMessage(userMessage));
+                        request.Messages = rebuiltBase.Concat(turnTail).ToList();
+                        turnPrefixCount = rebuiltBase.Count;
+                    }
                     continue;
                 }
 
@@ -325,9 +366,18 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             if (ResponseSuppression.IsSuppressed(fullContent.ToString()))
             {
                 agentLogic.DeleteMessages(conversationId, turnMessageIds);
+
+                // A discarded turn still cost tokens. Roll them into the conversation totals so
+                // silent heartbeat runs are not invisible in cost accounting. TurnCount,
+                // LastActivity and LastPromptTokens are deliberately NOT updated - see the
+                // Anthropic provider for the reasoning. AddTokenUsage is a targeted update (see
+                // its XML doc) so it does not go through Update()'s threshold-compaction check.
+                agentLogic.AddTokenUsage(conversationId, promptTokens ?? 0, completionTokens ?? 0);
+
                 logger.LogInformation(
-                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed)",
-                    conversationId, turnMessageIds.Count);
+                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed), {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",
+                    conversationId, turnMessageIds.Count, promptTokens, completionTokens, stopwatch.ElapsedMilliseconds);
+
                 if (toolCallsStarted)
                     yield return new ThinkingStopped();
                 yield return new ResponseSuppressed();
@@ -427,7 +477,17 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
         }
     }
 
-    private List<ChatMessage> BuildChatMessages(Conversation conversation)
+    /// <summary>
+    /// Reconstructs the OpenAI-shaped chat message list from stored conversation history.
+    /// </summary>
+    /// <param name="conversation">The conversation to build history for.</param>
+    /// <param name="excludeMessageIds">
+    /// Optional set of assistant tool-call message IDs to omit from the rebuilt list, along with
+    /// their matching tool-result messages. Used by the overflow-retry path when the caller
+    /// already holds an in-memory reconstruction of the current turn's tool activity and would
+    /// otherwise duplicate it.
+    /// </param>
+    private List<ChatMessage> BuildChatMessages(Conversation conversation, IReadOnlyCollection<string>? excludeMessageIds = null)
     {
         var chatMessages = new List<ChatMessage>();
 
@@ -470,6 +530,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             // Assistant message with tool calls — verify all tool results follow
             if (msg.ToolCalls is not null)
             {
+                if (excludeMessageIds is not null && excludeMessageIds.Contains(msg.Id))
+                {
+                    // This round belongs to the current turn and the caller already holds an
+                    // in-memory reconstruction of it — skip both the assistant message and its
+                    // matching tool results so they are not duplicated.
+                    while (i + 1 < storedMessages.Count && storedMessages[i + 1].Role == "tool")
+                        i++;
+                    continue;
+                }
+
                 var toolCalls = JsonSerializer.Deserialize<List<ToolCall>>(msg.ToolCalls);
                 if (toolCalls is { Count: > 0 })
                 {
@@ -552,6 +622,19 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                 cm.Content?.Length > 200 ? cm.Content[..200] + "..." : cm.Content);
 
         return chatMessages;
+    }
+
+    /// <summary>
+    /// Converts a transient (never-persisted) user message into the OpenAI wire format,
+    /// mirroring the plain-message branch of <see cref="BuildChatMessages"/>. Used only for the
+    /// persistUserMessage=false path — a nudge never has a reply-quote target to resolve.
+    /// </summary>
+    private static ChatMessage ToTransientMessage(Message userMessage)
+    {
+        var content = userMessage.Content;
+        if (!string.IsNullOrEmpty(userMessage.Sender))
+            content = FromTagFormatter.Wrap(userMessage.Sender, content);
+        return new ChatMessage { Role = userMessage.Role, Content = content, Name = ChannelMessageName(userMessage) };
     }
 
     private List<ChatTool>? BuildTools()

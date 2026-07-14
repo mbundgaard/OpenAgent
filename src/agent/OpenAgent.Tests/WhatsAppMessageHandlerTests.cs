@@ -254,7 +254,8 @@ public class WhatsAppMessageHandlerTests
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
             Conversation conversation,
             Message userMessage,
-            [EnumeratorCancellation] CancellationToken ct = default)
+            [EnumeratorCancellation] CancellationToken ct = default,
+            bool persistUserMessage = true)
         {
             // Persist user message, then assistant message — mirrors real providers
             _store.AddMessage(conversation.Id, userMessage);
@@ -300,7 +301,8 @@ public class WhatsAppMessageHandlerTests
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
             Conversation conversation,
             Message userMessage,
-            [EnumeratorCancellation] CancellationToken ct = default)
+            [EnumeratorCancellation] CancellationToken ct = default,
+            bool persistUserMessage = true)
         {
             CapturedMessages.Add(userMessage);
             yield return new TextDelta(_response);

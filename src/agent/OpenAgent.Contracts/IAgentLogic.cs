@@ -48,6 +48,16 @@ public interface IAgentLogic
     void SetVoiceSession(string conversationId, string? sessionId, bool open);
 
     /// <summary>
+    /// Adds to the conversation's cumulative token totals without triggering threshold
+    /// compaction. Thin pass-through to <see cref="IConversationStore.AddTokenUsage"/>.
+    /// Providers use this for silent/discarded turns (the "[]" sentinel) where token spend
+    /// must still be accounted for, but a full-row <see cref="UpdateConversation"/> would
+    /// re-evaluate compaction against a stale <c>LastPromptTokens</c> left over from an
+    /// earlier real turn.
+    /// </summary>
+    void AddTokenUsage(string conversationId, int promptTokens, int completionTokens);
+
+    /// <summary>
     /// Triggers compaction on-demand. Thin pass-through to
     /// <see cref="IConversationStore.CompactNowAsync"/>. Providers use this during overflow
     /// recovery to avoid reaching into the store directly.

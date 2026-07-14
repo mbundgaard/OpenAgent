@@ -130,7 +130,8 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
         public int? GetContextWindow(string model) => null;
 
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
+            bool persistUserMessage = true)
         {
             LastConversation = conversation;
             LastUserMessage = userMessage;

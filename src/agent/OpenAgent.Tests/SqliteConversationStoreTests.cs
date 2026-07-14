@@ -372,6 +372,84 @@ public class SqliteConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public void AddTokenUsage_increments_only_token_totals()
+    {
+        var conv = _store.GetOrCreate("conv1", "test", "p", "m", "p", "m");
+        conv.TotalPromptTokens = 10;
+        conv.TotalCompletionTokens = 5;
+        conv.TurnCount = 3;
+        conv.LastPromptTokens = 42;
+        conv.LastActivity = DateTimeOffset.UtcNow.AddHours(-1);
+        _store.Update(conv);
+
+        var before = _store.Get("conv1")!;
+
+        _store.AddTokenUsage("conv1", 100, 50);
+
+        var after = _store.Get("conv1")!;
+        Assert.Equal(before.TotalPromptTokens + 100, after.TotalPromptTokens);
+        Assert.Equal(before.TotalCompletionTokens + 50, after.TotalCompletionTokens);
+        Assert.Equal(before.TurnCount, after.TurnCount);
+        Assert.Equal(before.LastActivity, after.LastActivity);
+        Assert.Equal(before.LastPromptTokens, after.LastPromptTokens);
+    }
+
+    [Fact]
+    public async Task AddTokenUsage_does_not_start_compaction_even_when_LastPromptTokens_is_above_threshold()
+    {
+        var config = new CompactionConfig
+        {
+            MaxContextTokens = 100,
+            CompactionTriggerPercent = 50,
+            KeepRecentTokens = 5 // tiny budget so a real Update() with enough messages actually cuts
+        };
+        var summarizer = new FakeCompactionSummarizer("## Summary\nTest summary.\n[ref: msg1, msg2, msg3, msg4]");
+        var env = new AgentEnvironment { DataPath = _dbDir };
+        using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
+
+        var conv = store.GetOrCreate("conv1", "test", "test-provider", "test-model", "test-provider", "test-model");
+
+        for (var i = 1; i <= 6; i++)
+        {
+            store.AddMessage("conv1", new Message
+            {
+                Id = $"msg{i}", ConversationId = "conv1",
+                Role = i % 2 == 1 ? "user" : "assistant",
+                Content = $"message {i}"
+            });
+        }
+
+        // A genuine turn crosses the threshold via the full-row Update() path — this must
+        // still trigger real threshold compaction, exactly as before this fix.
+        conv.LastPromptTokens = 60;
+        store.Update(conv);
+
+        await Task.Delay(500);
+
+        Assert.Equal(1, summarizer.CallCount);
+        var afterRealCompaction = store.Get("conv1")!;
+        Assert.False(afterRealCompaction.CompactionRunning);
+        // LastPromptTokens is never reset by compaction — it stays above the trigger, which
+        // is exactly the stale-state hazard AddTokenUsage must not walk into.
+        Assert.Equal(60, afterRealCompaction.LastPromptTokens);
+
+        // Now simulate a silent heartbeat turn recording token spend via the targeted update.
+        store.AddTokenUsage("conv1", 10, 5);
+
+        // Give any (incorrectly) triggered background compaction a chance to run.
+        await Task.Delay(500);
+
+        // The summarizer must not have been invoked again — AddTokenUsage bypasses the
+        // threshold-compaction check entirely, unlike a full-row Update() with the same
+        // stale LastPromptTokens would.
+        Assert.Equal(1, summarizer.CallCount);
+        var afterTokenUsage = store.Get("conv1")!;
+        Assert.False(afterTokenUsage.CompactionRunning);
+        Assert.Equal(afterRealCompaction.TotalPromptTokens + 10, afterTokenUsage.TotalPromptTokens);
+        Assert.Equal(afterRealCompaction.TotalCompletionTokens + 5, afterTokenUsage.TotalCompletionTokens);
+    }
+
+    [Fact]
     public async Task Delete_cancels_in_flight_compaction()
     {
         var gate = new TaskCompletionSource();
@@ -523,6 +601,7 @@ public class SqliteConversationStoreTests : IDisposable
         public IReadOnlyList<Message>? LastMessages { get; private set; }
         public string? LastExistingContext { get; private set; }
         public string? LastCustomInstructions { get; private set; }
+        public int CallCount { get; private set; }
 
         public Task<CompactionResult> SummarizeAsync(
             string? existingContext,
@@ -530,6 +609,7 @@ public class SqliteConversationStoreTests : IDisposable
             string? customInstructions = null,
             CancellationToken ct = default)
         {
+            CallCount++;
             LastExistingContext = existingContext;
             LastMessages = messages;
             LastCustomInstructions = customInstructions;

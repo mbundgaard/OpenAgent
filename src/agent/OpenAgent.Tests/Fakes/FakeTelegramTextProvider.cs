@@ -27,7 +27,8 @@ public sealed class FakeTelegramTextProvider : ILlmTextProvider
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,
         Message userMessage,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default,
+        bool persistUserMessage = true)
     {
         yield return new TextDelta(_response);
         await Task.CompletedTask;

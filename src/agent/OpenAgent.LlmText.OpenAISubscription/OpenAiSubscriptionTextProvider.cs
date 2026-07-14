@@ -324,7 +324,8 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,
         Message userMessage,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default,
+        bool persistUserMessage = true)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
@@ -339,12 +340,18 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
         var conversationId = conversation.Id;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-        // Persist the caller-supplied user message. Track every message ID written this
-        // turn so the whole turn can be discarded if the agent ends with the "[]" sentinel.
-        agentLogic.AddMessage(conversationId, userMessage);
-        var turnMessageIds = new List<string> { userMessage.Id };
+        // Persist the caller-supplied user message, unless the caller asked for it to stay
+        // ephemeral (see persistUserMessage doc on the interface). Track every message ID
+        // written this turn so the whole turn can be discarded if the agent ends with the
+        // "[]" sentinel.
+        var turnMessageIds = new List<string>();
+        if (persistUserMessage)
+        {
+            agentLogic.AddMessage(conversationId, userMessage);
+            turnMessageIds.Add(userMessage.Id);
+        }
 
-        var input = BuildInput(conversation);
+        var input = BuildInputForTurn(conversation, userMessage, persistUserMessage);
         var tools = BuildTools();
 
         var maxToolRounds = agentConfig.MaxToolRounds;
@@ -488,6 +495,24 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                     Modality = MessageModality.Text
                 });
 
+                // Append this round's function_call items to the in-memory input list — mirrors
+                // the shape BuildInput derives from persisted history (all function_call entries
+                // for a round, followed by all function_call_output entries). Appending in-memory
+                // instead of re-deriving `input` from the store keeps the transient heartbeat nudge
+                // (when persistUserMessage is false) in its correct chronological position — right
+                // after history, before any of this turn's tool activity — on every round.
+                foreach (var tc in toolCalls)
+                {
+                    input.Add(new
+                    {
+                        type = "function_call",
+                        call_id = tc.CallId,
+                        id = tc.ItemId,
+                        name = tc.Name,
+                        arguments = tc.Arguments
+                    });
+                }
+
                 foreach (var tc in toolCalls)
                 {
                     yield return new ToolCallEvent(tc.StoredId, tc.Name, tc.Arguments);
@@ -522,9 +547,15 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                         ToolCallId = tc.StoredId,
                         Modality = MessageModality.Text
                     });
+
+                    input.Add(new
+                    {
+                        type = "function_call_output",
+                        call_id = tc.CallId,
+                        output = result
+                    });
                 }
 
-                input = BuildInput(agentLogic.GetConversation(conversationId) ?? conversation);
                 continue;
             }
 
@@ -537,9 +568,18 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
             if (ResponseSuppression.IsSuppressed(text.ToString()))
             {
                 agentLogic.DeleteMessages(conversationId, turnMessageIds);
+
+                // A discarded turn still cost tokens. Roll them into the conversation totals so
+                // silent heartbeat runs are not invisible in cost accounting. TurnCount,
+                // LastActivity and LastPromptTokens are deliberately NOT updated - see the
+                // Anthropic provider for the reasoning. AddTokenUsage is a targeted update (see
+                // its XML doc) so it does not go through Update()'s threshold-compaction check.
+                agentLogic.AddTokenUsage(conversationId, promptTokens ?? 0, completionTokens ?? 0);
+
                 logger.LogInformation(
-                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed)",
-                    conversationId, turnMessageIds.Count);
+                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed), {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",
+                    conversationId, turnMessageIds.Count, promptTokens, completionTokens, stopwatch.ElapsedMilliseconds);
+
                 yield return new ResponseSuppressed();
                 yield break;
             }
@@ -633,6 +673,28 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                     yield return new TextDelta(delta);
             }
         }
+    }
+
+    /// <summary>
+    /// Builds the Responses API input list for the start of a turn, then appends the transient
+    /// user message when it was not persisted to the store (see persistUserMessage doc on the
+    /// interface). Called once per turn — subsequent tool-call rounds append their function_call
+    /// / function_call_output items directly to the returned list in-memory (mirroring the
+    /// Anthropic and Azure providers) rather than re-deriving from persisted history, so the
+    /// transient nudge stays in its correct chronological position across every round.
+    /// </summary>
+    private List<object> BuildInputForTurn(Conversation conversation, Message userMessage, bool persistUserMessage)
+    {
+        var input = BuildInput(conversation);
+        if (!persistUserMessage)
+        {
+            input.Add(new
+            {
+                role = userMessage.Role,
+                content = FromTagFormatter.Wrap(userMessage.Sender, userMessage.Content)
+            });
+        }
+        return input;
     }
 
     private List<object> BuildInput(Conversation conversation)

@@ -99,6 +99,13 @@ public sealed class InMemoryConversationStore : IConversationStore
         conv.VoiceSessionOpen = open;
     }
 
+    public void AddTokenUsage(string conversationId, int promptTokens, int completionTokens)
+    {
+        if (!_conversations.TryGetValue(conversationId, out var conv)) return;
+        conv.TotalPromptTokens += promptTokens;
+        conv.TotalCompletionTokens += completionTokens;
+    }
+
     public void UpdateDisplayName(string conversationId, string? displayName)
     {
         if (_conversations.TryGetValue(conversationId, out var conv) && conv.DisplayName != displayName)

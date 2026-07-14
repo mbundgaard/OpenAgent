@@ -20,8 +20,8 @@ internal sealed class SystemPromptBuilder
     private readonly Dictionary<string, string> _files = new();
 
     // Prompt files. Mode filters control which files are included for which conversation mode.
-    // Default mode (Always) means the file is included in every prompt; VoiceOnly / BackgroundOnly
-    // select files that only apply to specific source/modality combinations.
+    // Default mode (Always) means the file is included in every prompt; VoiceOnly selects files
+    // that only apply to voice conversations.
     private static readonly (string FilePath, PromptFileMode Mode)[] FileMap =
     [
         ("AGENTS.md",     PromptFileMode.Always),
@@ -31,14 +31,12 @@ internal sealed class SystemPromptBuilder
         ("TOOLS.md",      PromptFileMode.Always),
         ("MEMORY.md",     PromptFileMode.Always),
         ("VOICE.md",      PromptFileMode.VoiceOnly),
-        ("BACKGROUND.md", PromptFileMode.BackgroundOnly),
     ];
 
     private enum PromptFileMode
     {
         Always,
-        VoiceOnly,
-        BackgroundOnly
+        VoiceOnly
     }
 
     public SystemPromptBuilder(AgentEnvironment environment, SkillCatalog skillCatalog, AgentConfig agentConfig, ILogger<SystemPromptBuilder> logger)
@@ -64,19 +62,16 @@ internal sealed class SystemPromptBuilder
     /// <summary>
     /// Builds the system prompt for the given conversation by concatenating the relevant
     /// files in order, separated by blank lines. <paramref name="voice"/> selects whether
-    /// voice-only files (e.g. VOICE.md) are included. <paramref name="source"/> selects
-    /// source-specific files (e.g. BACKGROUND.md when <c>source == "background"</c>).
+    /// voice-only files (e.g. VOICE.md) are included. <paramref name="source"/> is unused by
+    /// this builder but kept on the signature for callers that still pass it.
     /// </summary>
     public string Build(string conversationId, bool voice, IReadOnlyList<string>? activeSkills = null, string? intention = null, string? source = null)
     {
-        var isBackground = string.Equals(source, "background", StringComparison.OrdinalIgnoreCase);
         var sections = new List<string>();
 
         foreach (var (filePath, mode) in FileMap)
         {
             if (mode == PromptFileMode.VoiceOnly && !voice)
-                continue;
-            if (mode == PromptFileMode.BackgroundOnly && !isBackground)
                 continue;
 
             if (_files.TryGetValue(filePath, out var content))

@@ -73,7 +73,8 @@ public class ScheduledTaskExecutorTests
         public int? GetContextWindow(string model) => null;
 
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
-            [EnumeratorCancellation] CancellationToken ct = default)
+            [EnumeratorCancellation] CancellationToken ct = default,
+            bool persistUserMessage = true)
         {
             foreach (var evt in events)
                 yield return evt;

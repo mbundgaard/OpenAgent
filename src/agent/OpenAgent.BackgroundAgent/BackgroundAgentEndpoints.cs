@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using OpenAgent.Models.Configs;
 using OpenAgent.ScheduledTasks.SystemJobs;
 
 namespace OpenAgent.BackgroundAgent;
@@ -19,7 +20,8 @@ public static class BackgroundAgentEndpoints
         // GET /api/background-agent/state — current scheduling + gate snapshot.
         group.MapGet("/state", async (
             BackgroundAgentRunner runner,
-            SystemJobStateStore jobStateStore) =>
+            SystemJobStateStore jobStateStore,
+            AgentConfig agentConfig) =>
         {
             jobStateStore.Load();
             var state = jobStateStore.GetOrCreate(BackgroundAgentRunner.JobName);
@@ -28,7 +30,7 @@ public static class BackgroundAgentEndpoints
 
             return Results.Ok(new BackgroundAgentStateResponse(
                 Name: BackgroundAgentRunner.JobName,
-                ConversationId: BackgroundAgentRunner.BackgroundConversationId,
+                ConversationId: agentConfig.MainConversationId ?? "",
                 LastRunAt: state.LastRunAt,
                 NextRunAt: state.NextRunAt,
                 LastStatus: state.LastStatus,

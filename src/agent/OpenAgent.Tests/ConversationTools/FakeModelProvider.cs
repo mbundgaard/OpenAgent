@@ -19,7 +19,8 @@ internal sealed class FakeModelProvider(string key, string[] models) : ILlmTextP
     public int? GetContextWindow(string model) => null;
 
     public IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Models.Conversations.Conversation conversation, Message userMessage, CancellationToken ct = default)
+        Models.Conversations.Conversation conversation, Message userMessage, CancellationToken ct = default,
+        bool persistUserMessage = true)
         => throw new NotImplementedException();
 
     public IAsyncEnumerable<CompletionEvent> CompleteAsync(

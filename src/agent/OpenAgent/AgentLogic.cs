@@ -65,6 +65,9 @@ internal sealed class AgentLogic(
     public void SetVoiceSession(string conversationId, string? sessionId, bool open)
         => store.SetVoiceSession(conversationId, sessionId, open);
 
+    public void AddTokenUsage(string conversationId, int promptTokens, int completionTokens)
+        => store.AddTokenUsage(conversationId, promptTokens, completionTokens);
+
     public Task<bool> CompactAsync(string conversationId, CompactionReason reason, string? customInstructions = null, CancellationToken ct = default)
         => store.CompactNowAsync(conversationId, reason, customInstructions, ct);
 }

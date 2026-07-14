@@ -50,7 +50,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddSystemJobs(this IServiceCollection services, string dataPath)
     {
         var statePath = Path.Combine(dataPath, "config", "system-jobs.json");
-        services.AddSingleton(new SystemJobStateStore(statePath));
+        services.AddSingleton(sp => new SystemJobStateStore(statePath, sp.GetRequiredService<ILogger<SystemJobStateStore>>()));
         services.AddSingleton<SystemJobRunner>();
         services.AddHostedService(sp => sp.GetRequiredService<SystemJobRunner>());
         return services;

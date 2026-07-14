@@ -3,6 +3,7 @@ using OpenAgent.BackgroundAgent;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
+using OpenAgent.ScheduledTasks;
 using OpenAgent.ScheduledTasks.SystemJobs;
 using OpenAgent.Tests.Fakes;
 
@@ -43,8 +44,13 @@ public class BackgroundAgentRunnerTests : IDisposable
         var environment = new AgentEnvironment { DataPath = _dataPath };
         Func<string, ILlmTextProvider> factory = _ => provider ?? new StreamingTextProvider("ok");
 
+        var router = new DeliveryRouter(
+            new NoopConnectionManager(),
+            new NoopWebSocketRegistry(),
+            NullLogger<DeliveryRouter>.Instance);
+
         var runner = new BackgroundAgentRunner(
-            store, factory, environment, config, jobStore,
+            store, factory, environment, config, jobStore, router,
             NullLogger<BackgroundAgentRunner>.Instance);
         return (runner, store, config, jobStore);
     }
@@ -115,54 +121,226 @@ public class BackgroundAgentRunnerTests : IDisposable
         Assert.True(await runner.ShouldRunAsync(DateTimeOffset.UtcNow));
     }
 
+    // The heartbeat runs IN the main conversation - that is the whole point of the redesign.
+    // It must not create a conversation of its own.
     [Fact]
-    public async Task RunAsync_creates_background_conversation_with_correct_source()
+    public async Task RunAsync_runs_the_turn_in_the_main_conversation()
     {
-        var (runner, store, _, _) = Build();
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "Monday's shot is not logged - did you take it?");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
         await runner.RunAsync(CancellationToken.None);
 
-        var conv = store.Get(BackgroundAgentRunner.BackgroundConversationId);
-        Assert.NotNull(conv);
-        Assert.Equal("background", conv!.Source);
+        var reply = Assert.Single(store.GetMessages(MainId), m => m.Role == "assistant");
+        Assert.Contains("Monday's shot", reply.Content);
+    }
+
+    // The nudge is scaffolding, not conversation. It must never touch the store - not even
+    // transiently. Asserting it is gone AFTER RunAsync completes is not enough: the old
+    // persist-then-delete design also passed that check, yet left a real window where a
+    // concurrent turn on the same conversation (e.g. a real Telegram message arriving mid-
+    // heartbeat) could read the nudge while it sat in the database. The mid-turn snapshot
+    // recorded by PersistingTextProvider (taken before the turn yields anything back) proves
+    // the store never contained the nudge at any point, which is the assertion that actually
+    // closes the concurrency window.
+    [Fact]
+    public async Task RunAsync_never_writes_the_nudge_to_the_store_not_even_mid_turn()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        // After the turn: no user message left behind.
+        Assert.Empty(store.GetMessages(MainId).Where(m => m.Role == "user"));
+
+        // During the turn: the conversation was completely empty at the mid-turn snapshot point
+        // (taken before the reply is yielded) — the strongest form of this assertion, since it
+        // would fail against the old persist-then-delete implementation even though that
+        // implementation passed the after-the-fact check above.
+        Assert.Empty(provider.StoreContentsDuringTurn);
+
+        Assert.Single(provider.PersistedUserContents); // the provider DID receive a nudge
+        Assert.Contains("[Heartbeat]", provider.PersistedUserContents[0]);
+    }
+
+    // BuildNudge inlines BACKGROUND.md fresh from disk every run - this is the entire point of the
+    // redesign (the old SystemPromptBuilder injection path is gone). Prove the provider actually
+    // receives the instructions, not just that a nudge with the "[Heartbeat]" marker was sent.
+    [Fact]
+    public async Task RunAsync_inlines_BACKGROUND_md_content_into_the_nudge()
+    {
+        const string DistinctiveInstructions = "Check whether Martin logged his insulin shot today before nudging about anything else.";
+        File.WriteAllText(Path.Combine(_dataPath, "BACKGROUND.md"), DistinctiveInstructions);
+
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Single(provider.PersistedUserContents);
+        Assert.Contains(DistinctiveInstructions, provider.PersistedUserContents[0]);
+    }
+
+    // BuildNudge must tolerate a missing BACKGROUND.md - the heartbeat should still run and still
+    // carry its own scaffolding (the marker and the "reply with []" instruction) even with nothing
+    // to inline.
+    [Fact]
+    public async Task RunAsync_still_sends_a_valid_nudge_when_BACKGROUND_md_is_missing()
+    {
+        Assert.False(File.Exists(Path.Combine(_dataPath, "BACKGROUND.md")));
+
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Single(provider.PersistedUserContents);
+        var nudgeContent = provider.PersistedUserContents[0];
+        Assert.Contains("[Heartbeat]", nudgeContent);
+        Assert.Contains("reply with exactly [] and nothing else.", nudgeContent);
+    }
+
+    // A silent run must leave the thread exactly as it found it.
+    [Fact]
+    public async Task RunAsync_silent_turn_leaves_main_conversation_untouched()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "nothing new here.\n\n[]");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Empty(store.GetMessages(MainId));
+    }
+
+    // If the completion throws, the nudge must still be cleaned up - otherwise a crash
+    // leaves "[Heartbeat]" sitting in the user's chat.
+    [Fact]
+    public async Task RunAsync_removes_the_nudge_even_when_the_provider_throws()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var (runner, _, _, _) = BuildWith(store, new ThrowingTextProvider());
+
+        await Assert.ThrowsAnyAsync<Exception>(() => runner.RunAsync(CancellationToken.None));
+
+        Assert.Empty(store.GetMessages(MainId).Where(m => m.Role == "user"));
     }
 
     [Fact]
-    public async Task RunAsync_skips_when_text_provider_unset()
+    public async Task RunAsync_no_ops_when_main_conversation_id_unset()
     {
         var (runner, store, config, _) = Build();
-        config.TextProvider = "";
+        config.MainConversationId = null;
+
         await runner.RunAsync(CancellationToken.None);
 
-        // No conversation created because we bailed early
-        Assert.Null(store.Get(BackgroundAgentRunner.BackgroundConversationId));
+        Assert.Empty(store.GetMessages(MainId));
     }
 
+    // BLOCKER regression (final review). Round 1 narrates and calls a tool ("Updating today's
+    // log."); round 2 is the "[]" sentinel. The provider persists nothing and deletes the whole
+    // turn from history. Before the fix, the runner concatenated TextDelta across BOTH rounds
+    // and re-derived suppression from that concatenation ("Updating today's log.[]" does not end
+    // in a bare "[]" line, so IsSuppressed returned false) - delivering junk text to the user's
+    // real channel for a turn the provider itself discarded. The fix consumes the
+    // ResponseSuppressed event the provider already emits instead of re-deriving it.
     [Fact]
-    public async Task RunAsync_feeds_inbox_contents_to_provider()
+    public async Task RunAsync_delivers_nothing_when_the_final_round_after_a_tool_call_is_suppressed()
     {
-        var inboxPath = Path.Combine(_dataPath, "memory", "background", "INBOX.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(inboxPath)!);
-        File.WriteAllText(inboxPath, "- https://example.com/article (summarised)");
+        var store = new InMemoryConversationStore();
+        BindMainConversationToChannel(store);
+        var provider = new MultiRoundTextProvider(store, ["Updating today's log."], "[]");
+        var (runner, sender) = BuildWithChannelDelivery(store, provider);
 
-        var captor = new CapturingTextProvider("ok");
-        var (runner, _, _, _) = Build(provider: captor);
         await runner.RunAsync(CancellationToken.None);
 
-        Assert.Contains("https://example.com/article", captor.LastUserContent);
+        Assert.Empty(sender.SentMessages);
+        Assert.Empty(store.GetMessages(MainId));
     }
 
+    // Second-order bug from the same root cause: a heartbeat that legitimately speaks AFTER a
+    // tool round. Before the fix, the runner delivered "round-1 narration + final answer" while
+    // the provider persisted only the final answer to history - delivered text diverged from
+    // stored history. The fix resets the buffer on every ToolCallEvent so only the final round's
+    // text (which must equal what the provider persisted) is ever delivered.
     [Fact]
-    public async Task RunAsync_includes_sandbox_file_listing()
+    public async Task RunAsync_delivers_only_the_final_rounds_text_after_a_tool_call()
     {
-        var sandboxFile = Path.Combine(_dataPath, "memory", "background", "active-threads.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(sandboxFile)!);
-        File.WriteAllText(sandboxFile, "researching sqlite-vec");
+        var store = new InMemoryConversationStore();
+        BindMainConversationToChannel(store);
+        var provider = new MultiRoundTextProvider(store, ["Checking..."], "Monday's shot isn't logged.");
+        var (runner, sender) = BuildWithChannelDelivery(store, provider);
 
-        var captor = new CapturingTextProvider("ok");
-        var (runner, _, _, _) = Build(provider: captor);
         await runner.RunAsync(CancellationToken.None);
 
-        Assert.Contains("active-threads.md", captor.LastUserContent);
-        Assert.Contains("researching sqlite-vec", captor.LastUserContent);
+        var sent = Assert.Single(sender.SentMessages);
+        Assert.Equal("Monday's shot isn't logged.", sent.Text);
+        Assert.DoesNotContain("Checking...", sent.Text);
+        // Delivered text must equal what the provider actually persisted as the assistant message.
+        Assert.Equal(provider.PersistedAssistantContent, sent.Text);
+    }
+
+    private void BindMainConversationToChannel(InMemoryConversationStore store)
+    {
+        var conversation = store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        conversation.ChannelType = "telegram";
+        conversation.ConnectionId = "conn-1";
+        conversation.ChannelChatId = "chat-1";
+        store.Update(conversation);
+    }
+
+    private (BackgroundAgentRunner runner, FakeOutboundChannelProvider sender)
+        BuildWithChannelDelivery(InMemoryConversationStore store, ILlmTextProvider provider)
+    {
+        var config = new AgentConfig
+        {
+            BackgroundAgentEnabled = true,
+            MainConversationId = MainId,
+            TextProvider = "fake",
+            TextModel = "m"
+        };
+        var jobStore = new SystemJobStateStore(Path.Combine(_dataPath, "system-jobs.json"));
+        var environment = new AgentEnvironment { DataPath = _dataPath };
+        var sender = new FakeOutboundChannelProvider();
+        var router = new DeliveryRouter(sender, new NoopWebSocketRegistry(), NullLogger<DeliveryRouter>.Instance);
+
+        var runner = new BackgroundAgentRunner(
+            store, _ => provider, environment, config, jobStore, router,
+            NullLogger<BackgroundAgentRunner>.Instance);
+        return (runner, sender);
+    }
+
+    private (BackgroundAgentRunner runner, InMemoryConversationStore store, AgentConfig config, SystemJobStateStore jobState)
+        BuildWith(InMemoryConversationStore store, ILlmTextProvider provider)
+    {
+        var config = new AgentConfig
+        {
+            BackgroundAgentEnabled = true,
+            MainConversationId = MainId,
+            TextProvider = "fake",
+            TextModel = "m"
+        };
+        var jobStore = new SystemJobStateStore(Path.Combine(_dataPath, "system-jobs.json"));
+        var environment = new AgentEnvironment { DataPath = _dataPath };
+        var router = new DeliveryRouter(
+            new NoopConnectionManager(),
+            new NoopWebSocketRegistry(),
+            NullLogger<DeliveryRouter>.Instance);
+
+        var runner = new BackgroundAgentRunner(
+            store, _ => provider, environment, config, jobStore, router,
+            NullLogger<BackgroundAgentRunner>.Instance);
+        return (runner, store, config, jobStore);
     }
 }

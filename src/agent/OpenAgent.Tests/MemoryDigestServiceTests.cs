@@ -253,7 +253,8 @@ internal sealed class CapturingTextProvider : ILlmTextProvider
     public async IAsyncEnumerable<OpenAgent.Models.Common.CompletionEvent> CompleteAsync(
         OpenAgent.Models.Conversations.Conversation conversation,
         OpenAgent.Models.Conversations.Message userMessage,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
+        bool persistUserMessage = true)
     {
         LastUserContent = userMessage.Content;
         yield return new OpenAgent.Models.Common.TextDelta(_response);

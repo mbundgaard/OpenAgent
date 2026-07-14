@@ -389,6 +389,25 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    public void AddTokenUsage(string conversationId, int promptTokens, int completionTokens)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE Conversations
+            SET TotalPromptTokens = TotalPromptTokens + @promptTokens,
+                TotalCompletionTokens = TotalCompletionTokens + @completionTokens
+            WHERE Id = @id
+            """;
+        cmd.Parameters.AddWithValue("@id", conversationId);
+        cmd.Parameters.AddWithValue("@promptTokens", promptTokens);
+        cmd.Parameters.AddWithValue("@completionTokens", completionTokens);
+        cmd.ExecuteNonQuery();
+
+        // Deliberately does NOT call TryStartCompaction — see the XML doc on the interface
+        // member for why a full-row Update() here would be a hazard.
+    }
+
     public bool Delete(string conversationId)
     {
         // Cancel any in-flight compaction before tearing down the conversation's data.

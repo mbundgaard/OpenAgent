@@ -110,7 +110,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
 
     /// <inheritdoc />
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
@@ -129,13 +129,29 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 conversation.ContextWindowTokens = window;
         }
 
-        // Persist the caller-supplied user message. Track every message ID written this
-        // turn so the whole turn can be discarded if the agent ends with the "[]" sentinel.
-        agentLogic.AddMessage(conversationId, userMessage);
-        var turnMessageIds = new List<string> { userMessage.Id };
+        // Persist the caller-supplied user message, unless the caller asked for it to stay
+        // ephemeral (see persistUserMessage doc on the interface). Track every message ID
+        // written this turn so the whole turn can be discarded if the agent ends with the
+        // "[]" sentinel.
+        var turnMessageIds = new List<string>();
+        if (persistUserMessage)
+        {
+            agentLogic.AddMessage(conversationId, userMessage);
+            turnMessageIds.Add(userMessage.Id);
+        }
 
-        // Build the initial message list and tools — system prompt is rebuilt per round
+        // Build the initial message list and tools — system prompt is rebuilt per round.
+        // When the user message was not persisted, append it in-memory so the model still
+        // sees it as the final turn without it ever touching the conversation store.
         var messages = BuildMessages(conversation);
+        if (!persistUserMessage)
+            messages.Add(ToTransientMessage(userMessage));
+
+        // Anchor marking where this turn's own tool_use/tool_result blocks begin (appended
+        // in-memory below, round by round). Used only by the overflow-retry rebuild so the
+        // transient nudge (persistUserMessage == false) can be reinserted at this same
+        // chronological position instead of landing after this turn's own tool activity.
+        var turnPrefixCount = messages.Count;
         var tools = BuildTools();
         var useThinking = conversation.TextModel.Contains("4-6", StringComparison.OrdinalIgnoreCase);
 
@@ -198,7 +214,28 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
 
                     // Rebuild messages from the compacted state.
                     var compactedConv = agentLogic.GetConversation(conversationId) ?? conversation;
-                    messages = BuildMessages(compactedConv);
+                    if (persistUserMessage)
+                    {
+                        // userMessage is already persisted, so BuildMessages naturally includes it
+                        // (and this turn's tool activity, in order) — same as the initial build.
+                        messages = BuildMessages(compactedConv);
+                    }
+                    else
+                    {
+                        // The transient nudge was never persisted, so BuildMessages alone would
+                        // omit it, and naively re-appending it at the end would land it AFTER
+                        // this turn's own tool_use/tool_result blocks (which ARE persisted by
+                        // now, if overflow hit on round >= 1) — presenting it as the newest
+                        // message instead of the one that opened the turn. Preserve this turn's
+                        // already-built blocks, rebuild history excluding them (they'd otherwise
+                        // be duplicated from the store), reinsert the nudge in its correct
+                        // chronological position, then reattach the turn's blocks after it.
+                        var turnBlocks = messages.Skip(turnPrefixCount).ToList();
+                        var rebuiltBase = BuildMessages(compactedConv, turnMessageIds);
+                        rebuiltBase.Add(ToTransientMessage(userMessage));
+                        messages = rebuiltBase.Concat(turnBlocks).ToList();
+                        turnPrefixCount = rebuiltBase.Count;
+                    }
                     continue;
                 }
 
@@ -388,9 +425,21 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             if (ResponseSuppression.IsSuppressed(fullContent.ToString()))
             {
                 agentLogic.DeleteMessages(conversationId, turnMessageIds);
+
+                // A discarded turn still cost tokens. Roll them into the conversation totals so
+                // silent heartbeat runs are not invisible in cost accounting. TurnCount,
+                // LastActivity and LastPromptTokens are deliberately NOT updated: no turn was
+                // recorded, the conversation did not become active, and LastPromptTokens drives
+                // the compaction threshold - feeding it a figure from a turn whose messages were
+                // just deleted would trigger spurious compaction. AddTokenUsage is a targeted
+                // update (see its XML doc) so it does not go through Update()'s threshold-
+                // compaction check at all.
+                agentLogic.AddTokenUsage(conversationId, inputTokens ?? 0, outputTokens ?? 0);
+
                 logger.LogInformation(
-                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed)",
-                    conversationId, turnMessageIds.Count);
+                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed), {InputTokens} input, {OutputTokens} output tokens, {ElapsedMs}ms",
+                    conversationId, turnMessageIds.Count, inputTokens, outputTokens, stopwatch.ElapsedMilliseconds);
+
                 if (toolCallsStarted)
                     yield return new ThinkingStopped();
                 yield return new ResponseSuppressed();
@@ -525,7 +574,14 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
     /// Reconstructs the Anthropic message list from stored conversation history.
     /// Handles tool call rounds, orphaned call skipping, and the Anthropic tool_result user message convention.
     /// </summary>
-    private List<AnthropicMessage> BuildMessages(Conversation conversation)
+    /// <param name="conversation">The conversation to build history for.</param>
+    /// <param name="excludeMessageIds">
+    /// Optional set of assistant tool-call message IDs to omit from the rebuilt list, along with
+    /// their matching tool-result messages. Used by the overflow-retry path when the caller
+    /// already holds an in-memory reconstruction of the current turn's tool activity and would
+    /// otherwise duplicate it.
+    /// </param>
+    private List<AnthropicMessage> BuildMessages(Conversation conversation, IReadOnlyCollection<string>? excludeMessageIds = null)
     {
         var result = new List<AnthropicMessage>();
 
@@ -567,6 +623,16 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             // Assistant message with tool calls
             if (msg.ToolCalls is not null)
             {
+                if (excludeMessageIds is not null && excludeMessageIds.Contains(msg.Id))
+                {
+                    // This round belongs to the current turn and the caller already holds an
+                    // in-memory reconstruction of it — skip both the assistant message and its
+                    // matching tool results so they are not duplicated.
+                    while (i + 1 < storedMessages.Count && storedMessages[i + 1].Role == "tool")
+                        i++;
+                    continue;
+                }
+
                 var toolCalls = JsonSerializer.Deserialize<List<StoredToolCall>>(msg.ToolCalls, JsonOptions);
                 if (toolCalls is { Count: > 0 })
                 {
@@ -648,6 +714,17 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 m.Content is string s ? (s.Length > 200 ? s[..200] + "..." : s) : "[blocks]");
 
         return result;
+    }
+
+    /// <summary>
+    /// Converts a transient (never-persisted) user message into the Anthropic wire format,
+    /// mirroring the plain-message branch of <see cref="BuildMessages"/>. Used only for the
+    /// persistUserMessage=false path — a nudge never has a reply-quote target to resolve.
+    /// </summary>
+    private static AnthropicMessage ToTransientMessage(Message userMessage)
+    {
+        var content = FromTagFormatter.Wrap(userMessage.Sender, userMessage.Content ?? "");
+        return new AnthropicMessage { Role = userMessage.Role, Content = content };
     }
 
     /// <summary>
