@@ -64,4 +64,28 @@ public class SystemJobStateStoreTests : IDisposable
         Assert.Equal("success", reader.All["job-a"].LastStatus);
         Assert.Equal("error", reader.All["job-b"].LastStatus);
     }
+
+    [Fact]
+    public void Save_does_not_throw_when_the_destination_file_cannot_be_replaced()
+    {
+        // Seed an existing target file so File.Move has something to replace.
+        var seedStore = new SystemJobStateStore(_statePath);
+        seedStore.GetOrCreate("job-a").LastStatus = "success";
+        seedStore.Save();
+
+        // Hold an exclusive handle open on the target so File.Move(..., overwrite: true) hits
+        // the same sharing violation another concurrently-running host process would produce.
+        using var exclusiveHandle = new FileStream(
+            _statePath,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None);
+
+        var store = new SystemJobStateStore(_statePath);
+        store.GetOrCreate("job-b").LastStatus = "error";
+
+        var exception = Record.Exception(() => store.Save());
+
+        Assert.Null(exception);
+    }
 }
