@@ -3,6 +3,7 @@ using OpenAgent.BackgroundAgent;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
+using OpenAgent.ScheduledTasks;
 using OpenAgent.ScheduledTasks.SystemJobs;
 using OpenAgent.Tests.Fakes;
 
@@ -43,8 +44,13 @@ public class BackgroundAgentRunnerTests : IDisposable
         var environment = new AgentEnvironment { DataPath = _dataPath };
         Func<string, ILlmTextProvider> factory = _ => provider ?? new StreamingTextProvider("ok");
 
+        var router = new DeliveryRouter(
+            new NoopConnectionManager(),
+            new NoopWebSocketRegistry(),
+            NullLogger<DeliveryRouter>.Instance);
+
         var runner = new BackgroundAgentRunner(
-            store, factory, environment, config, jobStore,
+            store, factory, environment, config, jobStore, router,
             NullLogger<BackgroundAgentRunner>.Instance);
         return (runner, store, config, jobStore);
     }
@@ -115,54 +121,97 @@ public class BackgroundAgentRunnerTests : IDisposable
         Assert.True(await runner.ShouldRunAsync(DateTimeOffset.UtcNow));
     }
 
+    // The heartbeat runs IN the main conversation - that is the whole point of the redesign.
+    // It must not create a conversation of its own.
     [Fact]
-    public async Task RunAsync_creates_background_conversation_with_correct_source()
+    public async Task RunAsync_runs_the_turn_in_the_main_conversation()
     {
-        var (runner, store, _, _) = Build();
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "Monday's shot is not logged - did you take it?");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
         await runner.RunAsync(CancellationToken.None);
 
-        var conv = store.Get(BackgroundAgentRunner.BackgroundConversationId);
-        Assert.NotNull(conv);
-        Assert.Equal("background", conv!.Source);
+        var reply = Assert.Single(store.GetMessages(MainId), m => m.Role == "assistant");
+        Assert.Contains("Monday's shot", reply.Content);
+    }
+
+    // The nudge is scaffolding, not conversation. It must never survive in Martin's thread.
+    [Fact]
+    public async Task RunAsync_does_not_persist_the_nudge()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Empty(store.GetMessages(MainId).Where(m => m.Role == "user"));
+        Assert.Single(provider.PersistedUserContents); // the provider DID receive a nudge
+        Assert.Contains("[Heartbeat]", provider.PersistedUserContents[0]);
+    }
+
+    // A silent run must leave the thread exactly as it found it.
+    [Fact]
+    public async Task RunAsync_silent_turn_leaves_main_conversation_untouched()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "nothing new here.\n\n[]");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Empty(store.GetMessages(MainId));
+    }
+
+    // If the completion throws, the nudge must still be cleaned up - otherwise a crash
+    // leaves "[Heartbeat]" sitting in the user's chat.
+    [Fact]
+    public async Task RunAsync_removes_the_nudge_even_when_the_provider_throws()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var (runner, _, _, _) = BuildWith(store, new ThrowingTextProvider());
+
+        await Assert.ThrowsAnyAsync<Exception>(() => runner.RunAsync(CancellationToken.None));
+
+        Assert.Empty(store.GetMessages(MainId).Where(m => m.Role == "user"));
     }
 
     [Fact]
-    public async Task RunAsync_skips_when_text_provider_unset()
+    public async Task RunAsync_no_ops_when_main_conversation_id_unset()
     {
         var (runner, store, config, _) = Build();
-        config.TextProvider = "";
+        config.MainConversationId = null;
+
         await runner.RunAsync(CancellationToken.None);
 
-        // No conversation created because we bailed early
-        Assert.Null(store.Get(BackgroundAgentRunner.BackgroundConversationId));
+        Assert.Empty(store.GetMessages(MainId));
     }
 
-    [Fact]
-    public async Task RunAsync_feeds_inbox_contents_to_provider()
+    private (BackgroundAgentRunner runner, InMemoryConversationStore store, AgentConfig config, SystemJobStateStore jobState)
+        BuildWith(InMemoryConversationStore store, ILlmTextProvider provider)
     {
-        var inboxPath = Path.Combine(_dataPath, "memory", "background", "INBOX.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(inboxPath)!);
-        File.WriteAllText(inboxPath, "- https://example.com/article (summarised)");
+        var config = new AgentConfig
+        {
+            BackgroundAgentEnabled = true,
+            MainConversationId = MainId,
+            TextProvider = "fake",
+            TextModel = "m"
+        };
+        var jobStore = new SystemJobStateStore(Path.Combine(_dataPath, "system-jobs.json"));
+        var environment = new AgentEnvironment { DataPath = _dataPath };
+        var router = new DeliveryRouter(
+            new NoopConnectionManager(),
+            new NoopWebSocketRegistry(),
+            NullLogger<DeliveryRouter>.Instance);
 
-        var captor = new CapturingTextProvider("ok");
-        var (runner, _, _, _) = Build(provider: captor);
-        await runner.RunAsync(CancellationToken.None);
-
-        Assert.Contains("https://example.com/article", captor.LastUserContent);
-    }
-
-    [Fact]
-    public async Task RunAsync_includes_sandbox_file_listing()
-    {
-        var sandboxFile = Path.Combine(_dataPath, "memory", "background", "active-threads.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(sandboxFile)!);
-        File.WriteAllText(sandboxFile, "researching sqlite-vec");
-
-        var captor = new CapturingTextProvider("ok");
-        var (runner, _, _, _) = Build(provider: captor);
-        await runner.RunAsync(CancellationToken.None);
-
-        Assert.Contains("active-threads.md", captor.LastUserContent);
-        Assert.Contains("researching sqlite-vec", captor.LastUserContent);
+        var runner = new BackgroundAgentRunner(
+            store, _ => provider, environment, config, jobStore, router,
+            NullLogger<BackgroundAgentRunner>.Instance);
+        return (runner, store, config, jobStore);
     }
 }

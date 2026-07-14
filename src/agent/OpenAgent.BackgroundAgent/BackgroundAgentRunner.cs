@@ -1,39 +1,43 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
 using OpenAgent.Contracts;
+using OpenAgent.Models.Common;
 using OpenAgent.Models.Configs;
 using OpenAgent.Models.Conversations;
+using OpenAgent.ScheduledTasks;
 using OpenAgent.ScheduledTasks.SystemJobs;
 
 namespace OpenAgent.BackgroundAgent;
 
 /// <summary>
-/// Orchestrates a single background agent run. Owns the three-gate check and the kickoff
-/// turn that hands off to a text provider. Stays out of scheduling and state persistence —
-/// <see cref="BackgroundAgentJob"/> wraps this for <c>SystemJobRunner</c> consumption.
+/// Orchestrates a single heartbeat. The heartbeat is a nudge, not a separate agent: it injects an
+/// ephemeral user message into the user's main conversation and lets the agent take an ordinary
+/// turn there - full history, all tools, its real system prompt.
 ///
-/// The bg agent runs in a stable system conversation (<see cref="BackgroundConversationId"/>)
-/// with <c>Source = "background"</c>, which makes <c>SystemPromptBuilder</c> include
-/// BACKGROUND.md. The only outbound path is <c>post_to_main</c>; everything else stays
-/// inside the bg conversation or the agent's sandbox folder.
+/// Because the turn happens in the main conversation, the agent can see what it already said and
+/// what the user answered. That is the whole design: perception and memory-of-speech are not
+/// features, they are consequences of living in the thread. The previous architecture ran in an
+/// isolated conversation with no way to read main, and re-asked the same questions six times in a
+/// day - twice after the user had already answered them.
+///
+/// The nudge itself is never persisted. The agent either replies (the provider persists it, and we
+/// deliver it to the bound channel) or emits the "[]" sentinel (the provider discards the whole
+/// turn, and the thread is untouched).
 /// </summary>
 public sealed class BackgroundAgentRunner
 {
-    /// <summary>Stable ID for the bg agent's own conversation. Single instance, persistent.</summary>
-    public const string BackgroundConversationId = "system:background-agent";
-
     /// <summary>Name under which <see cref="BackgroundAgentJob"/> registers in system-jobs.json.</summary>
     public const string JobName = "background-agent";
 
     private static readonly TimeSpan MinSinceLastRun = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan MinSinceLastMainMessage = TimeSpan.FromMinutes(15);
-    private const int SandboxFilePreviewLines = 60;
 
     private readonly IConversationStore _store;
     private readonly Func<string, ILlmTextProvider> _textProviderResolver;
     private readonly AgentEnvironment _environment;
     private readonly AgentConfig _agentConfig;
     private readonly SystemJobStateStore _jobStateStore;
+    private readonly DeliveryRouter _deliveryRouter;
     private readonly ILogger<BackgroundAgentRunner> _logger;
 
     public BackgroundAgentRunner(
@@ -42,6 +46,7 @@ public sealed class BackgroundAgentRunner
         AgentEnvironment environment,
         AgentConfig agentConfig,
         SystemJobStateStore jobStateStore,
+        DeliveryRouter deliveryRouter,
         ILogger<BackgroundAgentRunner> logger)
     {
         _store = store;
@@ -49,19 +54,17 @@ public sealed class BackgroundAgentRunner
         _environment = environment;
         _agentConfig = agentConfig;
         _jobStateStore = jobStateStore;
+        _deliveryRouter = deliveryRouter;
         _logger = logger;
     }
 
     /// <summary>
-    /// Apply the three gates from BACKGROUND.md. Returns true only when all are satisfied.
-    /// Time-of-day gate is enforced by the cron itself ("*/15 6-21 * * *"); this method
-    /// covers the two interval gates plus a configuration sanity check.
+    /// Apply the gates from BACKGROUND.md. Returns true only when all are satisfied. The
+    /// time-of-day window is owned by the cron ("*/15 6-21 * * *"); this method covers the master
+    /// switch, configuration sanity, and the two interval gates.
     /// </summary>
     public Task<bool> ShouldRunAsync(DateTimeOffset now)
     {
-        // Master switch — when the autonomous flow is disabled in agent.json the scheduled tick
-        // skips silently. Per-conversation proactivity is handled by scheduled tasks instead.
-        // Manual /api/background-agent/run still works; it doesn't consult this gate.
         if (!_agentConfig.BackgroundAgentEnabled)
         {
             _logger.LogDebug("Background agent gated: AgentConfig.BackgroundAgentEnabled is false");
@@ -77,14 +80,12 @@ public sealed class BackgroundAgentRunner
         var mainConversation = _store.Get(_agentConfig.MainConversationId);
         if (mainConversation is null)
         {
-            _logger.LogDebug("Background agent gated: main conversation '{Id}' not found",
+            _logger.LogDebug("Background agent gated: main conversation '{ConversationId}' not found",
                 _agentConfig.MainConversationId);
             return Task.FromResult(false);
         }
 
-        // Gate 1: minimum interval since our previous successful run (taken from the system-jobs
-        // state file). A gated-out tick doesn't update LastRunAt, so this keeps re-evaluating
-        // until enough time has passed.
+        // Gate 1: minimum interval since our previous successful run.
         var jobState = _jobStateStore.GetOrCreate(JobName);
         if (jobState.LastRunAt is { } lastRun && now - lastRun < MinSinceLastRun)
         {
@@ -93,8 +94,7 @@ public sealed class BackgroundAgentRunner
             return Task.FromResult(false);
         }
 
-        // Gate 2: minimum quiet period in the main conversation. If the user is actively chatting,
-        // don't barge in with [Background] posts.
+        // Gate 2: minimum quiet period. Don't interrupt an active conversation.
         var messages = _store.GetMessages(_agentConfig.MainConversationId);
         var lastMessageAt = messages.Count == 0 ? (DateTimeOffset?)null : messages[^1].CreatedAt;
         if (lastMessageAt is { } lastMsg && now - lastMsg < MinSinceLastMainMessage)
@@ -108,118 +108,105 @@ public sealed class BackgroundAgentRunner
     }
 
     /// <summary>
-    /// Run one autonomous turn: ensure the bg conversation exists, build the kickoff user message
-    /// from INBOX.md + sandbox listing, and stream the text provider. The provider drives the
-    /// tool loop; nothing the agent emits is delivered automatically — only explicit
-    /// <c>post_to_main</c> calls reach the user.
+    /// Run one heartbeat: inject the nudge into the main conversation, let the agent take a normal
+    /// turn, remove the nudge, and deliver the reply if there is one.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(_agentConfig.TextProvider) || string.IsNullOrWhiteSpace(_agentConfig.TextModel))
+        var mainConversationId = _agentConfig.MainConversationId;
+        if (string.IsNullOrWhiteSpace(mainConversationId))
         {
-            _logger.LogWarning("Background agent skipped: TextProvider or TextModel is unset");
+            _logger.LogWarning("Heartbeat skipped: AgentConfig.MainConversationId is not set");
             return;
         }
 
-        var conversation = _store.GetOrCreate(
-            BackgroundConversationId,
-            "background",
-            _agentConfig.TextProvider,
-            _agentConfig.TextModel,
-            _agentConfig.VoiceProvider,
-            _agentConfig.VoiceModel);
+        var conversation = _store.Get(mainConversationId);
+        if (conversation is null)
+        {
+            _logger.LogWarning("Heartbeat skipped: main conversation '{ConversationId}' not found", mainConversationId);
+            return;
+        }
 
-        var prompt = BuildKickoffPrompt();
-        var userMessage = new Message
+        var nudge = new Message
         {
             Id = Guid.NewGuid().ToString(),
-            ConversationId = conversation.Id,
+            ConversationId = mainConversationId,
             Role = "user",
-            Content = prompt
+            Content = BuildNudge(),
+            Modality = MessageModality.Text
         };
 
         var provider = _textProviderResolver(conversation.TextProvider);
         var startedAt = DateTimeOffset.UtcNow;
+        var reply = new StringBuilder();
 
-        // Drain the completion. We don't care about the events — the agent's only outbound path
-        // is post_to_main (explicit tool call). A "[]" final response from the provider already
-        // triggers the suppression sentinel which discards the whole turn from history.
-        await foreach (var _ in provider.CompleteAsync(conversation, userMessage, ct))
+        try
         {
+            await foreach (var evt in provider.CompleteAsync(conversation, nudge, ct))
+            {
+                if (evt is TextDelta delta)
+                    reply.Append(delta.Content);
+            }
+        }
+        finally
+        {
+            // The nudge is scaffolding, never conversation. Remove it whether the agent spoke,
+            // stayed silent, or threw - otherwise a crash mid-turn leaves "[Heartbeat]" sitting in
+            // the user's chat. DeleteMessages is idempotent, so the suppressed path (where the
+            // provider already deleted the whole turn) is safe to double-delete.
+            _store.DeleteMessages(mainConversationId, [nudge.Id]);
         }
 
-        _logger.LogInformation("Background agent run complete in {Ms}ms",
-            (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
+        var text = reply.ToString();
+
+        if (ResponseSuppression.IsSuppressed(text))
+        {
+            _logger.LogInformation("Heartbeat silent in {Ms}ms - agent had nothing to say",
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _logger.LogDebug("Heartbeat produced no text; nothing to deliver");
+            return;
+        }
+
+        try
+        {
+            // Re-fetch in case channel binding shifted during the completion.
+            var current = _store.Get(mainConversationId) ?? conversation;
+            await _deliveryRouter.DeliverAsync(current, text, ct);
+            _logger.LogInformation("Heartbeat spoke: delivered {Length}-char message in {Ms}ms",
+                text.Length, (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
+        }
+        catch (Exception ex)
+        {
+            // The reply is already in history; a delivery failure must not fail the job.
+            _logger.LogError(ex, "Heartbeat delivery failed for conversation '{ConversationId}'", mainConversationId);
+        }
     }
 
     /// <summary>
-    /// Build the per-run kickoff user message: a short framing line plus the inbox contents and
-    /// a listing of the sandbox folder. Both are loaded freshly each run so the agent sees the
-    /// current state of its long-running notes.
+    /// Build the ephemeral nudge. BACKGROUND.md is loaded fresh each run and carried inline,
+    /// because the main conversation's system prompt does not include it (SystemPromptBuilder only
+    /// loaded it for the retired "background"-source conversation).
     /// </summary>
-    private string BuildKickoffPrompt()
+    private string BuildNudge()
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("[Background run]");
-        sb.AppendLine();
-
-        sb.AppendLine("<inbox file=\"memory/background/INBOX.md\">");
-        sb.AppendLine(ReadOrEmpty(Path.Combine(_environment.DataPath, "memory", "background", "INBOX.md"), "empty"));
-        sb.AppendLine("</inbox>");
-        sb.AppendLine();
-
-        sb.AppendLine("<sandbox dir=\"memory/background/\">");
-        sb.AppendLine(BuildSandboxListing());
-        sb.AppendLine("</sandbox>");
-        sb.AppendLine();
-
-        sb.AppendLine("Process the inbox if anything is there. Otherwise, follow an open thread from " +
-            "memory or the recent logs. Use post_to_main only when you have something genuinely worth " +
-            "saying — otherwise end your turn with [] and the run stays silent. Update your sandbox " +
-            "before finishing.");
-        return sb.ToString();
-    }
-
-    private string BuildSandboxListing()
-    {
-        var sandboxDir = Path.Combine(_environment.DataPath, "memory", "background");
-        if (!Directory.Exists(sandboxDir))
-            return "empty (the directory will be created the first time you write a file there)";
-
-        var files = Directory.GetFiles(sandboxDir, "*", SearchOption.AllDirectories)
-            // Skip INBOX.md — it's already included separately above
-            .Where(f => !string.Equals(Path.GetFileName(f), "INBOX.md", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (files.Count == 0)
-            return "empty (no files besides INBOX.md)";
+        var path = Path.Combine(_environment.DataPath, "BACKGROUND.md");
+        var instructions = File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
 
         var sb = new StringBuilder();
-        foreach (var file in files)
+        sb.AppendLine("[Heartbeat]");
+        sb.AppendLine();
+        if (instructions.Length > 0)
         {
-            var relative = Path.GetRelativePath(_environment.DataPath, file).Replace('\\', '/');
-            sb.AppendLine($"--- {relative} ---");
-            try
-            {
-                var lines = File.ReadLines(file).Take(SandboxFilePreviewLines).ToList();
-                sb.AppendLine(string.Join('\n', lines));
-                if (lines.Count == SandboxFilePreviewLines)
-                    sb.AppendLine($"... [preview truncated at {SandboxFilePreviewLines} lines — read the file directly if you need more]");
-            }
-            catch (Exception ex)
-            {
-                sb.AppendLine($"[could not read: {ex.Message}]");
-            }
+            sb.AppendLine(instructions);
             sb.AppendLine();
         }
-        return sb.ToString().TrimEnd();
-    }
-
-    private static string ReadOrEmpty(string path, string emptyLabel)
-    {
-        if (!File.Exists(path)) return emptyLabel;
-        var content = File.ReadAllText(path).Trim();
-        return content.Length == 0 ? emptyLabel : content;
+        sb.Append("Reflect on the conversation above. If there is nothing genuinely worth saying, "
+                  + "reply with exactly [] and nothing else.");
+        return sb.ToString();
     }
 }
