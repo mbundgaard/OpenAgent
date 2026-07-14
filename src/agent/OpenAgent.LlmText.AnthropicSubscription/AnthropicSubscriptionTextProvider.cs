@@ -388,9 +388,22 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             if (ResponseSuppression.IsSuppressed(fullContent.ToString()))
             {
                 agentLogic.DeleteMessages(conversationId, turnMessageIds);
+
+                // A discarded turn still cost tokens. Roll them into the conversation totals so
+                // silent heartbeat runs are not invisible in cost accounting. TurnCount,
+                // LastActivity and LastPromptTokens are deliberately NOT updated: no turn was
+                // recorded, the conversation did not become active, and LastPromptTokens drives
+                // the compaction threshold - feeding it a figure from a turn whose messages were
+                // just deleted would trigger spurious compaction.
+                var suppressed = agentLogic.GetConversation(conversationId) ?? conversation;
+                suppressed.TotalPromptTokens += inputTokens ?? 0;
+                suppressed.TotalCompletionTokens += outputTokens ?? 0;
+                agentLogic.UpdateConversation(suppressed);
+
                 logger.LogInformation(
-                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed)",
-                    conversationId, turnMessageIds.Count);
+                    "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed), {InputTokens} input, {OutputTokens} output tokens, {ElapsedMs}ms",
+                    conversationId, turnMessageIds.Count, inputTokens, outputTokens, stopwatch.ElapsedMilliseconds);
+
                 if (toolCallsStarted)
                     yield return new ThinkingStopped();
                 yield return new ResponseSuppressed();
