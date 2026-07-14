@@ -159,6 +159,62 @@ public class SystemJobRunnerTests : IDisposable
         Assert.Null(state.LastRunAt);
     }
 
+    // Regression: a gated-out tick used to leave NextRunAt in the past, so the job stayed
+    // permanently "due" and fired as soon as its interval gate opened - outside the cron
+    // window. Observed in production at 22:54 CPH against a "6-21" cron.
+    [Fact]
+    public async Task Gated_out_tick_advances_next_run_to_the_next_cron_slot()
+    {
+        var store = new SystemJobStateStore(_statePath);
+        store.Load();
+        var job = new CronWindowGatedJob();
+        var runner = new SystemJobRunner([job], store, NullLogger<SystemJobRunner>.Instance);
+
+        var state = store.GetOrCreate(job.Name);
+        var stale = DateTimeOffset.UtcNow.AddHours(-3);
+        state.NextRunAt = stale;
+
+        await runner.ExecuteAsync(job, CancellationToken.None);
+
+        Assert.False(job.Ran);
+        Assert.NotNull(state.NextRunAt);
+        Assert.True(state.NextRunAt > DateTimeOffset.UtcNow,
+            $"gated-out tick must push NextRunAt into the future, was {state.NextRunAt}");
+    }
+
+    // A gated-out tick must NOT touch LastRunAt - the interval gates in BackgroundAgentRunner
+    // are computed from it, and resetting it would starve them forever.
+    [Fact]
+    public async Task Gated_out_tick_does_not_touch_last_run_at()
+    {
+        var store = new SystemJobStateStore(_statePath);
+        store.Load();
+        var job = new CronWindowGatedJob();
+        var runner = new SystemJobRunner([job], store, NullLogger<SystemJobRunner>.Instance);
+
+        var state = store.GetOrCreate(job.Name);
+        var lastRun = DateTimeOffset.UtcNow.AddMinutes(-10);
+        state.LastRunAt = lastRun;
+        state.NextRunAt = DateTimeOffset.UtcNow.AddHours(-1);
+
+        await runner.ExecuteAsync(job, CancellationToken.None);
+
+        Assert.Equal(lastRun, state.LastRunAt);
+    }
+
+    // Fixed-shape job used by the NextRunAt-advance regression tests: always gates out via
+    // ShouldRunAsync, on a cron with a restricted daily window ("6-21") so a leaked stale
+    // NextRunAt would visibly fire outside that window.
+    private sealed class CronWindowGatedJob : ISystemJob
+    {
+        public bool Ran { get; private set; }
+        public string Name => "gated-job";
+        public string Cron => "*/15 6-21 * * *";
+        public string Timezone => "Europe/Copenhagen";
+        public Task<bool> ShouldRunAsync(CancellationToken ct) => Task.FromResult(false);
+        public Task RunAsync(CancellationToken ct) { Ran = true; return Task.CompletedTask; }
+    }
+
     private sealed class GatedJob : ISystemJob
     {
         public GatedJob(string name, string cron, string tz)

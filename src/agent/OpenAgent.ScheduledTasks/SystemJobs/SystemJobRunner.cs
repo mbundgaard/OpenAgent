@@ -128,6 +128,17 @@ public sealed class SystemJobRunner : IHostedService, IDisposable
 
         if (!shouldRun)
         {
+            // Advance NextRunAt to the next cron slot. Without this a stale past NextRunAt keeps
+            // the job permanently due, so it fires the moment its interval gate opens - even
+            // outside the cron window (observed firing at 22:54 CPH against a "6-21" cron).
+            // LastRunAt is deliberately untouched: the interval gates are computed from it.
+            lock (_lock)
+            {
+                var state = _store.GetOrCreate(job.Name);
+                state.NextRunAt = ComputeNext(job, DateTimeOffset.UtcNow);
+                _store.Save();
+            }
+
             _logger.LogDebug("System job '{Name}' gated out — skipping this tick", job.Name);
             return;
         }
