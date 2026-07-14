@@ -137,9 +137,16 @@ public class BackgroundAgentRunnerTests : IDisposable
         Assert.Contains("Monday's shot", reply.Content);
     }
 
-    // The nudge is scaffolding, not conversation. It must never survive in Martin's thread.
+    // The nudge is scaffolding, not conversation. It must never touch the store - not even
+    // transiently. Asserting it is gone AFTER RunAsync completes is not enough: the old
+    // persist-then-delete design also passed that check, yet left a real window where a
+    // concurrent turn on the same conversation (e.g. a real Telegram message arriving mid-
+    // heartbeat) could read the nudge while it sat in the database. The mid-turn snapshot
+    // recorded by PersistingTextProvider (taken before the turn yields anything back) proves
+    // the store never contained the nudge at any point, which is the assertion that actually
+    // closes the concurrency window.
     [Fact]
-    public async Task RunAsync_does_not_persist_the_nudge()
+    public async Task RunAsync_never_writes_the_nudge_to_the_store_not_even_mid_turn()
     {
         var store = new InMemoryConversationStore();
         store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
@@ -148,7 +155,15 @@ public class BackgroundAgentRunnerTests : IDisposable
 
         await runner.RunAsync(CancellationToken.None);
 
+        // After the turn: no user message left behind.
         Assert.Empty(store.GetMessages(MainId).Where(m => m.Role == "user"));
+
+        // During the turn: the conversation was completely empty at the mid-turn snapshot point
+        // (taken before the reply is yielded) — the strongest form of this assertion, since it
+        // would fail against the old persist-then-delete implementation even though that
+        // implementation passed the after-the-fact check above.
+        Assert.Empty(provider.StoreContentsDuringTurn);
+
         Assert.Single(provider.PersistedUserContents); // the provider DID receive a nudge
         Assert.Contains("[Heartbeat]", provider.PersistedUserContents[0]);
     }

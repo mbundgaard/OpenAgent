@@ -14,7 +14,20 @@ public interface ILlmTextProvider : IConfigurable
     /// tool calls, and tool results. Works for both streaming (WebSocket) and
     /// collected (REST) transports.
     /// </summary>
-    IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage, CancellationToken ct = default);
+    /// <param name="conversation">The conversation the turn runs in.</param>
+    /// <param name="userMessage">
+    /// The user message driving this turn. When <paramref name="persistUserMessage"/> is
+    /// <see langword="true"/> (the default) it is written to the conversation store before the
+    /// turn begins, exactly like every other message. Callers pass <see langword="false"/> for
+    /// messages that must stay ephemeral — visible to the LLM for this turn only, never written
+    /// to the store. This exists for the background-agent heartbeat: the nudge that wakes the
+    /// agent up must not be readable by a concurrent turn on the same conversation (e.g. a real
+    /// user message arriving on Telegram while the heartbeat is in flight) and must never
+    /// require cleanup if the process dies mid-turn.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    IAsyncEnumerable<CompletionEvent> CompleteAsync(
+        Conversation conversation, Message userMessage, CancellationToken ct = default, bool persistUserMessage = true);
 
     /// <summary>
     /// Runs a raw completion without conversation context — no tool calls, no message

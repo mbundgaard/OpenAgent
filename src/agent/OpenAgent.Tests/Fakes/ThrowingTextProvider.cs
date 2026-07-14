@@ -21,7 +21,8 @@ public sealed class ThrowingTextProvider : ILlmTextProvider
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,
         Message userMessage,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default,
+        bool persistUserMessage = true)
     {
         throw new InvalidOperationException("LLM provider failed");
 #pragma warning disable CS0162 // Unreachable code

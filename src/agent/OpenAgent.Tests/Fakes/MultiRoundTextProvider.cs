@@ -58,11 +58,16 @@ public sealed class MultiRoundTextProvider : ILlmTextProvider
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,
         Message userMessage,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default,
+        bool persistUserMessage = true)
     {
         PersistedUserContents.Add(userMessage.Content ?? "");
-        _store.AddMessage(conversation.Id, userMessage);
-        var turnMessageIds = new List<string> { userMessage.Id };
+        var turnMessageIds = new List<string>();
+        if (persistUserMessage)
+        {
+            _store.AddMessage(conversation.Id, userMessage);
+            turnMessageIds.Add(userMessage.Id);
+        }
 
         var toolCallIndex = 0;
         foreach (var narration in _toolRoundNarrations)

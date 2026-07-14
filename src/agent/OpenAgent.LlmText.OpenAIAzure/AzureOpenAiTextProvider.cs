@@ -83,7 +83,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
     }
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
@@ -102,15 +102,27 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                 conversation.ContextWindowTokens = window;
         }
 
-        // Persist the caller-supplied user message. Track every message ID written this
-        // turn so the whole turn can be discarded if the agent ends with the "[]" sentinel.
-        agentLogic.AddMessage(conversationId, userMessage);
-        var turnMessageIds = new List<string> { userMessage.Id };
+        // Persist the caller-supplied user message, unless the caller asked for it to stay
+        // ephemeral (see persistUserMessage doc on the interface). Track every message ID
+        // written this turn so the whole turn can be discarded if the agent ends with the
+        // "[]" sentinel.
+        var turnMessageIds = new List<string>();
+        if (persistUserMessage)
+        {
+            agentLogic.AddMessage(conversationId, userMessage);
+            turnMessageIds.Add(userMessage.Id);
+        }
 
-        // Build request once — messages are mutated across tool call rounds
+        // Build request once — messages are mutated across tool call rounds. When the user
+        // message was not persisted, append it in-memory so the model still sees it as the
+        // final turn without it ever touching the conversation store.
+        var chatMessages = BuildChatMessages(conversation);
+        if (!persistUserMessage)
+            chatMessages.Add(ToTransientMessage(userMessage));
+
         var request = new ChatCompletionRequest
         {
-            Messages = BuildChatMessages(conversation),
+            Messages = chatMessages,
             Tools = BuildTools(),
             ToolChoice = agentLogic.Tools.Count > 0 ? "auto" : null,
             Stream = true,
@@ -167,9 +179,14 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                     }
 
                     // Rebuild from the compacted state — GetConversation re-reads with the new
-                    // Conversation.Context set by compaction.
+                    // Conversation.Context set by compaction. Re-append the transient user
+                    // message too — BuildChatMessages only reflects persisted history, so an
+                    // ephemeral nudge would otherwise silently vanish from the retry.
                     var compactedConv = agentLogic.GetConversation(conversationId) ?? conversation;
-                    request.Messages = BuildChatMessages(compactedConv);
+                    var rebuiltMessages = BuildChatMessages(compactedConv);
+                    if (!persistUserMessage)
+                        rebuiltMessages.Add(ToTransientMessage(userMessage));
+                    request.Messages = rebuiltMessages;
                     continue;
                 }
 
@@ -561,6 +578,19 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                 cm.Content?.Length > 200 ? cm.Content[..200] + "..." : cm.Content);
 
         return chatMessages;
+    }
+
+    /// <summary>
+    /// Converts a transient (never-persisted) user message into the OpenAI wire format,
+    /// mirroring the plain-message branch of <see cref="BuildChatMessages"/>. Used only for the
+    /// persistUserMessage=false path — a nudge never has a reply-quote target to resolve.
+    /// </summary>
+    private static ChatMessage ToTransientMessage(Message userMessage)
+    {
+        var content = userMessage.Content;
+        if (!string.IsNullOrEmpty(userMessage.Sender))
+            content = FromTagFormatter.Wrap(userMessage.Sender, content);
+        return new ChatMessage { Role = userMessage.Role, Content = content, Name = ChannelMessageName(userMessage) };
     }
 
     private List<ChatTool>? BuildTools()

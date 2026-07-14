@@ -110,7 +110,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
 
     /// <inheritdoc />
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
@@ -129,13 +129,23 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 conversation.ContextWindowTokens = window;
         }
 
-        // Persist the caller-supplied user message. Track every message ID written this
-        // turn so the whole turn can be discarded if the agent ends with the "[]" sentinel.
-        agentLogic.AddMessage(conversationId, userMessage);
-        var turnMessageIds = new List<string> { userMessage.Id };
+        // Persist the caller-supplied user message, unless the caller asked for it to stay
+        // ephemeral (see persistUserMessage doc on the interface). Track every message ID
+        // written this turn so the whole turn can be discarded if the agent ends with the
+        // "[]" sentinel.
+        var turnMessageIds = new List<string>();
+        if (persistUserMessage)
+        {
+            agentLogic.AddMessage(conversationId, userMessage);
+            turnMessageIds.Add(userMessage.Id);
+        }
 
-        // Build the initial message list and tools — system prompt is rebuilt per round
+        // Build the initial message list and tools — system prompt is rebuilt per round.
+        // When the user message was not persisted, append it in-memory so the model still
+        // sees it as the final turn without it ever touching the conversation store.
         var messages = BuildMessages(conversation);
+        if (!persistUserMessage)
+            messages.Add(ToTransientMessage(userMessage));
         var tools = BuildTools();
         var useThinking = conversation.TextModel.Contains("4-6", StringComparison.OrdinalIgnoreCase);
 
@@ -196,9 +206,13 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                             "Context overflow, and compaction could not reduce history (already minimal or disabled).");
                     }
 
-                    // Rebuild messages from the compacted state.
+                    // Rebuild messages from the compacted state. Re-append the transient user
+                    // message too — BuildMessages only reflects persisted history, so an
+                    // ephemeral nudge would otherwise silently vanish from the retry.
                     var compactedConv = agentLogic.GetConversation(conversationId) ?? conversation;
                     messages = BuildMessages(compactedConv);
+                    if (!persistUserMessage)
+                        messages.Add(ToTransientMessage(userMessage));
                     continue;
                 }
 
@@ -660,6 +674,17 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 m.Content is string s ? (s.Length > 200 ? s[..200] + "..." : s) : "[blocks]");
 
         return result;
+    }
+
+    /// <summary>
+    /// Converts a transient (never-persisted) user message into the Anthropic wire format,
+    /// mirroring the plain-message branch of <see cref="BuildMessages"/>. Used only for the
+    /// persistUserMessage=false path — a nudge never has a reply-quote target to resolve.
+    /// </summary>
+    private static AnthropicMessage ToTransientMessage(Message userMessage)
+    {
+        var content = FromTagFormatter.Wrap(userMessage.Sender, userMessage.Content ?? "");
+        return new AnthropicMessage { Role = userMessage.Role, Content = content };
     }
 
     /// <summary>

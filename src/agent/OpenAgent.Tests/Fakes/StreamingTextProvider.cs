@@ -27,7 +27,8 @@ public sealed class StreamingTextProvider : ILlmTextProvider
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,
         Message userMessage,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default,
+        bool persistUserMessage = true)
     {
         foreach (var token in _tokens)
         {

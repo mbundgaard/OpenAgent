@@ -324,7 +324,8 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Conversation conversation,
         Message userMessage,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default,
+        bool persistUserMessage = true)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
@@ -339,12 +340,18 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
         var conversationId = conversation.Id;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-        // Persist the caller-supplied user message. Track every message ID written this
-        // turn so the whole turn can be discarded if the agent ends with the "[]" sentinel.
-        agentLogic.AddMessage(conversationId, userMessage);
-        var turnMessageIds = new List<string> { userMessage.Id };
+        // Persist the caller-supplied user message, unless the caller asked for it to stay
+        // ephemeral (see persistUserMessage doc on the interface). Track every message ID
+        // written this turn so the whole turn can be discarded if the agent ends with the
+        // "[]" sentinel.
+        var turnMessageIds = new List<string>();
+        if (persistUserMessage)
+        {
+            agentLogic.AddMessage(conversationId, userMessage);
+            turnMessageIds.Add(userMessage.Id);
+        }
 
-        var input = BuildInput(conversation);
+        var input = BuildInputForTurn(conversation, userMessage, persistUserMessage);
         var tools = BuildTools();
 
         var maxToolRounds = agentConfig.MaxToolRounds;
@@ -524,7 +531,11 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                     });
                 }
 
-                input = BuildInput(agentLogic.GetConversation(conversationId) ?? conversation);
+                // BuildInput re-derives strictly from persisted history — unlike the Anthropic
+                // and Azure providers, this one rebuilds the whole input list rather than
+                // appending in-memory. Re-add the transient message on every round or an
+                // ephemeral nudge would vanish as soon as the first tool call round completes.
+                input = BuildInputForTurn(agentLogic.GetConversation(conversationId) ?? conversation, userMessage, persistUserMessage);
                 continue;
             }
 
@@ -642,6 +653,26 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                     yield return new TextDelta(delta);
             }
         }
+    }
+
+    /// <summary>
+    /// Builds the Responses API input list for a turn, then appends the transient user message
+    /// when it was not persisted to the store (see persistUserMessage doc on the interface).
+    /// BuildInput only reflects persisted history, and this provider rebuilds it from scratch on
+    /// every tool-call round, so the append must happen at every call site, not just the first.
+    /// </summary>
+    private List<object> BuildInputForTurn(Conversation conversation, Message userMessage, bool persistUserMessage)
+    {
+        var input = BuildInput(conversation);
+        if (!persistUserMessage)
+        {
+            input.Add(new
+            {
+                role = userMessage.Role,
+                content = FromTagFormatter.Wrap(userMessage.Sender, userMessage.Content)
+            });
+        }
+        return input;
     }
 
     private List<object> BuildInput(Conversation conversation)

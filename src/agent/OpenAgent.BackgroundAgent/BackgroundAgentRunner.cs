@@ -29,10 +29,7 @@ public sealed class BackgroundAgentRunner
     /// <summary>Name under which <see cref="BackgroundAgentJob"/> registers in system-jobs.json.</summary>
     public const string JobName = "background-agent";
 
-    /// <summary>
-    /// Literal prefix every heartbeat nudge begins with. Shared with <see cref="BackgroundAgentNudgeSweep"/>,
-    /// which uses it to identify orphaned nudges left behind by a hard kill mid-turn.
-    /// </summary>
+    /// <summary>Literal prefix every heartbeat nudge begins with.</summary>
     public const string NudgeMarker = "[Heartbeat]";
 
     private static readonly TimeSpan MinSinceLastRun = TimeSpan.FromMinutes(30);
@@ -114,8 +111,8 @@ public sealed class BackgroundAgentRunner
     }
 
     /// <summary>
-    /// Run one heartbeat: inject the nudge into the main conversation, let the agent take a normal
-    /// turn, remove the nudge, and deliver the reply if there is one.
+    /// Run one heartbeat: hand the nudge to the provider as an ephemeral message, let the agent
+    /// take a normal turn, and deliver the reply if there is one.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
@@ -155,34 +152,28 @@ public sealed class BackgroundAgentRunner
         var reply = new StringBuilder();
         var suppressed = false;
 
-        try
+        // persistUserMessage: false — the nudge is scaffolding, never conversation, so it must
+        // never be written to the store in the first place. The provider appends it to the
+        // in-memory message list it sends the LLM and nothing more; there is no cleanup step
+        // because there is nothing to clean up, even if this throws or the process is killed
+        // mid-turn.
+        await foreach (var evt in provider.CompleteAsync(conversation, nudge, ct, persistUserMessage: false))
         {
-            await foreach (var evt in provider.CompleteAsync(conversation, nudge, ct))
+            switch (evt)
             {
-                switch (evt)
-                {
-                    case TextDelta delta:
-                        reply.Append(delta.Content);
-                        break;
-                    case ToolCallEvent:
-                        // A tool call means this round's text was scratch, not the final reply.
-                        reply.Clear();
-                        break;
-                    case ResponseSuppressed:
-                        // The provider already deleted the whole turn from history via the "[]"
-                        // sentinel. Trust the event, not a re-derived guess from accumulated text.
-                        suppressed = true;
-                        break;
-                }
+                case TextDelta delta:
+                    reply.Append(delta.Content);
+                    break;
+                case ToolCallEvent:
+                    // A tool call means this round's text was scratch, not the final reply.
+                    reply.Clear();
+                    break;
+                case ResponseSuppressed:
+                    // The provider already deleted the whole turn from history via the "[]"
+                    // sentinel. Trust the event, not a re-derived guess from accumulated text.
+                    suppressed = true;
+                    break;
             }
-        }
-        finally
-        {
-            // The nudge is scaffolding, never conversation. Remove it whether the agent spoke,
-            // stayed silent, or threw - otherwise a crash mid-turn leaves "[Heartbeat]" sitting in
-            // the user's chat. DeleteMessages is idempotent, so the suppressed path (where the
-            // provider already deleted the whole turn) is safe to double-delete.
-            _store.DeleteMessages(mainConversationId, [nudge.Id]);
         }
 
         if (suppressed)
