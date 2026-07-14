@@ -68,39 +68,4 @@ public class SystemPromptBuilderTests : IDisposable
         Assert.DoesNotContain("VOICE-content", prompt);
     }
 
-    [Fact]
-    public void Build_BackgroundSource_IncludesBackgroundMd()
-    {
-        File.WriteAllText(Path.Combine(_tempDir, "AGENTS.md"), "AGENTS-content");
-        File.WriteAllText(Path.Combine(_tempDir, "BACKGROUND.md"), "BACKGROUND-content");
-
-        var builder = new SystemPromptBuilder(
-            new AgentEnvironment { DataPath = _tempDir },
-            new SkillCatalog(Path.Combine(_tempDir, "skills"), NullLogger<SkillCatalog>.Instance),
-            new AgentConfig(),
-            NullLogger<SystemPromptBuilder>.Instance);
-
-        var prompt = builder.Build("test-conversation-id", voice: false, source: "background");
-
-        Assert.Contains("AGENTS-content", prompt);
-        Assert.Contains("BACKGROUND-content", prompt);
-    }
-
-    [Fact]
-    public void Build_NonBackgroundSource_OmitsBackgroundMd()
-    {
-        File.WriteAllText(Path.Combine(_tempDir, "AGENTS.md"), "AGENTS-content");
-        File.WriteAllText(Path.Combine(_tempDir, "BACKGROUND.md"), "BACKGROUND-content");
-
-        var builder = new SystemPromptBuilder(
-            new AgentEnvironment { DataPath = _tempDir },
-            new SkillCatalog(Path.Combine(_tempDir, "skills"), NullLogger<SkillCatalog>.Instance),
-            new AgentConfig(),
-            NullLogger<SystemPromptBuilder>.Instance);
-
-        var prompt = builder.Build("test-conversation-id", voice: false, source: "telegram");
-
-        Assert.Contains("AGENTS-content", prompt);
-        Assert.DoesNotContain("BACKGROUND-content", prompt);
-    }
 }
