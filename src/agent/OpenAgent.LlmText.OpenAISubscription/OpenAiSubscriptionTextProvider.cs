@@ -495,6 +495,24 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                     Modality = MessageModality.Text
                 });
 
+                // Append this round's function_call items to the in-memory input list — mirrors
+                // the shape BuildInput derives from persisted history (all function_call entries
+                // for a round, followed by all function_call_output entries). Appending in-memory
+                // instead of re-deriving `input` from the store keeps the transient heartbeat nudge
+                // (when persistUserMessage is false) in its correct chronological position — right
+                // after history, before any of this turn's tool activity — on every round.
+                foreach (var tc in toolCalls)
+                {
+                    input.Add(new
+                    {
+                        type = "function_call",
+                        call_id = tc.CallId,
+                        id = tc.ItemId,
+                        name = tc.Name,
+                        arguments = tc.Arguments
+                    });
+                }
+
                 foreach (var tc in toolCalls)
                 {
                     yield return new ToolCallEvent(tc.StoredId, tc.Name, tc.Arguments);
@@ -529,13 +547,15 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                         ToolCallId = tc.StoredId,
                         Modality = MessageModality.Text
                     });
+
+                    input.Add(new
+                    {
+                        type = "function_call_output",
+                        call_id = tc.CallId,
+                        output = result
+                    });
                 }
 
-                // BuildInput re-derives strictly from persisted history — unlike the Anthropic
-                // and Azure providers, this one rebuilds the whole input list rather than
-                // appending in-memory. Re-add the transient message on every round or an
-                // ephemeral nudge would vanish as soon as the first tool call round completes.
-                input = BuildInputForTurn(agentLogic.GetConversation(conversationId) ?? conversation, userMessage, persistUserMessage);
                 continue;
             }
 
@@ -656,10 +676,12 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
     }
 
     /// <summary>
-    /// Builds the Responses API input list for a turn, then appends the transient user message
-    /// when it was not persisted to the store (see persistUserMessage doc on the interface).
-    /// BuildInput only reflects persisted history, and this provider rebuilds it from scratch on
-    /// every tool-call round, so the append must happen at every call site, not just the first.
+    /// Builds the Responses API input list for the start of a turn, then appends the transient
+    /// user message when it was not persisted to the store (see persistUserMessage doc on the
+    /// interface). Called once per turn — subsequent tool-call rounds append their function_call
+    /// / function_call_output items directly to the returned list in-memory (mirroring the
+    /// Anthropic and Azure providers) rather than re-deriving from persisted history, so the
+    /// transient nudge stays in its correct chronological position across every round.
     /// </summary>
     private List<object> BuildInputForTurn(Conversation conversation, Message userMessage, bool persistUserMessage)
     {

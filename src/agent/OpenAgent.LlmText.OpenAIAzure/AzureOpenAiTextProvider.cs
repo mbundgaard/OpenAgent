@@ -120,6 +120,12 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
         if (!persistUserMessage)
             chatMessages.Add(ToTransientMessage(userMessage));
 
+        // Anchor marking where this turn's own assistant/tool-result messages begin (appended
+        // in-memory below, round by round). Used only by the overflow-retry rebuild so the
+        // transient nudge (persistUserMessage == false) can be reinserted at this same
+        // chronological position instead of landing after this turn's own tool activity.
+        var turnPrefixCount = chatMessages.Count;
+
         var request = new ChatCompletionRequest
         {
             Messages = chatMessages,
@@ -179,14 +185,32 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                     }
 
                     // Rebuild from the compacted state — GetConversation re-reads with the new
-                    // Conversation.Context set by compaction. Re-append the transient user
-                    // message too — BuildChatMessages only reflects persisted history, so an
-                    // ephemeral nudge would otherwise silently vanish from the retry.
+                    // Conversation.Context set by compaction.
                     var compactedConv = agentLogic.GetConversation(conversationId) ?? conversation;
-                    var rebuiltMessages = BuildChatMessages(compactedConv);
-                    if (!persistUserMessage)
-                        rebuiltMessages.Add(ToTransientMessage(userMessage));
-                    request.Messages = rebuiltMessages;
+                    if (persistUserMessage)
+                    {
+                        // userMessage is already persisted, so BuildChatMessages naturally
+                        // includes it (and this turn's tool activity, in order) — same as the
+                        // initial build.
+                        request.Messages = BuildChatMessages(compactedConv);
+                    }
+                    else
+                    {
+                        // The transient nudge was never persisted, so BuildChatMessages alone
+                        // would omit it, and naively re-appending it at the end would land it
+                        // AFTER this turn's own assistant/tool-result messages (which ARE
+                        // persisted by now, if overflow hit on round >= 1) — presenting it as the
+                        // newest message instead of the one that opened the turn. Preserve this
+                        // turn's already-built messages, rebuild history excluding them (they'd
+                        // otherwise be duplicated from the store), reinsert the nudge in its
+                        // correct chronological position, then reattach the turn's messages
+                        // after it.
+                        var turnTail = request.Messages.Skip(turnPrefixCount).ToList();
+                        var rebuiltBase = BuildChatMessages(compactedConv, turnMessageIds);
+                        rebuiltBase.Add(ToTransientMessage(userMessage));
+                        request.Messages = rebuiltBase.Concat(turnTail).ToList();
+                        turnPrefixCount = rebuiltBase.Count;
+                    }
                     continue;
                 }
 
@@ -453,7 +477,17 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
         }
     }
 
-    private List<ChatMessage> BuildChatMessages(Conversation conversation)
+    /// <summary>
+    /// Reconstructs the OpenAI-shaped chat message list from stored conversation history.
+    /// </summary>
+    /// <param name="conversation">The conversation to build history for.</param>
+    /// <param name="excludeMessageIds">
+    /// Optional set of assistant tool-call message IDs to omit from the rebuilt list, along with
+    /// their matching tool-result messages. Used by the overflow-retry path when the caller
+    /// already holds an in-memory reconstruction of the current turn's tool activity and would
+    /// otherwise duplicate it.
+    /// </param>
+    private List<ChatMessage> BuildChatMessages(Conversation conversation, IReadOnlyCollection<string>? excludeMessageIds = null)
     {
         var chatMessages = new List<ChatMessage>();
 
@@ -496,6 +530,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             // Assistant message with tool calls — verify all tool results follow
             if (msg.ToolCalls is not null)
             {
+                if (excludeMessageIds is not null && excludeMessageIds.Contains(msg.Id))
+                {
+                    // This round belongs to the current turn and the caller already holds an
+                    // in-memory reconstruction of it — skip both the assistant message and its
+                    // matching tool results so they are not duplicated.
+                    while (i + 1 < storedMessages.Count && storedMessages[i + 1].Role == "tool")
+                        i++;
+                    continue;
+                }
+
                 var toolCalls = JsonSerializer.Deserialize<List<ToolCall>>(msg.ToolCalls);
                 if (toolCalls is { Count: > 0 })
                 {
