@@ -58,6 +58,20 @@ public interface IConversationStore : IConfigurable
     void SetVoiceSession(string conversationId, string? sessionId, bool open);
 
     /// <summary>
+    /// Adds to the conversation's cumulative token totals only (<c>TotalPromptTokens</c>,
+    /// <c>TotalCompletionTokens</c>). Does not touch <c>TurnCount</c>, <c>LastActivity</c>, or
+    /// <c>LastPromptTokens</c>, and — critically — does not call the threshold-compaction check
+    /// that a full-row <see cref="Update"/> runs after every write. A full-row Update() would
+    /// re-evaluate compaction against whatever <c>LastPromptTokens</c> is already stored, which
+    /// for a silent background turn (the "[]" sentinel heartbeat) is a stale figure left over
+    /// from an earlier real turn — re-triggering compaction there means re-summarizing and
+    /// re-cutting recent context unattended, with no new information to justify it. Callers that
+    /// only need to record token spend for a turn that produced no other persisted change
+    /// (e.g. a discarded "[]" sentinel turn) should use this instead of a full <see cref="Update"/>.
+    /// </summary>
+    void AddTokenUsage(string conversationId, int promptTokens, int completionTokens);
+
+    /// <summary>
     /// Updates the conversation's human-readable display name. No-op if the value is unchanged.
     /// Channel providers call this on every inbound message so renames propagate.
     /// </summary>

@@ -394,11 +394,10 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 // LastActivity and LastPromptTokens are deliberately NOT updated: no turn was
                 // recorded, the conversation did not become active, and LastPromptTokens drives
                 // the compaction threshold - feeding it a figure from a turn whose messages were
-                // just deleted would trigger spurious compaction.
-                var suppressed = agentLogic.GetConversation(conversationId) ?? conversation;
-                suppressed.TotalPromptTokens += inputTokens ?? 0;
-                suppressed.TotalCompletionTokens += outputTokens ?? 0;
-                agentLogic.UpdateConversation(suppressed);
+                // just deleted would trigger spurious compaction. AddTokenUsage is a targeted
+                // update (see its XML doc) so it does not go through Update()'s threshold-
+                // compaction check at all.
+                agentLogic.AddTokenUsage(conversationId, inputTokens ?? 0, outputTokens ?? 0);
 
                 logger.LogInformation(
                     "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed), {InputTokens} input, {OutputTokens} output tokens, {ElapsedMs}ms",

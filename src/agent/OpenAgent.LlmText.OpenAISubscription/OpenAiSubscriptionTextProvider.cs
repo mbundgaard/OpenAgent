@@ -541,11 +541,9 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                 // A discarded turn still cost tokens. Roll them into the conversation totals so
                 // silent heartbeat runs are not invisible in cost accounting. TurnCount,
                 // LastActivity and LastPromptTokens are deliberately NOT updated - see the
-                // Anthropic provider for the reasoning.
-                var suppressed = agentLogic.GetConversation(conversationId) ?? conversation;
-                suppressed.TotalPromptTokens += promptTokens ?? 0;
-                suppressed.TotalCompletionTokens += completionTokens ?? 0;
-                agentLogic.UpdateConversation(suppressed);
+                // Anthropic provider for the reasoning. AddTokenUsage is a targeted update (see
+                // its XML doc) so it does not go through Update()'s threshold-compaction check.
+                agentLogic.AddTokenUsage(conversationId, promptTokens ?? 0, completionTokens ?? 0);
 
                 logger.LogInformation(
                     "Conversation {ConversationId}: agent emitted [] sentinel — turn discarded ({Count} message(s) removed), {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",
