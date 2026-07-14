@@ -111,14 +111,26 @@ public class SystemJobRunnerTests : IDisposable
         Assert.NotNull(state.LastRunAt);
     }
 
+    // A gated-out tick must never fabricate run history for a job that has never actually run -
+    // RunCount/LastRunAt/LastStatus stay at their "never ran" defaults. NextRunAt is a different
+    // story: ExecuteAsync recomputes it on every tick (gated or not) so it always points at a
+    // real future cron slot instead of going stale, so we only assert it is still a valid future
+    // value rather than pinning it to the exact instant StartAsync happened to seed - on an
+    // hourly cron the two calls can legitimately land on the same slot, and asserting equality
+    // would make the test pass for the wrong reason near an hour boundary.
+    //
+    // This is distinct from Gated_out_tick_advances_next_run_to_the_next_cron_slot and
+    // Gated_out_tick_does_not_touch_last_run_at below: those drive ExecuteAsync directly against
+    // a job that already has run history (a pre-set LastRunAt and a stale NextRunAt), to prove
+    // existing data survives a gated tick. This test drives the full StartAsync/ExecuteAsync
+    // lifecycle for a job with no history yet, to prove a gated tick does not create any.
     [Fact]
-    public async Task ShouldRunAsync_false_skips_execution_and_leaves_state_untouched()
+    public async Task ShouldRunAsync_false_skips_execution_and_advances_next_run_without_creating_run_history()
     {
         var job = new GatedJob("gated", "0 * * * *", "UTC") { Allow = false };
         var runner = BuildRunner(job);
         await runner.StartAsync(CancellationToken.None);
 
-        var seededNext = runner.GetState("gated")!.NextRunAt;
         await runner.ExecuteAsync(job, CancellationToken.None);
         await runner.StopAsync(CancellationToken.None);
 
@@ -126,7 +138,8 @@ public class SystemJobRunnerTests : IDisposable
         Assert.Equal(0, job.RunCount);
         Assert.Null(state.LastRunAt);
         Assert.Null(state.LastStatus);
-        Assert.Equal(seededNext, state.NextRunAt); // NextRunAt must NOT advance
+        Assert.NotNull(state.NextRunAt);
+        Assert.True(state.NextRunAt > DateTimeOffset.UtcNow, $"gated tick must recompute a future cron slot, was {state.NextRunAt}");
     }
 
     [Fact]
