@@ -40,12 +40,31 @@ public sealed class SystemJobStateStore
         }
     }
 
-    /// <summary>Atomically write the current state map to disk.</summary>
+    /// <summary>
+    /// Write the current state map to disk atomically. Serializes to a temp file in the same
+    /// directory as the target (same volume, so the subsequent move is a rename rather than a
+    /// copy) and then replaces the target via <see cref="File.Move(string, string, bool)"/>.
+    /// A hard kill mid-write can therefore only ever leave a stray temp file behind - the target
+    /// file itself is always either the previous complete content or the new complete content,
+    /// never a truncated or partially-written one.
+    /// </summary>
     public void Save()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
+        var directory = Path.GetDirectoryName(_filePath)!;
+        Directory.CreateDirectory(directory);
         var json = JsonSerializer.Serialize(_state, JsonOptions);
-        File.WriteAllText(_filePath, json, new UTF8Encoding(false));
+
+        var tempPath = Path.Combine(directory, $"{Path.GetFileName(_filePath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(tempPath, json, new UTF8Encoding(false));
+            File.Move(tempPath, _filePath, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tempPath); } catch { /* best-effort cleanup */ }
+            throw;
+        }
     }
 
     /// <summary>Get-or-create the state entry for a job. Never returns null.</summary>

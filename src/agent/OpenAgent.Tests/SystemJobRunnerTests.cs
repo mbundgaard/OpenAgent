@@ -215,6 +215,40 @@ public class SystemJobRunnerTests : IDisposable
         Assert.Equal(lastRun, state.LastRunAt);
     }
 
+    // Regression for the fix landed alongside the NextRunAt-advance fix above: the runner ticks
+    // every 60 seconds and is gated out most ticks, so recomputing NextRunAt on every gated tick
+    // must NOT translate into a disk write on every gated tick when the recomputed value is the
+    // same cron slot as what is already stored. Proven via the state file's last-write timestamp:
+    // a real write updates it, a skipped write leaves it exactly where it was.
+    [Fact]
+    public async Task Gated_out_tick_with_unchanged_NextRunAt_does_not_rewrite_the_file()
+    {
+        var store = new SystemJobStateStore(_statePath);
+        store.Load();
+        var job = new CronWindowGatedJob();
+        var runner = new SystemJobRunner([job], store, NullLogger<SystemJobRunner>.Instance);
+
+        // First tick: stored NextRunAt is stale, so this recomputes and writes - establishes a
+        // real, current cron-slot value on disk to compare against.
+        var state = store.GetOrCreate(job.Name);
+        state.NextRunAt = DateTimeOffset.UtcNow.AddHours(-3);
+        await runner.ExecuteAsync(job, CancellationToken.None);
+        Assert.True(File.Exists(_statePath));
+        var nextRunAtAfterFirstTick = state.NextRunAt;
+        var lastWriteTimeAfterFirstTick = File.GetLastWriteTimeUtc(_statePath);
+
+        // Small delay so that, if a second write DID happen, the filesystem timestamp would
+        // almost certainly differ from the first - this makes an equal timestamp meaningful.
+        await Task.Delay(50);
+
+        // Second tick lands well within the same 15-minute cron slot, so the recomputed
+        // NextRunAt equals what is already stored - this tick must not touch the file at all.
+        await runner.ExecuteAsync(job, CancellationToken.None);
+
+        Assert.Equal(nextRunAtAfterFirstTick, state.NextRunAt);
+        Assert.Equal(lastWriteTimeAfterFirstTick, File.GetLastWriteTimeUtc(_statePath));
+    }
+
     // Fixed-shape job used by the NextRunAt-advance regression tests: always gates out via
     // ShouldRunAsync, on a cron with a restricted daily window ("6-21") so a leaked stale
     // NextRunAt would visibly fire outside that window.

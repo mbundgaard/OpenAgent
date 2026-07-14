@@ -132,11 +132,18 @@ public sealed class SystemJobRunner : IHostedService, IDisposable
             // the job permanently due, so it fires the moment its interval gate opens - even
             // outside the cron window (observed firing at 22:54 CPH against a "6-21" cron).
             // LastRunAt is deliberately untouched: the interval gates are computed from it.
+            // Only persist when the recomputed value actually differs from what is stored - the
+            // runner ticks every 60 seconds and is gated out most ticks, so writing unconditionally
+            // would mean rewriting the state file to disk on nearly every tick for no reason.
             lock (_lock)
             {
                 var state = _store.GetOrCreate(job.Name);
-                state.NextRunAt = ComputeNext(job, DateTimeOffset.UtcNow);
-                _store.Save();
+                var recomputedNextRunAt = ComputeNext(job, DateTimeOffset.UtcNow);
+                if (recomputedNextRunAt != state.NextRunAt)
+                {
+                    state.NextRunAt = recomputedNextRunAt;
+                    _store.Save();
+                }
             }
 
             _logger.LogDebug("System job '{Name}' gated out — skipping this tick", job.Name);
