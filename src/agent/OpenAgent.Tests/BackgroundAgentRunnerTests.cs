@@ -153,6 +153,47 @@ public class BackgroundAgentRunnerTests : IDisposable
         Assert.Contains("[Heartbeat]", provider.PersistedUserContents[0]);
     }
 
+    // BuildNudge inlines BACKGROUND.md fresh from disk every run - this is the entire point of the
+    // redesign (the old SystemPromptBuilder injection path is gone). Prove the provider actually
+    // receives the instructions, not just that a nudge with the "[Heartbeat]" marker was sent.
+    [Fact]
+    public async Task RunAsync_inlines_BACKGROUND_md_content_into_the_nudge()
+    {
+        const string DistinctiveInstructions = "Check whether Martin logged his insulin shot today before nudging about anything else.";
+        File.WriteAllText(Path.Combine(_dataPath, "BACKGROUND.md"), DistinctiveInstructions);
+
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Single(provider.PersistedUserContents);
+        Assert.Contains(DistinctiveInstructions, provider.PersistedUserContents[0]);
+    }
+
+    // BuildNudge must tolerate a missing BACKGROUND.md - the heartbeat should still run and still
+    // carry its own scaffolding (the marker and the "reply with []" instruction) even with nothing
+    // to inline.
+    [Fact]
+    public async Task RunAsync_still_sends_a_valid_nudge_when_BACKGROUND_md_is_missing()
+    {
+        Assert.False(File.Exists(Path.Combine(_dataPath, "BACKGROUND.md")));
+
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Single(provider.PersistedUserContents);
+        var nudgeContent = provider.PersistedUserContents[0];
+        Assert.Contains("[Heartbeat]", nudgeContent);
+        Assert.Contains("reply with exactly [] and nothing else.", nudgeContent);
+    }
+
     // A silent run must leave the thread exactly as it found it.
     [Fact]
     public async Task RunAsync_silent_turn_leaves_main_conversation_untouched()
