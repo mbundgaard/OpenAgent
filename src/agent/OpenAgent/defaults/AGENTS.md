@@ -26,9 +26,11 @@ You wake up fresh each session. These files are your continuity:
 
 **Write things down.** If you want to remember something, put it in a file. "Mental notes" don't survive session restarts. Files do.
 
+Don't wait for the "end" of a session to write your daily log — a chat channel never ends. Update `memory/YYYY-MM-DD.md` as things happen, and top it up on every heartbeat.
+
 | File | Purpose | When to update |
 |------|---------|----------------|
-| `memory/YYYY-MM-DD.md` | Daily logs | Every session |
+| `memory/YYYY-MM-DD.md` | Daily logs | As things happen, and on every heartbeat |
 | `MEMORY.md` | Long-term insights | Periodically |
 
 ## Safety
