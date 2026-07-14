@@ -88,4 +88,29 @@ public class SystemJobStateStoreTests : IDisposable
 
         Assert.Null(exception);
     }
+
+    [Fact]
+    public void Save_does_not_throw_when_the_directory_cannot_be_created()
+    {
+        // Use an existing FILE as a path segment's parent - Directory.CreateDirectory cannot
+        // create a directory "under" a file. Reproduces the class of failure this hardening
+        // exists to prevent: Save() is called from SystemJobRunner.StartAsync, so an unhandled
+        // exception here previously took down host startup entirely.
+        var blockingFile = Path.Combine(Path.GetTempPath(), "openagent-blocking-file-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(blockingFile, "not a directory");
+        try
+        {
+            var unreachablePath = Path.Combine(blockingFile, "sub", "system-jobs.json");
+            var store = new SystemJobStateStore(unreachablePath);
+            store.GetOrCreate("job-a").LastStatus = "success";
+
+            var exception = Record.Exception(() => store.Save());
+
+            Assert.Null(exception);
+        }
+        finally
+        {
+            try { File.Delete(blockingFile); } catch { /* best-effort */ }
+        }
+    }
 }

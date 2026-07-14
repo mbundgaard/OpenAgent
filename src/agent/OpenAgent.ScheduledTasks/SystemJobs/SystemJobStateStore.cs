@@ -81,15 +81,21 @@ public sealed class SystemJobStateStore
     /// </remarks>
     public void Save()
     {
-        var directory = Path.GetDirectoryName(_filePath)!;
-        Directory.CreateDirectory(directory);
-        var json = JsonSerializer.Serialize(_state, JsonOptions);
-
-        var tempPath = Path.Combine(directory, $"{Path.GetFileName(_filePath)}.{Guid.NewGuid():N}.tmp");
+        // Everything - including directory creation and serialization - lives inside the try.
+        // Save() is called from SystemJobRunner.StartAsync, so any throw here takes down host
+        // startup, which is exactly the failure mode this class exists to avoid. A read-only or
+        // missing volume, a serialization edge case, or a locked directory must degrade to a
+        // dropped save, never an unhandled exception.
+        string? tempPath = null;
         var tempFileWritten = false;
 
         try
         {
+            var directory = Path.GetDirectoryName(_filePath)!;
+            Directory.CreateDirectory(directory);
+            var json = JsonSerializer.Serialize(_state, JsonOptions);
+
+            tempPath = Path.Combine(directory, $"{Path.GetFileName(_filePath)}.{Guid.NewGuid():N}.tmp");
             File.WriteAllText(tempPath, json, new UTF8Encoding(false));
             tempFileWritten = true;
 
@@ -114,16 +120,19 @@ public sealed class SystemJobStateStore
                 }
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
-            // Writing the temp file itself failed (before the replace loop even started).
+            // Broad by design: directory creation, serialization, and the initial temp-file
+            // write can all fail for reasons beyond IOException/UnauthorizedAccessException
+            // (e.g. PathTooLongException, NotSupportedException on a malformed path). None of
+            // them may propagate out of Save().
             _logger.LogWarning(ex,
-                "SystemJobStateStore.Save could not write temp file {TempPath}; this save was dropped",
-                tempPath);
+                "SystemJobStateStore.Save failed for {FilePath}; this save was dropped",
+                _filePath);
         }
         finally
         {
-            if (tempFileWritten)
+            if (tempFileWritten && tempPath is not null)
             {
                 try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { /* best-effort cleanup */ }
             }

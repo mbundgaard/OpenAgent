@@ -27,10 +27,11 @@ public interface ISystemJob
 
     /// <summary>
     /// Optional pre-flight gate. Called by <c>SystemJobRunner</c> when the cron says it's time —
-    /// returning false skips both execution AND state updates (so <c>LastRunAt</c> does not move
-    /// and the gate is re-checked on the next tick). Useful for jobs that need to evaluate runtime
-    /// conditions beyond the cron expression (e.g. "skip unless the user has been idle for 45min").
-    /// Default returns true — the job runs whenever the cron fires.
+    /// returning false skips execution and leaves <c>LastRunAt</c> untouched (interval gates that
+    /// read it stay accurate), but <c>NextRunAt</c> IS still advanced to the next cron slot so a
+    /// gated-out tick does not leave the job permanently "due". Useful for jobs that need to
+    /// evaluate runtime conditions beyond the cron expression (e.g. "skip unless the user has been
+    /// idle for 45min"). Default returns true — the job runs whenever the cron fires.
     /// </summary>
     Task<bool> ShouldRunAsync(CancellationToken ct) => Task.FromResult(true);
 }
