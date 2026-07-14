@@ -29,6 +29,12 @@ public sealed class BackgroundAgentRunner
     /// <summary>Name under which <see cref="BackgroundAgentJob"/> registers in system-jobs.json.</summary>
     public const string JobName = "background-agent";
 
+    /// <summary>
+    /// Literal prefix every heartbeat nudge begins with. Shared with <see cref="BackgroundAgentNudgeSweep"/>,
+    /// which uses it to identify orphaned nudges left behind by a hard kill mid-turn.
+    /// </summary>
+    public const string NudgeMarker = "[Heartbeat]";
+
     private static readonly TimeSpan MinSinceLastRun = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan MinSinceLastMainMessage = TimeSpan.FromMinutes(15);
 
@@ -138,14 +144,36 @@ public sealed class BackgroundAgentRunner
 
         var provider = _textProviderResolver(conversation.TextProvider);
         var startedAt = DateTimeOffset.UtcNow;
+
+        // Text providers run one or more tool-call rounds per turn, and re-declare their
+        // fullContent accumulator INSIDE that round loop - TextDelta is yielded on every round,
+        // including rounds that end in a tool call. Text emitted before a tool call is never
+        // persisted as assistant content (only the final round's text is), so concatenating
+        // across rounds here would deliver narration the provider itself discarded. Reset on
+        // every ToolCallEvent so only the final round's text survives to delivery - this must
+        // exactly match what the provider persisted as the assistant message.
         var reply = new StringBuilder();
+        var suppressed = false;
 
         try
         {
             await foreach (var evt in provider.CompleteAsync(conversation, nudge, ct))
             {
-                if (evt is TextDelta delta)
-                    reply.Append(delta.Content);
+                switch (evt)
+                {
+                    case TextDelta delta:
+                        reply.Append(delta.Content);
+                        break;
+                    case ToolCallEvent:
+                        // A tool call means this round's text was scratch, not the final reply.
+                        reply.Clear();
+                        break;
+                    case ResponseSuppressed:
+                        // The provider already deleted the whole turn from history via the "[]"
+                        // sentinel. Trust the event, not a re-derived guess from accumulated text.
+                        suppressed = true;
+                        break;
+                }
             }
         }
         finally
@@ -157,14 +185,14 @@ public sealed class BackgroundAgentRunner
             _store.DeleteMessages(mainConversationId, [nudge.Id]);
         }
 
-        var text = reply.ToString();
-
-        if (ResponseSuppression.IsSuppressed(text))
+        if (suppressed)
         {
             _logger.LogInformation("Heartbeat silent in {Ms}ms - agent had nothing to say",
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
             return;
         }
+
+        var text = reply.ToString();
 
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -198,7 +226,7 @@ public sealed class BackgroundAgentRunner
         var instructions = File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
 
         var sb = new StringBuilder();
-        sb.AppendLine("[Heartbeat]");
+        sb.AppendLine(NudgeMarker);
         sb.AppendLine();
         if (instructions.Length > 0)
         {

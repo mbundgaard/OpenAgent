@@ -233,6 +233,79 @@ public class BackgroundAgentRunnerTests : IDisposable
         Assert.Empty(store.GetMessages(MainId));
     }
 
+    // BLOCKER regression (final review). Round 1 narrates and calls a tool ("Updating today's
+    // log."); round 2 is the "[]" sentinel. The provider persists nothing and deletes the whole
+    // turn from history. Before the fix, the runner concatenated TextDelta across BOTH rounds
+    // and re-derived suppression from that concatenation ("Updating today's log.[]" does not end
+    // in a bare "[]" line, so IsSuppressed returned false) - delivering junk text to the user's
+    // real channel for a turn the provider itself discarded. The fix consumes the
+    // ResponseSuppressed event the provider already emits instead of re-deriving it.
+    [Fact]
+    public async Task RunAsync_delivers_nothing_when_the_final_round_after_a_tool_call_is_suppressed()
+    {
+        var store = new InMemoryConversationStore();
+        BindMainConversationToChannel(store);
+        var provider = new MultiRoundTextProvider(store, ["Updating today's log."], "[]");
+        var (runner, sender) = BuildWithChannelDelivery(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Empty(sender.SentMessages);
+        Assert.Empty(store.GetMessages(MainId));
+    }
+
+    // Second-order bug from the same root cause: a heartbeat that legitimately speaks AFTER a
+    // tool round. Before the fix, the runner delivered "round-1 narration + final answer" while
+    // the provider persisted only the final answer to history - delivered text diverged from
+    // stored history. The fix resets the buffer on every ToolCallEvent so only the final round's
+    // text (which must equal what the provider persisted) is ever delivered.
+    [Fact]
+    public async Task RunAsync_delivers_only_the_final_rounds_text_after_a_tool_call()
+    {
+        var store = new InMemoryConversationStore();
+        BindMainConversationToChannel(store);
+        var provider = new MultiRoundTextProvider(store, ["Checking..."], "Monday's shot isn't logged.");
+        var (runner, sender) = BuildWithChannelDelivery(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        var sent = Assert.Single(sender.SentMessages);
+        Assert.Equal("Monday's shot isn't logged.", sent.Text);
+        Assert.DoesNotContain("Checking...", sent.Text);
+        // Delivered text must equal what the provider actually persisted as the assistant message.
+        Assert.Equal(provider.PersistedAssistantContent, sent.Text);
+    }
+
+    private void BindMainConversationToChannel(InMemoryConversationStore store)
+    {
+        var conversation = store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        conversation.ChannelType = "telegram";
+        conversation.ConnectionId = "conn-1";
+        conversation.ChannelChatId = "chat-1";
+        store.Update(conversation);
+    }
+
+    private (BackgroundAgentRunner runner, FakeOutboundChannelProvider sender)
+        BuildWithChannelDelivery(InMemoryConversationStore store, ILlmTextProvider provider)
+    {
+        var config = new AgentConfig
+        {
+            BackgroundAgentEnabled = true,
+            MainConversationId = MainId,
+            TextProvider = "fake",
+            TextModel = "m"
+        };
+        var jobStore = new SystemJobStateStore(Path.Combine(_dataPath, "system-jobs.json"));
+        var environment = new AgentEnvironment { DataPath = _dataPath };
+        var sender = new FakeOutboundChannelProvider();
+        var router = new DeliveryRouter(sender, new NoopWebSocketRegistry(), NullLogger<DeliveryRouter>.Instance);
+
+        var runner = new BackgroundAgentRunner(
+            store, _ => provider, environment, config, jobStore, router,
+            NullLogger<BackgroundAgentRunner>.Instance);
+        return (runner, sender);
+    }
+
     private (BackgroundAgentRunner runner, InMemoryConversationStore store, AgentConfig config, SystemJobStateStore jobState)
         BuildWith(InMemoryConversationStore store, ILlmTextProvider provider)
     {
