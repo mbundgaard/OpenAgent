@@ -80,6 +80,22 @@ public sealed class AgentConfig
     public bool BackgroundAgentEnabled { get; set; } = false;
 
     /// <summary>
+    /// Optional provider key the background heartbeat runs on. When empty, the heartbeat inherits
+    /// the main conversation's provider. Lets background work run on a cheaper model than the user's
+    /// chat - the same independent-model idea as CompactionProvider for the digest.
+    /// </summary>
+    [JsonPropertyName("backgroundAgentProvider")]
+    public string BackgroundAgentProvider { get; set; } = "";
+
+    /// <summary>
+    /// Optional model the background heartbeat runs on, within BackgroundAgentProvider (or within the
+    /// conversation's provider if that is empty). When empty, the heartbeat inherits the main
+    /// conversation's model.
+    /// </summary>
+    [JsonPropertyName("backgroundAgentModel")]
+    public string BackgroundAgentModel { get; set; } = "";
+
+    /// <summary>
     /// Safety cap on tool-call rounds within a single LLM completion. Each round is one
     /// LLM call followed by zero or more tool executions. The cap prevents runaway loops
     /// when an LLM keeps requesting tools without converging on a final answer; legitimate

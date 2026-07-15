@@ -325,14 +325,20 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
         Conversation conversation,
         Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default,
-        bool persistUserMessage = true)
+        bool persistUserMessage = true,
+        string? modelOverride = null)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 
+        // When set, the caller (e.g. the background-agent heartbeat) wants this turn run on a
+        // different model than the conversation's own — everything else about the turn still
+        // comes from `conversation`.
+        var model = string.IsNullOrWhiteSpace(modelOverride) ? conversation.TextModel : modelOverride;
+
         if (conversation.ContextWindowTokens is null)
         {
-            var window = GetContextWindow(conversation.TextModel);
+            var window = GetContextWindow(model);
             if (window is not null)
                 conversation.ContextWindowTokens = window;
         }
@@ -365,7 +371,7 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
 
             var requestBody = new
             {
-                model = conversation.TextModel,
+                model,
                 store = false,
                 stream = true,
                 instructions = agentLogic.GetSystemPrompt(freshConversation.Id, freshConversation.Source, voice: false, freshConversation.ActiveSkills, freshConversation.Intention),

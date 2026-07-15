@@ -254,7 +254,8 @@ internal sealed class CapturingTextProvider : ILlmTextProvider
         OpenAgent.Models.Conversations.Conversation conversation,
         OpenAgent.Models.Conversations.Message userMessage,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
-        bool persistUserMessage = true)
+        bool persistUserMessage = true,
+        string? modelOverride = null)
     {
         LastUserContent = userMessage.Content;
         yield return new OpenAgent.Models.Common.TextDelta(_response);

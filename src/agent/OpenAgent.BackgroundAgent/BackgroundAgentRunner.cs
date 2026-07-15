@@ -139,7 +139,15 @@ public sealed class BackgroundAgentRunner
             Modality = MessageModality.Text
         };
 
-        var provider = _textProviderResolver(conversation.TextProvider);
+        // The heartbeat can run on a cheaper model than the user's chat. When BackgroundAgentProvider /
+        // BackgroundAgentModel are set, use them; otherwise inherit the main conversation's provider/model.
+        var providerKey = string.IsNullOrWhiteSpace(_agentConfig.BackgroundAgentProvider)
+            ? conversation.TextProvider
+            : _agentConfig.BackgroundAgentProvider;
+        var modelOverride = string.IsNullOrWhiteSpace(_agentConfig.BackgroundAgentModel)
+            ? null
+            : _agentConfig.BackgroundAgentModel;
+        var provider = _textProviderResolver(providerKey);
         var startedAt = DateTimeOffset.UtcNow;
 
         // Text providers run one or more tool-call rounds per turn, and re-declare their
@@ -157,7 +165,7 @@ public sealed class BackgroundAgentRunner
         // in-memory message list it sends the LLM and nothing more; there is no cleanup step
         // because there is nothing to clean up, even if this throws or the process is killed
         // mid-turn.
-        await foreach (var evt in provider.CompleteAsync(conversation, nudge, ct, persistUserMessage: false))
+        await foreach (var evt in provider.CompleteAsync(conversation, nudge, ct, persistUserMessage: false, modelOverride: modelOverride))
         {
             switch (evt)
             {

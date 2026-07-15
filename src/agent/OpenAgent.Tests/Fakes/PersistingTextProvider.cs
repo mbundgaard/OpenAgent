@@ -35,6 +35,9 @@ public sealed class PersistingTextProvider : ILlmTextProvider
     /// <summary>Content of every user message this provider was asked to complete.</summary>
     public List<string> PersistedUserContents { get; } = [];
 
+    /// <summary>The modelOverride argument passed on the most recent CompleteAsync call.</summary>
+    public string? LastModelOverride { get; private set; }
+
     /// <summary>
     /// Snapshot of every message's Content currently in the store, taken immediately after the
     /// (possibly skipped) persistence step and before the reply is yielded — i.e. exactly the
@@ -52,8 +55,10 @@ public sealed class PersistingTextProvider : ILlmTextProvider
         Conversation conversation,
         Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default,
-        bool persistUserMessage = true)
+        bool persistUserMessage = true,
+        string? modelOverride = null)
     {
+        LastModelOverride = modelOverride;
         PersistedUserContents.Add(userMessage.Content ?? "");
         if (persistUserMessage)
             _store.AddMessage(conversation.Id, userMessage);

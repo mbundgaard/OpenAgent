@@ -74,7 +74,8 @@ public class ScheduledTaskExecutorTests
 
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [EnumeratorCancellation] CancellationToken ct = default,
-            bool persistUserMessage = true)
+            bool persistUserMessage = true,
+            string? modelOverride = null)
         {
             foreach (var evt in events)
                 yield return evt;

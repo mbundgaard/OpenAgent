@@ -28,7 +28,8 @@ public sealed class StreamingTextProvider : ILlmTextProvider
         Conversation conversation,
         Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default,
-        bool persistUserMessage = true)
+        bool persistUserMessage = true,
+        string? modelOverride = null)
     {
         foreach (var token in _tokens)
         {
