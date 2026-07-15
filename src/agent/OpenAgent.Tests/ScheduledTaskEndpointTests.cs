@@ -177,7 +177,8 @@ public class ScheduledTaskEndpointTests : IClassFixture<WebApplicationFactory<Pr
 
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
-            bool persistUserMessage = true)
+            bool persistUserMessage = true,
+            string? modelOverride = null)
         {
             yield return new TextDelta("fake ");
             yield return new TextDelta("response");

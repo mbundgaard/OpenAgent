@@ -22,7 +22,8 @@ public sealed class ThrowingTextProvider : ILlmTextProvider
         Conversation conversation,
         Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default,
-        bool persistUserMessage = true)
+        bool persistUserMessage = true,
+        string? modelOverride = null)
     {
         throw new InvalidOperationException("LLM provider failed");
 #pragma warning disable CS0162 // Unreachable code

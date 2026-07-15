@@ -343,4 +343,135 @@ public class BackgroundAgentRunnerTests : IDisposable
             NullLogger<BackgroundAgentRunner>.Instance);
         return (runner, store, config, jobStore);
     }
+
+    // AgentConfig.BackgroundAgentModel lets the heartbeat run on a cheaper model than the main
+    // conversation's own TextModel (mirrors CompactionModel for the digest). When set, the runner
+    // must forward it as CompleteAsync's modelOverride parameter.
+    [Fact]
+    public async Task RunAsync_passes_BackgroundAgentModel_as_modelOverride_when_set()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+
+        var config = new AgentConfig
+        {
+            BackgroundAgentEnabled = true,
+            MainConversationId = MainId,
+            TextProvider = "fake",
+            TextModel = "m",
+            BackgroundAgentModel = "cheap-model"
+        };
+        var jobStore = new SystemJobStateStore(Path.Combine(_dataPath, "system-jobs.json"));
+        var environment = new AgentEnvironment { DataPath = _dataPath };
+        var router = new DeliveryRouter(
+            new NoopConnectionManager(),
+            new NoopWebSocketRegistry(),
+            NullLogger<DeliveryRouter>.Instance);
+
+        var runner = new BackgroundAgentRunner(
+            store, _ => provider, environment, config, jobStore, router,
+            NullLogger<BackgroundAgentRunner>.Instance);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Equal("cheap-model", provider.LastModelOverride);
+    }
+
+    // When BackgroundAgentModel is unset (the default), the runner must pass null so the provider
+    // falls back to the main conversation's own TextModel — existing behavior for everyone who
+    // hasn't opted into a separate heartbeat model.
+    [Fact]
+    public async Task RunAsync_passes_null_modelOverride_when_BackgroundAgentModel_is_unset()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "p", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+        var (runner, _, _, _) = BuildWith(store, provider);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Null(provider.LastModelOverride);
+    }
+
+    // AgentConfig.BackgroundAgentProvider lets the heartbeat run on a different provider than the
+    // main conversation's own TextProvider. When set, the runner must resolve THAT key via the
+    // Func<string, ILlmTextProvider> resolver instead of conversation.TextProvider.
+    [Fact]
+    public async Task RunAsync_resolves_BackgroundAgentProvider_key_when_set()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "conversation-provider", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+
+        var config = new AgentConfig
+        {
+            BackgroundAgentEnabled = true,
+            MainConversationId = MainId,
+            TextProvider = "fake",
+            TextModel = "m",
+            BackgroundAgentProvider = "cheap-provider"
+        };
+        var jobStore = new SystemJobStateStore(Path.Combine(_dataPath, "system-jobs.json"));
+        var environment = new AgentEnvironment { DataPath = _dataPath };
+        var router = new DeliveryRouter(
+            new NoopConnectionManager(),
+            new NoopWebSocketRegistry(),
+            NullLogger<DeliveryRouter>.Instance);
+
+        var requestedKeys = new List<string>();
+        Func<string, ILlmTextProvider> resolver = key =>
+        {
+            requestedKeys.Add(key);
+            return provider;
+        };
+
+        var runner = new BackgroundAgentRunner(
+            store, resolver, environment, config, jobStore, router,
+            NullLogger<BackgroundAgentRunner>.Instance);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Contains("cheap-provider", requestedKeys);
+        Assert.DoesNotContain("conversation-provider", requestedKeys);
+    }
+
+    // When BackgroundAgentProvider is unset, the runner must keep resolving the main
+    // conversation's own TextProvider — existing behavior.
+    [Fact]
+    public async Task RunAsync_resolves_conversation_TextProvider_key_when_BackgroundAgentProvider_is_unset()
+    {
+        var store = new InMemoryConversationStore();
+        store.GetOrCreate(MainId, "telegram", "conversation-provider", "m", "vp", "vm");
+        var provider = new PersistingTextProvider(store, "something worth saying");
+
+        var config = new AgentConfig
+        {
+            BackgroundAgentEnabled = true,
+            MainConversationId = MainId,
+            TextProvider = "fake",
+            TextModel = "m"
+        };
+        var jobStore = new SystemJobStateStore(Path.Combine(_dataPath, "system-jobs.json"));
+        var environment = new AgentEnvironment { DataPath = _dataPath };
+        var router = new DeliveryRouter(
+            new NoopConnectionManager(),
+            new NoopWebSocketRegistry(),
+            NullLogger<DeliveryRouter>.Instance);
+
+        var requestedKeys = new List<string>();
+        Func<string, ILlmTextProvider> resolver = key =>
+        {
+            requestedKeys.Add(key);
+            return provider;
+        };
+
+        var runner = new BackgroundAgentRunner(
+            store, resolver, environment, config, jobStore, router,
+            NullLogger<BackgroundAgentRunner>.Instance);
+
+        await runner.RunAsync(CancellationToken.None);
+
+        Assert.Contains("conversation-provider", requestedKeys);
+    }
 }

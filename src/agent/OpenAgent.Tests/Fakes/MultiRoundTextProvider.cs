@@ -59,7 +59,8 @@ public sealed class MultiRoundTextProvider : ILlmTextProvider
         Conversation conversation,
         Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default,
-        bool persistUserMessage = true)
+        bool persistUserMessage = true,
+        string? modelOverride = null)
     {
         PersistedUserContents.Add(userMessage.Content ?? "");
         var turnMessageIds = new List<string>();

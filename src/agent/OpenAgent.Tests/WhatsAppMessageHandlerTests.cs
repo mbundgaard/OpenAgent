@@ -255,7 +255,8 @@ public class WhatsAppMessageHandlerTests
             Conversation conversation,
             Message userMessage,
             [EnumeratorCancellation] CancellationToken ct = default,
-            bool persistUserMessage = true)
+            bool persistUserMessage = true,
+            string? modelOverride = null)
         {
             // Persist user message, then assistant message — mirrors real providers
             _store.AddMessage(conversation.Id, userMessage);
@@ -302,7 +303,8 @@ public class WhatsAppMessageHandlerTests
             Conversation conversation,
             Message userMessage,
             [EnumeratorCancellation] CancellationToken ct = default,
-            bool persistUserMessage = true)
+            bool persistUserMessage = true,
+            string? modelOverride = null)
         {
             CapturedMessages.Add(userMessage);
             yield return new TextDelta(_response);

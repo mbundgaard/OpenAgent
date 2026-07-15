@@ -20,7 +20,7 @@ internal sealed class FakeModelProvider(string key, string[] models) : ILlmTextP
 
     public IAsyncEnumerable<CompletionEvent> CompleteAsync(
         Models.Conversations.Conversation conversation, Message userMessage, CancellationToken ct = default,
-        bool persistUserMessage = true)
+        bool persistUserMessage = true, string? modelOverride = null)
         => throw new NotImplementedException();
 
     public IAsyncEnumerable<CompletionEvent> CompleteAsync(
