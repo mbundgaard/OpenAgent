@@ -326,7 +326,8 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
         Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default,
         bool persistUserMessage = true,
-        string? modelOverride = null)
+        string? modelOverride = null,
+        string? thinkingOverride = null) // Anthropic-specific; ignored here.
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");

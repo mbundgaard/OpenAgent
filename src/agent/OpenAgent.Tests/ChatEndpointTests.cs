@@ -198,7 +198,8 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
             bool persistUserMessage = true,
-            string? modelOverride = null)
+            string? modelOverride = null,
+            string? thinkingOverride = null)
         {
             yield return new TextDelta("hi");
             yield return new AssistantMessageSaved("msg-123");
@@ -249,7 +250,8 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
             bool persistUserMessage = true,
-            string? modelOverride = null)
+            string? modelOverride = null,
+            string? thinkingOverride = null)
         {
             yield return new TextDelta("fake ");
             yield return new TextDelta("response");
@@ -275,7 +277,8 @@ public class ChatEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
             bool persistUserMessage = true,
-            string? modelOverride = null)
+            string? modelOverride = null,
+            string? thinkingOverride = null)
         {
             yield return new ThinkingStarted();
             yield return new ToolCallEvent("tc1", "search_web", "{}");
