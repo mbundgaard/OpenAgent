@@ -242,6 +242,7 @@ internal sealed class CapturingTextProvider : ILlmTextProvider
     private readonly string _response;
     public string LastUserContent { get; private set; } = "";
     public string LastSystemContent { get; private set; } = "";
+    public OpenAgent.Models.Common.CompletionOptions? LastOptions { get; private set; }
 
     public CapturingTextProvider(string response) { _response = response; }
 
@@ -271,6 +272,7 @@ internal sealed class CapturingTextProvider : ILlmTextProvider
     {
         LastSystemContent = messages.FirstOrDefault(m => m.Role == "system")?.Content ?? "";
         LastUserContent = messages.FirstOrDefault(m => m.Role == "user")?.Content ?? "";
+        LastOptions = options;
         yield return new OpenAgent.Models.Common.TextDelta(_response);
         await Task.Yield();
     }

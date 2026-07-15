@@ -32,4 +32,22 @@ public class CompactionSummarizerTests
         await Assert.ThrowsAsync<CompactionDisabledException>(() =>
             summarizer.SummarizeAsync(existingContext: null, messages: []));
     }
+
+    [Fact]
+    public async Task SummarizeAsync_passes_configured_CompactionThinking_into_CompletionOptions()
+    {
+        var config = new AgentConfig
+        {
+            CompactionProvider = "set",
+            CompactionModel = "set-model",
+            CompactionThinking = "low"
+        };
+        var provider = new CapturingTextProvider("{\"context\": \"summary\"}");
+        Func<string, ILlmTextProvider> factory = _ => provider;
+        var summarizer = new CompactionSummarizer(factory, config, NullLogger<CompactionSummarizer>.Instance);
+
+        await summarizer.SummarizeAsync(existingContext: null, messages: []);
+
+        Assert.Equal("low", provider.LastOptions?.Thinking);
+    }
 }
