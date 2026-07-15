@@ -104,4 +104,30 @@ public sealed class AgentConfig
     /// </summary>
     [JsonPropertyName("maxToolRounds")]
     public int MaxToolRounds { get; set; } = 20;
+
+    /// <summary>
+    /// Thinking/effort spec for main chat turns (the conversation-based CompleteAsync overload).
+    /// Valid values: "off" or low/medium/high/xhigh/max. Ignored for models that don't support
+    /// adaptive extended thinking (e.g. Haiku) — the provider silently omits thinking for those.
+    /// </summary>
+    [JsonPropertyName("textThinking")]
+    public string TextThinking { get; set; } = "high";
+
+    /// <summary>
+    /// Thinking/effort spec for the digest and other raw-completion calls (the messages-based
+    /// CompleteAsync overload, e.g. compaction summarization). Valid values: "off" or
+    /// low/medium/high/xhigh/max. Ignored for models that don't support adaptive extended
+    /// thinking (e.g. Haiku).
+    /// </summary>
+    [JsonPropertyName("compactionThinking")]
+    public string CompactionThinking { get; set; } = "high";
+
+    /// <summary>
+    /// Thinking/effort spec for the background-agent heartbeat. Valid values: "off" or
+    /// low/medium/high/xhigh/max. Defaults to "off" so background turns don't think unless
+    /// explicitly configured. Ignored for models that don't support adaptive extended thinking
+    /// (e.g. Haiku).
+    /// </summary>
+    [JsonPropertyName("backgroundAgentThinking")]
+    public string BackgroundAgentThinking { get; set; } = "off";
 }

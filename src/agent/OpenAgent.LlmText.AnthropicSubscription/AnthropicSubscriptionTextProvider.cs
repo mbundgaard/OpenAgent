@@ -31,15 +31,51 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
     public string Key => ProviderKey;
 
     // Hardcoded model list — Anthropic's catalog is fixed and exposing a free-text field in
-    // the UI just invites typos. Update here when new models ship.
+    // the UI just invites typos. Update here when new models ship. (Catalog as of 2026-06.)
     private static readonly string[] DefaultModels =
     [
-        "claude-opus-4-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
         "claude-opus-4-6",
-        "claude-sonnet-4-5",
+        "claude-sonnet-5",
         "claude-sonnet-4-6",
         "claude-haiku-4-5"
     ];
+
+    // Models that accept adaptive extended thinking ({"type":"adaptive"}). Newer models
+    // (Opus 4.7/4.8, Sonnet 5) use adaptive thinking but their IDs don't contain "4-6", so
+    // the old substring gate silently ran them WITHOUT thinking. Haiku 4.5 and the older
+    // 4.5/4.1 tier don't support adaptive thinking — for them the request omits the field.
+    private static readonly HashSet<string> AdaptiveThinkingModels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6"
+    };
+
+    /// <summary>
+    /// Resolves the thinking + effort wire fields for a request. Extended thinking is sent only
+    /// for models in <see cref="AdaptiveThinkingModels"/>; for every other model both fields are
+    /// null (Haiku 4.5 and the older tier reject output_config.effort). A spec of "off" (or an
+    /// empty/unknown value) also yields nulls. Otherwise thinking is adaptive and effort is the
+    /// spec value (low/medium/high/xhigh/max).
+    /// </summary>
+    private static (AnthropicThinking? Thinking, AnthropicOutputConfig? OutputConfig) ResolveThinking(string model, string? thinkingSpec)
+    {
+        if (!AdaptiveThinkingModels.Contains(model))
+            return (null, null);
+
+        var spec = (thinkingSpec ?? "").Trim().ToLowerInvariant();
+        if (spec is "off" or "")
+            return (null, null);
+        if (spec is "low" or "medium" or "high" or "xhigh" or "max")
+            return (new AnthropicThinking(), new AnthropicOutputConfig { Effort = spec });
+
+        // Unknown value -> treat as off rather than sending an invalid effort.
+        return (null, null);
+    }
 
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
@@ -88,10 +124,10 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
     /// <inheritdoc />
     public int? GetContextWindow(string model)
     {
-        // Anthropic model IDs encode the family; all currently-supported Claude variants expose
-        // a 200k-token context window. Unknown models return null; callers fall back to
-        // CompactionConfig.MaxContextTokens.
-        if (model.Contains("claude", StringComparison.OrdinalIgnoreCase)) return 200_000;
+        // Haiku is 200k; every current Opus/Sonnet Claude model is 1M. Unknown models return null;
+        // callers fall back to CompactionConfig.MaxContextTokens.
+        if (model.Contains("haiku", StringComparison.OrdinalIgnoreCase)) return 200_000;
+        if (model.Contains("claude", StringComparison.OrdinalIgnoreCase)) return 1_000_000;
         return null;
     }
 
@@ -110,7 +146,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
 
     /// <inheritdoc />
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null, string? thinkingOverride = null)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
@@ -158,7 +194,8 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
         // chronological position instead of landing after this turn's own tool activity.
         var turnPrefixCount = messages.Count;
         var tools = BuildTools();
-        var useThinking = model.Contains("4-6", StringComparison.OrdinalIgnoreCase);
+        var thinkingSpec = thinkingOverride ?? agentConfig.TextThinking;
+        var (thinking, outputConfig) = ResolveThinking(model, thinkingSpec);
 
         // Completion loop (handles tool call rounds — cap configurable via AgentConfig.MaxToolRounds)
         var maxToolRounds = agentConfig.MaxToolRounds;
@@ -186,7 +223,8 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                     Messages = messages,
                     Tools = tools?.Count > 0 ? tools : null,
                     Stream = true,
-                    Thinking = useThinking ? new AnthropicThinking() : null
+                    Thinking = thinking,
+                    OutputConfig = outputConfig
                 };
 
                 // Authorization MUST be per-request — setting on DefaultRequestHeaders causes 429
@@ -507,7 +545,11 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
         var systemText = messages.FirstOrDefault(m => m.Role == "system")?.Content ?? "";
         var systemBlocks = BuildSystemBlocks(systemText);
 
-        var useThinking = model.Contains("4-6", StringComparison.OrdinalIgnoreCase);
+        // Raw completions (compaction summarizer, digest) default to thinking OFF — options?.Thinking
+        // null resolves to "off" inside ResolveThinking. Callers that want thinking pass it explicitly
+        // via CompletionOptions.Thinking.
+        var thinkingSpec = options?.Thinking;
+        var (thinking, outputConfig) = ResolveThinking(model, thinkingSpec);
         var request = new AnthropicMessagesRequest
         {
             Model = model,
@@ -515,7 +557,8 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             System = systemBlocks,
             Messages = anthropicMessages,
             Stream = true,
-            Thinking = useThinking ? new AnthropicThinking() : null
+            Thinking = thinking,
+            OutputConfig = outputConfig
         };
 
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, "v1/messages")

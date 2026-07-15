@@ -35,8 +35,14 @@ public interface ILlmTextProvider : IConfigurable
     /// conversation's persisted model. Null or empty means inherit <c>conversation.TextModel</c>,
     /// matching every existing caller's behavior.
     /// </param>
+    /// <param name="thinkingOverride">
+    /// When set, overrides the configured thinking/effort spec ("off" or low/medium/high/xhigh/max)
+    /// for this turn only — used by the background-agent heartbeat to run with thinking off
+    /// regardless of the main-chat setting. Null means use <c>AgentConfig.TextThinking</c>.
+    /// Providers that don't support Anthropic-style thinking ignore this parameter.
+    /// </param>
     IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null);
+        Conversation conversation, Message userMessage, CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null, string? thinkingOverride = null);
 
     /// <summary>
     /// Runs a raw completion without conversation context — no tool calls, no message

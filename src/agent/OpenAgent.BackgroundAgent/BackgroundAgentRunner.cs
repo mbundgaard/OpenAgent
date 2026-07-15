@@ -165,7 +165,7 @@ public sealed class BackgroundAgentRunner
         // in-memory message list it sends the LLM and nothing more; there is no cleanup step
         // because there is nothing to clean up, even if this throws or the process is killed
         // mid-turn.
-        await foreach (var evt in provider.CompleteAsync(conversation, nudge, ct, persistUserMessage: false, modelOverride: modelOverride))
+        await foreach (var evt in provider.CompleteAsync(conversation, nudge, ct, persistUserMessage: false, modelOverride: modelOverride, thinkingOverride: _agentConfig.BackgroundAgentThinking))
         {
             switch (evt)
             {

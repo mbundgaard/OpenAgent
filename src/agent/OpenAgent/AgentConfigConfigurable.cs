@@ -28,7 +28,10 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
         new() { Key = "maxToolRounds", Label = "Max Tool Rounds", Type = "String", Required = false },
         new() { Key = "backgroundAgentEnabled", Label = "Background Agent Enabled", Type = "Enum", Required = false, DefaultValue = "false", Options = ["false", "true"] },
         new() { Key = "backgroundAgentProvider", Label = "Background Agent Provider", Type = "String", Required = false },
-        new() { Key = "backgroundAgentModel", Label = "Background Agent Model", Type = "String", Required = false }
+        new() { Key = "backgroundAgentModel", Label = "Background Agent Model", Type = "String", Required = false },
+        new() { Key = "textThinking", Label = "Text Thinking", Type = "Enum", Required = false, DefaultValue = "high", Options = ["off", "low", "medium", "high", "xhigh", "max"] },
+        new() { Key = "compactionThinking", Label = "Compaction Thinking", Type = "Enum", Required = false, DefaultValue = "high", Options = ["off", "low", "medium", "high", "xhigh", "max"] },
+        new() { Key = "backgroundAgentThinking", Label = "Background Agent Thinking", Type = "Enum", Required = false, DefaultValue = "off", Options = ["off", "low", "medium", "high", "xhigh", "max"] }
     ];
 
     public void Configure(JsonElement configuration)
@@ -86,5 +89,23 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
             agentConfig.BackgroundAgentProvider = bap.GetString() ?? "";
         if (configuration.TryGetProperty("backgroundAgentModel", out var bam))
             agentConfig.BackgroundAgentModel = bam.GetString() ?? "";
+        if (configuration.TryGetProperty("textThinking", out var tt))
+        {
+            var value = tt.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+                agentConfig.TextThinking = value;
+        }
+        if (configuration.TryGetProperty("compactionThinking", out var ct))
+        {
+            var value = ct.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+                agentConfig.CompactionThinking = value;
+        }
+        if (configuration.TryGetProperty("backgroundAgentThinking", out var bat))
+        {
+            var value = bat.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+                agentConfig.BackgroundAgentThinking = value;
+        }
     }
 }

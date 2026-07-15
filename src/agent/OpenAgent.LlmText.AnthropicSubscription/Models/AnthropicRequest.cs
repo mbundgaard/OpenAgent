@@ -27,6 +27,10 @@ internal sealed class AnthropicMessagesRequest
     [JsonPropertyName("thinking")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AnthropicThinking? Thinking { get; set; }
+
+    [JsonPropertyName("output_config")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AnthropicOutputConfig? OutputConfig { get; set; }
 }
 
 internal sealed class AnthropicTextBlock
@@ -42,6 +46,17 @@ internal sealed class AnthropicThinking
 {
     [JsonPropertyName("type")]
     public string Type { get; set; } = "adaptive";
+}
+
+/// <summary>
+/// Controls thinking/effort depth for a request. Sent alongside <see cref="AnthropicThinking"/>
+/// only for models in the adaptive-thinking-capable set — see
+/// <c>AnthropicSubscriptionTextProvider.ResolveThinking</c>.
+/// </summary>
+internal sealed class AnthropicOutputConfig
+{
+    [JsonPropertyName("effort")]
+    public string Effort { get; set; } = "high";
 }
 
 internal sealed class AnthropicMessage

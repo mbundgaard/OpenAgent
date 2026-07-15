@@ -132,7 +132,8 @@ public class WebhookEndpointTests : IClassFixture<WebApplicationFactory<Program>
         public async IAsyncEnumerable<CompletionEvent> CompleteAsync(Conversation conversation, Message userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
             bool persistUserMessage = true,
-            string? modelOverride = null)
+            string? modelOverride = null,
+            string? thinkingOverride = null)
         {
             LastConversation = conversation;
             LastUserMessage = userMessage;

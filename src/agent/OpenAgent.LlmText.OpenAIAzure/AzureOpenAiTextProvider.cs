@@ -83,8 +83,9 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
     }
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null, string? thinkingOverride = null)
     {
+        // thinkingOverride is Anthropic-specific; ignored here.
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
 

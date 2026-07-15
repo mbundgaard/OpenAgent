@@ -29,7 +29,8 @@ public sealed class StreamingTextProvider : ILlmTextProvider
         Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default,
         bool persistUserMessage = true,
-        string? modelOverride = null)
+        string? modelOverride = null,
+        string? thinkingOverride = null)
     {
         foreach (var token in _tokens)
         {

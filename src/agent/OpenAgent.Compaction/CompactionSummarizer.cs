@@ -97,7 +97,7 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
 
         // Resolve the compaction provider and call it
         var provider = _providerFactory(_agentConfig.CompactionProvider);
-        var options = new CompletionOptions { ResponseFormat = "json_object" };
+        var options = new CompletionOptions { ResponseFormat = "json_object", Thinking = _agentConfig.CompactionThinking };
 
         var fullContent = new StringBuilder();
         await foreach (var evt in provider.CompleteAsync(llmMessages, _agentConfig.CompactionModel, options, ct))

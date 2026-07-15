@@ -211,7 +211,7 @@ public sealed class MemoryDigestService
             new() { Id = "sys", ConversationId = "", Role = "system", Content = systemPrompt },
             new() { Id = "usr", ConversationId = "", Role = "user", Content = userContent }
         };
-        var options = new CompletionOptions { ResponseFormat = "json_object" };
+        var options = new CompletionOptions { ResponseFormat = "json_object", Thinking = _agentConfig.CompactionThinking };
 
         var buffer = new StringBuilder();
         await foreach (var evt in provider.CompleteAsync(messages, _agentConfig.CompactionModel, options, ct))

@@ -59,7 +59,8 @@ public sealed class GatedStreamingTextProvider : ILlmTextProvider
         Message userMessage,
         CancellationToken ct = default,
         bool persistUserMessage = true,
-        string? modelOverride = null) => ProduceAsync(ct);
+        string? modelOverride = null,
+        string? thinkingOverride = null) => ProduceAsync(ct);
 
     public IAsyncEnumerable<CompletionEvent> CompleteAsync(
         IReadOnlyList<Message> messages,

@@ -29,7 +29,8 @@ public sealed class FakeTelegramTextProvider : ILlmTextProvider
         Message userMessage,
         [EnumeratorCancellation] CancellationToken ct = default,
         bool persistUserMessage = true,
-        string? modelOverride = null)
+        string? modelOverride = null,
+        string? thinkingOverride = null)
     {
         yield return new TextDelta(_response);
         await Task.CompletedTask;
