@@ -83,10 +83,15 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
     }
 
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
+
+        // When set, the caller (e.g. the background-agent heartbeat) wants this turn run on a
+        // different model than the conversation's own — everything else about the turn still
+        // comes from `conversation`.
+        var model = string.IsNullOrWhiteSpace(modelOverride) ? conversation.TextModel : modelOverride;
 
         var conversationId = conversation.Id;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -97,7 +102,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
         // rather than relying on a global constant.
         if (conversation.ContextWindowTokens is null)
         {
-            var window = GetContextWindow(conversation.TextModel);
+            var window = GetContextWindow(model);
             if (window is not null)
                 conversation.ContextWindowTokens = window;
         }
@@ -135,7 +140,7 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             StreamOptions = new StreamOptions { IncludeUsage = true }
         };
 
-        var url = $"openai/deployments/{conversation.TextModel}/chat/completions?api-version={_config.ApiVersion}";
+        var url = $"openai/deployments/{model}/chat/completions?api-version={_config.ApiVersion}";
 
         // Completion loop (handles tool calls across streaming rounds — cap configurable via AgentConfig.MaxToolRounds)
         var maxToolRounds = agentConfig.MaxToolRounds;

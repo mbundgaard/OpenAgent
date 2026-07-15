@@ -26,7 +26,9 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
         new() { Key = "embeddingProvider", Label = "Embedding Provider", Type = "String", Required = false },
         new() { Key = "embeddingModel", Label = "Embedding Model", Type = "String", Required = false },
         new() { Key = "maxToolRounds", Label = "Max Tool Rounds", Type = "String", Required = false },
-        new() { Key = "backgroundAgentEnabled", Label = "Background Agent Enabled", Type = "Enum", Required = false, DefaultValue = "false", Options = ["false", "true"] }
+        new() { Key = "backgroundAgentEnabled", Label = "Background Agent Enabled", Type = "Enum", Required = false, DefaultValue = "false", Options = ["false", "true"] },
+        new() { Key = "backgroundAgentProvider", Label = "Background Agent Provider", Type = "String", Required = false },
+        new() { Key = "backgroundAgentModel", Label = "Background Agent Model", Type = "String", Required = false }
     ];
 
     public void Configure(JsonElement configuration)
@@ -80,5 +82,9 @@ public sealed class AgentConfigConfigurable(AgentConfig agentConfig) : IConfigur
             else if (bae.ValueKind == JsonValueKind.String && bool.TryParse(bae.GetString(), out var baeBool))
                 agentConfig.BackgroundAgentEnabled = baeBool;
         }
+        if (configuration.TryGetProperty("backgroundAgentProvider", out var bap))
+            agentConfig.BackgroundAgentProvider = bap.GetString() ?? "";
+        if (configuration.TryGetProperty("backgroundAgentModel", out var bam))
+            agentConfig.BackgroundAgentModel = bam.GetString() ?? "";
     }
 }

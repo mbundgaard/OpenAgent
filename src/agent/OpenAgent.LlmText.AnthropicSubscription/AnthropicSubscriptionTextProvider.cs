@@ -110,10 +110,15 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
 
     /// <inheritdoc />
     public async IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true)
+        Conversation conversation, Message userMessage, [EnumeratorCancellation] CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null)
     {
         if (_config is null || _httpClient is null)
             throw new InvalidOperationException("Provider has not been configured. Call Configure() first.");
+
+        // When set, the caller (e.g. the background-agent heartbeat) wants this turn run on a
+        // different model than the conversation's own — everything else about the turn still
+        // comes from `conversation`.
+        var model = string.IsNullOrWhiteSpace(modelOverride) ? conversation.TextModel : modelOverride;
 
         var conversationId = conversation.Id;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -124,7 +129,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
         // rather than relying on a global constant.
         if (conversation.ContextWindowTokens is null)
         {
-            var window = GetContextWindow(conversation.TextModel);
+            var window = GetContextWindow(model);
             if (window is not null)
                 conversation.ContextWindowTokens = window;
         }
@@ -153,7 +158,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
         // chronological position instead of landing after this turn's own tool activity.
         var turnPrefixCount = messages.Count;
         var tools = BuildTools();
-        var useThinking = conversation.TextModel.Contains("4-6", StringComparison.OrdinalIgnoreCase);
+        var useThinking = model.Contains("4-6", StringComparison.OrdinalIgnoreCase);
 
         // Completion loop (handles tool call rounds — cap configurable via AgentConfig.MaxToolRounds)
         var maxToolRounds = agentConfig.MaxToolRounds;
@@ -175,7 +180,7 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             {
                 var request = new AnthropicMessagesRequest
                 {
-                    Model = conversation.TextModel,
+                    Model = model,
                     MaxTokens = _config.MaxTokens,
                     System = systemBlocks,
                     Messages = messages,

@@ -26,8 +26,17 @@ public interface ILlmTextProvider : IConfigurable
     /// require cleanup if the process dies mid-turn.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="persistUserMessage">See remarks above.</param>
+    /// <param name="modelOverride">
+    /// When non-empty, the wire request uses this model instead of <c>conversation.TextModel</c>.
+    /// Everything else driving the turn - history, conversation id, context window, active skills -
+    /// still comes from <paramref name="conversation"/>. Lets a caller (e.g. the background-agent
+    /// heartbeat) run a turn on a cheaper model than the conversation's own, without mutating the
+    /// conversation's persisted model. Null or empty means inherit <c>conversation.TextModel</c>,
+    /// matching every existing caller's behavior.
+    /// </param>
     IAsyncEnumerable<CompletionEvent> CompleteAsync(
-        Conversation conversation, Message userMessage, CancellationToken ct = default, bool persistUserMessage = true);
+        Conversation conversation, Message userMessage, CancellationToken ct = default, bool persistUserMessage = true, string? modelOverride = null);
 
     /// <summary>
     /// Runs a raw completion without conversation context — no tool calls, no message
