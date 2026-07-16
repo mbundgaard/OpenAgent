@@ -95,9 +95,12 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
             new() { Id = "usr", ConversationId = "", Role = "user", Content = userContent.ToString() }
         };
 
-        // Resolve the compaction provider and call it
+        // Resolve the compaction provider and call it. The prompt asks for plain Markdown (no
+        // JSON wrapper) — a JSON wrapper is what previously broke here: the model emitted a huge
+        // string body with unescaped newlines/quotes, JSON parsing failed, and the raw wrapper
+        // text got stored as the summary and poisoned every subsequent turn.
         var provider = _providerFactory(_agentConfig.CompactionProvider);
-        var options = new CompletionOptions { ResponseFormat = "json_object", Thinking = _agentConfig.CompactionThinking };
+        var options = new CompletionOptions { Thinking = _agentConfig.CompactionThinking };
 
         var fullContent = new StringBuilder();
         await foreach (var evt in provider.CompleteAsync(llmMessages, _agentConfig.CompactionModel, options, ct))
@@ -106,12 +109,17 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
                 fullContent.Append(delta.Content);
         }
 
-        // Anthropic doesn't honor the json_object response format the way OpenAI does, so the
-        // model sometimes returns the raw markdown summary instead of `{"context": "..."}`.
-        // Be tolerant: try clean JSON, then code-fenced JSON, then a balanced {...} block,
-        // and finally fall back to treating the entire response as the context string.
+        // Plain Markdown is the expected shape, but stay tolerant of a model that still wraps the
+        // summary in `{"context": "..."}`. Crucially, a wrapper that LOOKS like that JSON but fails
+        // to parse must NOT be stored verbatim — that is the poison case. ExtractContext returns
+        // null for it, and we refuse to swap rather than corrupt the conversation.
         var raw = fullContent.ToString();
         var context = ExtractContext(raw);
+
+        if (string.IsNullOrWhiteSpace(context))
+        {
+            throw new CompactionInvalidResultException(raw);
+        }
 
         _logger.LogInformation("Compaction summary generated: {Length} chars (mode: {Mode})",
             context.Length, existingContext is null ? "initial" : "update");
@@ -124,12 +132,14 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
     /// with a `context` property, a ```json fenced block, the first balanced `{...}` block,
     /// and finally the whole response as plain text.
     /// </summary>
-    private string ExtractContext(string raw)
+    private string? ExtractContext(string raw)
     {
         var trimmed = raw.Trim();
         if (trimmed.Length == 0)
-            return "";
+            return null;
 
+        // Tolerate a model that still wraps the summary in `{"context": "..."}` JSON, even though
+        // the prompt now asks for plain Markdown. Try direct, code-fenced, then a balanced block.
         if (TryParseContextJson(trimmed, out var fromDirect))
             return fromDirect;
 
@@ -145,12 +155,28 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
                 return fromBalanced;
         }
 
-        // Fallback: the model gave us the summary directly without the JSON wrapper.
-        // Use the raw text as the context — better than throwing away an otherwise-good summary.
-        _logger.LogWarning("Compaction response was not valid JSON; using raw text as context. First 60 chars: {Preview}",
-            trimmed.Length <= 60 ? trimmed : trimmed[..60] + "…");
+        // The response looks like an attempt at the `{"context": ...}` wrapper but could not be
+        // parsed — almost always a huge string body with unescaped newlines/quotes. Storing the raw
+        // wrapper verbatim is exactly the bug that poisoned production, so reject it (return null)
+        // and let the caller keep the previous summary instead of swapping in garbage.
+        if (LooksLikeJsonContextWrapper(trimmed))
+        {
+            _logger.LogWarning("Compaction response looked like a JSON wrapper but failed to parse; rejecting. First 60 chars: {Preview}",
+                trimmed.Length <= 60 ? trimmed : trimmed[..60] + "…");
+            return null;
+        }
+
+        // Plain Markdown summary — the expected shape. Use it directly.
         return trimmed;
     }
+
+    /// <summary>
+    /// True when the text appears to be an attempt at the legacy <c>{"context": "..."}</c> JSON
+    /// wrapper (opens with a brace and mentions the context key) rather than a plain Markdown
+    /// summary. Used to reject an unparseable wrapper instead of storing it verbatim.
+    /// </summary>
+    private static bool LooksLikeJsonContextWrapper(string text)
+        => text.StartsWith('{') && text.Contains("\"context\"", StringComparison.Ordinal);
 
     private static bool TryParseContextJson(string json, out string context)
     {
@@ -245,4 +271,16 @@ public sealed class CompactionDisabledException : Exception
 {
     public CompactionDisabledException()
         : base("Compaction is disabled because CompactionProvider or CompactionModel is unset.") { }
+}
+
+/// <summary>
+/// Thrown by <see cref="CompactionSummarizer"/> when the model produced no usable summary — an
+/// empty response, or an unparseable <c>{"context": ...}</c> wrapper. Callers must NOT swap this
+/// in as the conversation summary; they keep the previous context and skip the compaction. This
+/// is the guard that prevents a malformed summary from poisoning a conversation.
+/// </summary>
+public sealed class CompactionInvalidResultException : Exception
+{
+    public CompactionInvalidResultException(string raw)
+        : base($"Compaction produced no usable summary (response length {raw.Length}).") { }
 }

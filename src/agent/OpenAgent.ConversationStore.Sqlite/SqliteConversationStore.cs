@@ -775,6 +775,17 @@ public sealed class SqliteConversationStore : IConversationStore, IDisposable
                 // don't produce a log storm.
                 return false;
             }
+            catch (CompactionInvalidResultException ex)
+            {
+                // The summarizer could not produce a usable summary (empty or an unparseable
+                // JSON wrapper). Do NOT swap — keep the previous context and cutoff intact so a
+                // malformed summary can never poison the conversation. The turn history is
+                // untouched; the next trigger will try again.
+                _logger.LogError(
+                    "{@Event}",
+                    new { @event = "compaction.error", conversationId, reason = reason.ToString(), error = ex.Message });
+                return false;
+            }
 
             UpdateCompactionState(conversationId,
                 compactionRunning: false,
