@@ -81,6 +81,14 @@ public class CompactionSummarizerTests
         await Assert.ThrowsAsync<CompactionInvalidResultException>(() => SummarizeTask("   "));
     }
 
+    [Fact]
+    public async Task Code_fenced_malformed_json_wrapper_is_rejected()
+    {
+        // A ```json { ... } ``` wrapper whose body fails to parse must not be stored fence-and-all.
+        var fenced = "```json\n{\"context\":\"## X\nunescaped \"quote\" here\"}\n```";
+        await Assert.ThrowsAsync<CompactionInvalidResultException>(() => SummarizeTask(fenced));
+    }
+
     private static Task<CompactionResult> SummarizeTask(string providerResponse)
     {
         var config = new AgentConfig { CompactionProvider = "set", CompactionModel = "set-model" };

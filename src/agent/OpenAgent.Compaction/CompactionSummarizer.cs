@@ -158,8 +158,10 @@ public sealed class CompactionSummarizer : ICompactionSummarizer
         // The response looks like an attempt at the `{"context": ...}` wrapper but could not be
         // parsed — almost always a huge string body with unescaped newlines/quotes. Storing the raw
         // wrapper verbatim is exactly the bug that poisoned production, so reject it (return null)
-        // and let the caller keep the previous summary instead of swapping in garbage.
-        if (LooksLikeJsonContextWrapper(trimmed))
+        // and let the caller keep the previous summary instead of swapping in garbage. Check the
+        // de-fenced form too, so a ```json { ... } ``` wrapper that failed to parse is caught rather
+        // than stored fence-and-all.
+        if (LooksLikeJsonContextWrapper(trimmed) || (fenced is not null && LooksLikeJsonContextWrapper(fenced)))
         {
             _logger.LogWarning("Compaction response looked like a JSON wrapper but failed to parse; rejecting. First 60 chars: {Preview}",
                 trimmed.Length <= 60 ? trimmed : trimmed[..60] + "…");
