@@ -411,6 +411,10 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             fresh.TotalCompletionTokens += completionTokens ?? 0;
             fresh.TurnCount++;
             fresh.LastActivity = DateTimeOffset.UtcNow;
+            // Persist the model's context window so the compaction threshold scales with the real
+            // model instead of the 400k MaxContextTokens fallback. fresh is re-read from the store
+            // and would otherwise drop the value computed at turn start, leaving it null forever.
+            fresh.ContextWindowTokens ??= GetContextWindow(fresh.TextModel);
             agentLogic.UpdateConversation(fresh);
 
             logger.LogDebug("Conversation {ConversationId}: {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",
@@ -529,9 +533,17 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                 channelMessageLookup[cmid] = stored;
         }
 
+        // Tool result messages that were pulled into an earlier assistant tool-call round across
+        // an interleaved message. Skipped when the main loop reaches them so they are not emitted
+        // a second time, out of order, in the regular-message path below.
+        var consumedToolResultIds = new HashSet<string>();
+
         for (var i = 0; i < storedMessages.Count; i++)
         {
             var msg = storedMessages[i];
+
+            if (msg.Role == "tool" && consumedToolResultIds.Contains(msg.Id))
+                continue;
 
             // Assistant message with tool calls — verify all tool results follow
             if (msg.ToolCalls is not null)
@@ -552,43 +564,51 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                     // Collect the expected tool_call_ids
                     var expectedIds = toolCalls.Select(tc => tc.Id).ToHashSet();
 
-                    // Look ahead for matching tool result messages
-                    var foundIds = new HashSet<string>();
-                    for (var j = i + 1; j < storedMessages.Count && foundIds.Count < expectedIds.Count; j++)
+                    // Look ahead for the matching tool result messages. Tolerate a user (or other
+                    // non-assistant) message interleaved between the tool_calls and its results —
+                    // that happens when the user replies while a tool is still running, so the
+                    // stored order becomes tool_calls -> user -> tool result. Collect the results
+                    // wherever they appear before the next assistant round.
+                    var resultsById = new Dictionary<string, Message>();
+                    for (var j = i + 1; j < storedMessages.Count && resultsById.Count < expectedIds.Count; j++)
                     {
-                        if (storedMessages[j].Role == "tool" && storedMessages[j].ToolCallId is not null)
-                            foundIds.Add(storedMessages[j].ToolCallId!);
-                        else
-                            break; // Tool results must be contiguous
+                        var candidate = storedMessages[j];
+                        if (candidate.Role == "tool" && candidate.ToolCallId is not null && expectedIds.Contains(candidate.ToolCallId))
+                            resultsById[candidate.ToolCallId] = candidate;
+                        else if (candidate.Role == "assistant")
+                            break; // a new assistant round begins — stop searching
                     }
 
-                    // Skip this tool call round if incomplete — avoids API 400 errors
-                    if (!expectedIds.SetEquals(foundIds))
+                    // Skip this tool call round if incomplete — avoids API 400 errors. Mark any
+                    // partial results we did find as consumed so they do not leak to the
+                    // regular-message path as standalone tool messages (an invalid request:
+                    // a tool message with no preceding assistant tool_calls).
+                    if (!expectedIds.SetEquals(resultsById.Keys.ToHashSet()))
                     {
                         logger.LogWarning("Skipping orphaned tool call round at message {MessageId}: expected [{Expected}], found [{Found}]",
-                            msg.Id, string.Join(", ", expectedIds), string.Join(", ", foundIds));
-                        // Skip the assistant message and any partial tool results
-                        while (i + 1 < storedMessages.Count && storedMessages[i + 1].Role == "tool")
-                            i++;
+                            msg.Id, string.Join(", ", expectedIds), string.Join(", ", resultsById.Keys));
+                        foreach (var found in resultsById.Values)
+                            consumedToolResultIds.Add(found.Id);
                         continue;
                     }
 
-                    // Complete round — add assistant message with tool calls
+                    // Complete round — add assistant message with tool calls, immediately followed
+                    // by the matching tool result messages (OpenAI requires them adjacent). Prefer
+                    // the full on-disk content; fall back to the compact summary in Content only for
+                    // legacy rows or when the blob is missing. The result messages are marked
+                    // consumed so the regular-message path below does not re-emit them out of place.
                     chatMessages.Add(new ChatMessage { Role = "assistant", Content = msg.Content, Name = ChannelMessageName(msg), ToolCalls = toolCalls });
 
-                    // Add the matching tool result messages. Prefer the full on-disk content
-                    // (loaded via includeToolResultBlobs above); fall back to the compact summary
-                    // in Content only for legacy rows or when the blob is missing.
-                    foreach (var id in expectedIds)
+                    foreach (var tc in toolCalls)
                     {
-                        i++;
-                        var toolMsg = storedMessages[i];
+                        var toolMsg = resultsById[tc.Id];
                         chatMessages.Add(new ChatMessage
                         {
                             Role = "tool",
                             Content = toolMsg.FullToolResult ?? toolMsg.Content,
                             ToolCallId = toolMsg.ToolCallId
                         });
+                        consumedToolResultIds.Add(toolMsg.Id);
                     }
                     continue;
                 }

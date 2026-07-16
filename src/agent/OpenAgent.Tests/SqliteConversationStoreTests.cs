@@ -1,3 +1,4 @@
+using OpenAgent.Compaction;
 using OpenAgent.ConversationStore.Sqlite;
 using OpenAgent.Contracts;
 using OpenAgent.Models.Conversations;
@@ -205,6 +206,39 @@ public class SqliteConversationStoreTests : IDisposable
 
         Assert.Equal(4, summarizer.LastMessages!.Count);
         Assert.Equal("msg1", summarizer.LastMessages[0].Id);
+    }
+
+    [Fact]
+    public async Task Compaction_with_invalid_summary_keeps_previous_context_and_cutoff()
+    {
+        // Guard against the production poison: if the summarizer can't produce a usable summary,
+        // the store must NOT swap it in — the prior context and cutoff stay intact.
+        var config = new CompactionConfig { MaxContextTokens = 100, CompactionTriggerPercent = 50, KeepRecentTokens = 5 };
+        var summarizer = new ThrowingSummarizer();
+        var env = new AgentEnvironment { DataPath = _dbDir };
+        using var store = new SqliteConversationStore(env, NullLogger<SqliteConversationStore>.Instance, config, summarizer);
+
+        var conv = store.GetOrCreate("conv-bad", "test", "test-provider", "test-model", "test-provider", "test-model");
+        for (var i = 1; i <= 6; i++)
+        {
+            store.AddMessage("conv-bad", new Message
+            {
+                Id = $"m{i}", ConversationId = "conv-bad",
+                Role = i % 2 == 1 ? "user" : "assistant",
+                Content = $"message {i}"
+            });
+        }
+        conv.Context = "## Prior summary\nKeep me.";
+        store.Update(conv);
+
+        var compacted = await store.CompactNowAsync("conv-bad", CompactionReason.Manual);
+
+        Assert.False(compacted);
+        Assert.True(summarizer.WasCalled);
+        var fresh = store.Get("conv-bad");
+        Assert.NotNull(fresh);
+        Assert.Equal("## Prior summary\nKeep me.", fresh!.Context);
+        Assert.Null(fresh.CompactedUpToRowId);
     }
 
     [Fact]
@@ -593,6 +627,21 @@ public class SqliteConversationStoreTests : IDisposable
             // Wait for the test to release, or for cancellation to fire.
             await gate.WaitAsync(ct);
             return new CompactionResult { Context = "done" };
+        }
+    }
+
+    private sealed class ThrowingSummarizer : ICompactionSummarizer
+    {
+        public bool WasCalled { get; private set; }
+
+        public Task<CompactionResult> SummarizeAsync(
+            string? existingContext,
+            IReadOnlyList<Message> messages,
+            string? customInstructions = null,
+            CancellationToken ct = default)
+        {
+            WasCalled = true;
+            throw new CompactionInvalidResultException("garbage");
         }
     }
 

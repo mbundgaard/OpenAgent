@@ -14,8 +14,9 @@ internal static class CompactionPrompt
 
         ## Output
 
-        Respond with a JSON object containing:
-        - "context": the structured summary (string)
+        Respond with ONLY the structured summary, as plain Markdown. Do NOT wrap it in JSON,
+        do NOT use code fences, and do NOT add any preamble or closing remarks — output the
+        summary text directly.
 
         ## Structure
 
@@ -54,8 +55,9 @@ internal static class CompactionPrompt
 
         ## Output
 
-        Respond with a JSON object containing:
-        - "context": the updated structured summary (string)
+        Respond with ONLY the updated structured summary, as plain Markdown. Do NOT wrap it in
+        JSON, do NOT use code fences, and do NOT add any preamble or closing remarks — output the
+        summary text directly.
 
         ## Merge Rules
 

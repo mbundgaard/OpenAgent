@@ -510,6 +510,11 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             fresh.TotalCompletionTokens += outputTokens ?? 0;
             fresh.TurnCount++;
             fresh.LastActivity = DateTimeOffset.UtcNow;
+            // Persist the model's context window so the compaction threshold scales with the real
+            // model instead of the 400k MaxContextTokens fallback. fresh is re-read from the store
+            // and would otherwise drop the value computed at turn start, leaving it null forever
+            // and firing compaction far too early on large-window models (e.g. sonnet-5 at 1M).
+            fresh.ContextWindowTokens ??= GetContextWindow(fresh.TextModel);
             agentLogic.UpdateConversation(fresh);
 
             logger.LogDebug("Conversation {ConversationId}: {InputTokens} input, {OutputTokens} output tokens, {ElapsedMs}ms",
@@ -686,23 +691,29 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                 {
                     var expectedIds = toolCalls.Select(tc => tc.Id).ToHashSet();
 
-                    // Look ahead for matching tool result messages
-                    var foundIds = new HashSet<string>();
-                    for (var j = i + 1; j < storedMessages.Count && foundIds.Count < expectedIds.Count; j++)
+                    // Look ahead for the matching tool result messages. Tolerate a user (or other
+                    // non-assistant) message interleaved between the tool_use and its result — that
+                    // happens when the user sends a message while a tool is still running, so the
+                    // stored order becomes tool_use → user → tool_result. Collect the matching
+                    // results wherever they appear before the next assistant round; the interleaved
+                    // messages are left in the stream and emitted normally on later iterations
+                    // (a standalone tool result is skipped above, so nothing is duplicated).
+                    var resultsById = new Dictionary<string, Message>();
+                    for (var j = i + 1; j < storedMessages.Count && resultsById.Count < expectedIds.Count; j++)
                     {
-                        if (storedMessages[j].Role == "tool" && storedMessages[j].ToolCallId is not null)
-                            foundIds.Add(storedMessages[j].ToolCallId!);
-                        else
-                            break;
+                        var candidate = storedMessages[j];
+                        if (candidate.Role == "tool" && candidate.ToolCallId is not null && expectedIds.Contains(candidate.ToolCallId))
+                            resultsById[candidate.ToolCallId] = candidate;
+                        else if (candidate.Role == "assistant")
+                            break; // a new assistant round begins — stop searching
+                        // otherwise: an interleaved user message (or unrelated tool result) — keep scanning
                     }
 
                     // Skip orphaned tool call round — avoids API errors
-                    if (!expectedIds.SetEquals(foundIds))
+                    if (!expectedIds.SetEquals(resultsById.Keys.ToHashSet()))
                     {
                         logger.LogWarning("Skipping orphaned tool call round at message {MessageId}: expected [{Expected}], found [{Found}]",
-                            msg.Id, string.Join(", ", expectedIds), string.Join(", ", foundIds));
-                        while (i + 1 < storedMessages.Count && storedMessages[i + 1].Role == "tool")
-                            i++;
+                            msg.Id, string.Join(", ", expectedIds), string.Join(", ", resultsById.Keys));
                         continue;
                     }
 
@@ -718,21 +729,15 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
                     }).ToList<AnthropicContentBlock>();
                     result.Add(new AnthropicMessage { Role = "assistant", Content = toolUseBlocks });
 
-                    // Collect tool results in a single user message (Anthropic convention).
-                    // Prefer the full on-disk content; fall back to the compact summary in
-                    // Content only for legacy rows or when the blob is missing.
-                    var toolResultBlocks = new List<AnthropicContentBlock>();
-                    foreach (var id in expectedIds)
+                    // Collect tool results in a single user message (Anthropic convention), ordered
+                    // to match the tool_use blocks. Prefer the full on-disk content; fall back to the
+                    // compact summary in Content only for legacy rows or when the blob is missing.
+                    var toolResultBlocks = toolCalls.Select(tc => new AnthropicContentBlock
                     {
-                        i++;
-                        var toolMsg = storedMessages[i];
-                        toolResultBlocks.Add(new AnthropicContentBlock
-                        {
-                            Type = "tool_result",
-                            ToolUseId = toolMsg.ToolCallId,
-                            Content = toolMsg.FullToolResult ?? toolMsg.Content
-                        });
-                    }
+                        Type = "tool_result",
+                        ToolUseId = tc.Id,
+                        Content = resultsById[tc.Id].FullToolResult ?? resultsById[tc.Id].Content
+                    }).ToList<AnthropicContentBlock>();
                     result.Add(new AnthropicMessage { Role = "user", Content = toolResultBlocks });
                     continue;
                 }
