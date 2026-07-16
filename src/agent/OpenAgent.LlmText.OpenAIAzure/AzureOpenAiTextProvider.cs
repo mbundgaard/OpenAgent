@@ -411,6 +411,10 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
             fresh.TotalCompletionTokens += completionTokens ?? 0;
             fresh.TurnCount++;
             fresh.LastActivity = DateTimeOffset.UtcNow;
+            // Persist the model's context window so the compaction threshold scales with the real
+            // model instead of the 400k MaxContextTokens fallback. fresh is re-read from the store
+            // and would otherwise drop the value computed at turn start, leaving it null forever.
+            fresh.ContextWindowTokens ??= GetContextWindow(fresh.TextModel);
             agentLogic.UpdateConversation(fresh);
 
             logger.LogDebug("Conversation {ConversationId}: {PromptTokens} prompt, {CompletionTokens} completion tokens, {ElapsedMs}ms",

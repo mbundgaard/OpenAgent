@@ -510,6 +510,11 @@ public sealed class AnthropicSubscriptionTextProvider(IAgentLogic agentLogic, Ag
             fresh.TotalCompletionTokens += outputTokens ?? 0;
             fresh.TurnCount++;
             fresh.LastActivity = DateTimeOffset.UtcNow;
+            // Persist the model's context window so the compaction threshold scales with the real
+            // model instead of the 400k MaxContextTokens fallback. fresh is re-read from the store
+            // and would otherwise drop the value computed at turn start, leaving it null forever
+            // and firing compaction far too early on large-window models (e.g. sonnet-5 at 1M).
+            fresh.ContextWindowTokens ??= GetContextWindow(fresh.TextModel);
             agentLogic.UpdateConversation(fresh);
 
             logger.LogDebug("Conversation {ConversationId}: {InputTokens} input, {OutputTokens} output tokens, {ElapsedMs}ms",
