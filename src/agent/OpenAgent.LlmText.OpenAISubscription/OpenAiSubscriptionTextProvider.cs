@@ -744,11 +744,16 @@ public sealed class OpenAiSubscriptionTextProvider(IAgentLogic agentLogic, IConf
                     });
                 }
 
-                while (i + 1 < messages.Count && messages[i + 1].Role == "tool")
+                // Emit function_call_output for each tool result, tolerating a non-tool message
+                // interleaved between the call and its result (the user-replied-mid-tool race).
+                // Scan up to the next assistant round rather than only consecutive tool messages;
+                // the interleaved message is still emitted by the outer loop, and standalone tool
+                // results are skipped below, so nothing is duplicated.
+                for (var j = i + 1; j < messages.Count; j++)
                 {
-                    i++;
-                    var toolMsg = messages[i];
-                    if (toolMsg.ToolCallId is null) continue;
+                    var toolMsg = messages[j];
+                    if (toolMsg.Role == "assistant") break;
+                    if (toolMsg.Role != "tool" || toolMsg.ToolCallId is null) continue;
                     var callId = toolMsg.ToolCallId.Split('|', 2)[0];
                     input.Add(new
                     {
