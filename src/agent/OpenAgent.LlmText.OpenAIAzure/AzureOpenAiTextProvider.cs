@@ -579,11 +579,16 @@ public sealed class AzureOpenAiTextProvider(IAgentLogic agentLogic, AgentConfig 
                             break; // a new assistant round begins — stop searching
                     }
 
-                    // Skip this tool call round if incomplete — avoids API 400 errors
+                    // Skip this tool call round if incomplete — avoids API 400 errors. Mark any
+                    // partial results we did find as consumed so they do not leak to the
+                    // regular-message path as standalone tool messages (an invalid request:
+                    // a tool message with no preceding assistant tool_calls).
                     if (!expectedIds.SetEquals(resultsById.Keys.ToHashSet()))
                     {
                         logger.LogWarning("Skipping orphaned tool call round at message {MessageId}: expected [{Expected}], found [{Found}]",
                             msg.Id, string.Join(", ", expectedIds), string.Join(", ", resultsById.Keys));
+                        foreach (var found in resultsById.Values)
+                            consumedToolResultIds.Add(found.Id);
                         continue;
                     }
 

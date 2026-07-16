@@ -259,6 +259,7 @@ public sealed class TelegramMessageHandler
         var producerDone = false;
         var draftsSent = 0;
         string? assistantMessageId = null;
+        var sawToolCall = false;
 
         // Thinking state — tool lines collected per round, sent as blockquote before response text
         var toolLines = new List<string>();
@@ -280,6 +281,7 @@ public sealed class TelegramMessageHandler
                 switch (evt)
                 {
                     case ToolCallEvent toolCall:
+                        sawToolCall = true;
                         if (_showThinking)
                             pendingToolArgs[toolCall.ToolCallId] = FormatToolArgs(toolCall.Arguments);
                         _logger?.LogDebug("Tool call: {Name}({Args})", toolCall.Name, toolCall.Arguments);
@@ -339,7 +341,7 @@ public sealed class TelegramMessageHandler
         _logger?.LogInformation("Stream complete for chat {ChatId}: {DraftsSent} drafts sent, {ReplyLength} chars",
             chatId, draftsSent, replyText.Length);
 
-        await SendFinalResponseAsync(sender, chatId, replyText, assistantMessageId, ct);
+        await SendFinalResponseAsync(sender, chatId, replyText, assistantMessageId, sawToolCall, ct);
     }
 
     /// <summary>
@@ -490,6 +492,7 @@ public sealed class TelegramMessageHandler
     {
         string replyText;
         string? assistantMessageId = null;
+        var sawToolCall = false;
         var toolLines = new List<string>();
         var pendingToolArgs = new Dictionary<string, string>();
         try
@@ -500,6 +503,7 @@ public sealed class TelegramMessageHandler
                 switch (evt)
                 {
                     case ToolCallEvent toolCall:
+                        sawToolCall = true;
                         if (_showThinking)
                             pendingToolArgs[toolCall.ToolCallId] = FormatToolArgs(toolCall.Arguments);
                         break;
@@ -537,7 +541,7 @@ public sealed class TelegramMessageHandler
         }
 
         _logger?.LogInformation("Batch complete for chat {ChatId}: {ReplyLength} chars", chatId, replyText.Length);
-        await SendFinalResponseAsync(sender, chatId, replyText, assistantMessageId, ct);
+        await SendFinalResponseAsync(sender, chatId, replyText, assistantMessageId, sawToolCall, ct);
     }
 
     /// <summary>
@@ -545,7 +549,7 @@ public sealed class TelegramMessageHandler
     /// assistant message with the Telegram message ID for reply-to tracking.
     /// </summary>
     private async Task SendFinalResponseAsync(
-        ITelegramSender sender, long chatId, string replyText, string? assistantMessageId, CancellationToken ct)
+        ITelegramSender sender, long chatId, string replyText, string? assistantMessageId, bool sawToolCall, CancellationToken ct)
     {
         // Suppress sentinel: agent returns "[]" to signal "nothing worth sending".
         // Used by silent webhook flows so the agent doesn't leak courtesy text.
@@ -556,9 +560,16 @@ public sealed class TelegramMessageHandler
             return;
         }
 
-        // Guard against empty responses — tool-only turns can produce no text
+        // Guard against empty responses. A tool-only turn legitimately produces no text, so we send
+        // a short ack. But an empty turn with NO tool calls is almost always a real failure (e.g. a
+        // provider error or a broken compaction summary) — surface it as a warning instead of
+        // silently papering over it with "OK!", which is how the compaction outage went unnoticed.
         if (string.IsNullOrWhiteSpace(replyText))
+        {
+            if (!sawToolCall)
+                _logger?.LogWarning("Empty assistant reply with no tool calls for chat {ChatId} — likely a provider or compaction failure, not a tool-only turn", chatId);
             replyText = "OK!";
+        }
 
         // Rich Messages path: send the full un-chunked markdown as one Bot API Rich Message.
         // On any failure, fall through to the legacy chunk+HTML path below (zero regression).
